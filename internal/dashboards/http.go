@@ -10,6 +10,7 @@ import (
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 )
 
 const maxAPIErrorBodyBytes = 4096
@@ -41,14 +42,14 @@ func doJSONRequest(ctx context.Context, client *http.Client, cfg models.Config, 
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, 0, fmt.Errorf("request failed: %w", err)
+		return nil, 0, utils.MarkUnknownWriteOutcome(req, nil, fmt.Errorf("request failed: %w", err))
 	}
 	defer resp.Body.Close()
 
 	limited := io.LimitReader(resp.Body, maxAPISuccessBodyBytes+1)
 	respBody, err := io.ReadAll(limited)
 	if err != nil {
-		return nil, resp.StatusCode, fmt.Errorf("failed to read response: %w", err)
+		return nil, resp.StatusCode, utils.MarkUnknownWriteOutcome(req, resp, fmt.Errorf("failed to read response: %w", err))
 	}
 	if int64(len(respBody)) > maxAPISuccessBodyBytes {
 		return nil, resp.StatusCode, fmt.Errorf("dashboard API response exceeds %d bytes; open the UI link instead", maxAPISuccessBodyBytes)
@@ -62,7 +63,7 @@ func doJSONRequest(ctx context.Context, client *http.Client, cfg models.Config, 
 		if msg == "" {
 			msg = http.StatusText(resp.StatusCode)
 		}
-		return respBody, resp.StatusCode, fmt.Errorf("dashboard API returned status %d: %s", resp.StatusCode, msg)
+		return respBody, resp.StatusCode, utils.MarkUnknownWriteOutcome(req, resp, fmt.Errorf("dashboard API returned status %d: %s", resp.StatusCode, msg))
 	}
 
 	return respBody, resp.StatusCode, nil

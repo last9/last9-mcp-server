@@ -22,7 +22,7 @@ const (
 
 // DidYouMeanArgs are the input parameters for the did_you_mean tool.
 type DidYouMeanArgs struct {
-	Query string `json:"query" jsonschema:"The misspelled or uncertain entity name to find suggestions for (required)"`
+	Query string `json:"query" jsonschema:"(Required) The misspelled or uncertain entity name to find suggestions for"`
 	Type  string `json:"type,omitempty" jsonschema:"Optional entity type filter: service, environment, host, database, k8s_deployment, k8s_namespace, job"`
 }
 

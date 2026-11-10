@@ -1,9 +1,11 @@
 package workflows
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
+	"text/template"
 
 	"last9-mcp/internal/prompts"
 
@@ -27,6 +29,24 @@ func lineStartingWith(t *testing.T, text, prefix string) string {
 		t.Fatalf("want exactly one line starting %q, found %d in:\n%s", prefix, n, text)
 	}
 	return found
+}
+
+// assertChecksRecentChange requires get_service_performance_details, then
+// get_change_events, then analyze_change_impact, and both verdict rules: only
+// `no significant change` clears a change; `insufficient data` is missing evidence.
+func assertChecksRecentChange(t *testing.T, name, text string) {
+	t.Helper()
+	perf := strings.Index(text, "get_service_performance_details")
+	events := strings.Index(text, "get_change_events")
+	impact := strings.Index(text, "analyze_change_impact")
+	if perf < 0 || !(perf < events && events < impact) {
+		t.Fatalf("%s: want get_service_performance_details, then get_change_events, then analyze_change_impact:\n%s", name, text)
+	}
+	for _, rule := range []string{"`no significant change` rules the change out", "`insufficient data` does not"} {
+		if !strings.Contains(text, rule) {
+			t.Fatalf("%s: the prompt must say %q:\n%s", name, rule, text)
+		}
+	}
 }
 
 // handlerText calls a workflow's handler and returns the single message's text.
@@ -146,12 +166,41 @@ func TestWorkflowsUseNestedSignalShapePaths(t *testing.T) {
 		"investigate_latency_spike":          prompts.InvestigateLatencySpikeWorkflow,
 		"on_call_runbook":                    prompts.OnCallRunbookWorkflow,
 		"scoped_log_attribute_discovery":     prompts.ScopedLogAttributeDiscoveryWorkflow,
+		"partials":                           prompts.WorkflowPartials,
 		"references/investigation":           prompts.InvestigationReference,
 	} {
 		for _, field := range []string{"level_field", "parse_hint", "severity_set", "log_format"} {
 			if bad := "profile." + field; strings.Contains(body, bad) {
 				t.Errorf("%s uses %s; the field is nested under signal_shape", name, bad)
 			}
+		}
+	}
+}
+
+// Error triage workflows render one shared log-novelty define, so a wording
+// fix lands in every workflow at once.
+func TestErrorWorkflowsRenderTheSharedLogNoveltyText(t *testing.T) {
+	args := map[string]string{"service": "checkout", "env": "prod", "time": "1h"}
+	partials := template.Must(template.New("partials").Parse(prompts.WorkflowPartials))
+	var shared bytes.Buffer
+	if err := partials.ExecuteTemplate(&shared, "logNovelty", args); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(shared.String(), "get_emerging_log_patterns(service_name=checkout, env=prod)") {
+		t.Fatalf("logNovelty should render the scoped novelty call:\n%s", shared.String())
+	}
+
+	diagnose, err := DiagnoseErrorRate.Handler(context.Background(), &mcp.GetPromptRequest{Params: &mcp.GetPromptParams{Arguments: args}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, got := range map[string]string{
+		"diagnose-error-rate":    diagnose.Messages[0].Content.(*mcp.TextContent).Text,
+		"on-call-runbook errors": renderOnCallRunbook(t, map[string]string{"symptom": "errors", "service": "checkout", "env": "prod", "time": "1h"}),
+		"on-call-runbook weird":  renderOnCallRunbook(t, map[string]string{"symptom": "weird", "service": "checkout", "env": "prod", "time": "1h"}),
+	} {
+		if !strings.Contains(got, shared.String()) {
+			t.Errorf("%s should render the shared logNovelty text verbatim:\n%s", name, got)
 		}
 	}
 }

@@ -19,6 +19,21 @@ type serviceProfileResponse struct {
 	ErrorDetection *errorDetectionResponse   `json:"error_detection,omitempty"`
 	Dependencies   *dependenciesResponse     `json:"dependencies,omitempty"`
 	Sources        []string                  `json:"sources,omitempty"`
+	Domains        []string                  `json:"domains,omitempty"`
+	DomainEnvs     map[string][]string       `json:"domain_envs,omitempty"`
+	LogIndexes     []string                  `json:"log_indexes,omitempty"`
+	LogIndexEnvs   map[string][]string       `json:"log_index_envs,omitempty"`
+	Freshness      *freshnessResponse        `json:"freshness,omitempty"`
+}
+
+type freshnessResponse struct {
+	Logs        signalFreshnessResponse `json:"logs"`
+	Traces      signalFreshnessResponse `json:"traces"`
+	TracesStale *bool                   `json:"traces_stale"`
+}
+
+type signalFreshnessResponse struct {
+	LastSeen *string `json:"last_seen"`
 }
 
 type derivationStatusResponse struct {
@@ -80,6 +95,16 @@ func formatInvestigationBrief(p serviceProfileResponse) string {
 	if p.SignalShape.LevelField != "" {
 		fmt.Fprintf(&b, " | level_field: %s", p.SignalShape.LevelField)
 	}
+	fmt.Fprintf(&b, " | trace_context_in_logs: %s", firstNonEmpty(p.SignalShape.TraceContextInLogs, "unknown"))
+	if p.Freshness != nil {
+		writeFreshness(&b, *p.Freshness)
+	}
+	if domains := formatProfileRoutes(p.Domains, p.DomainEnvs); domains != "" {
+		fmt.Fprintf(&b, "\n  → domain: %s", domains)
+	}
+	if indexes := formatProfileRoutes(p.LogIndexes, p.LogIndexEnvs); indexes != "" {
+		fmt.Fprintf(&b, "\n  → log index: %s", indexes)
+	}
 
 	// Severity routing is advice about querying logs; with no logs to query it
 	// is noise competing with the name-check hint below.
@@ -112,4 +137,40 @@ func formatInvestigationBrief(p serviceProfileResponse) string {
 		fmt.Fprintf(&b, "\n  ingest fix: %s", p.ErrorDetection.RecommendedIngestFix)
 	}
 	return b.String()
+}
+
+// Staleness is the backend's verdict; the brief renders it rather than
+// comparing timestamps, so agents and the backend never disagree.
+func writeFreshness(b *strings.Builder, f freshnessResponse) {
+	fmt.Fprintf(b, "\n  last seen: logs %s | traces %s", lastSeenOrNone(f.Logs), lastSeenOrNone(f.Traces))
+	if f.TracesStale == nil || !*f.TracesStale {
+		return
+	}
+	since := "no recent spans"
+	if f.Traces.LastSeen != nil && *f.Traces.LastSeen != "" {
+		since = "no spans since " + *f.Traces.LastSeen
+	}
+	fmt.Fprintf(b, "\n  ⚠ traces stale: %s while logs continue — treat as a regression (e.g. a deploy/restart), not missing setup", since)
+}
+
+func lastSeenOrNone(s signalFreshnessResponse) string {
+	if s.LastSeen == nil {
+		return "none"
+	}
+	return firstNonEmpty(*s.LastSeen, "none")
+}
+
+func formatProfileRoutes(names []string, envs map[string][]string) string {
+	var routes []string
+	for _, name := range names {
+		if name == "" {
+			continue
+		}
+		route := name
+		if environments := envs[name]; len(environments) > 0 {
+			route += " (" + strings.Join(environments, ", ") + ")"
+		}
+		routes = append(routes, route)
+	}
+	return strings.Join(routes, ", ")
 }

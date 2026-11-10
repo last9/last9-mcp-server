@@ -22,12 +22,12 @@ import (
 // GetLogAttributesForPipelineArgs represents the input arguments for the
 // get_log_attributes_for_pipeline tool.
 type GetLogAttributesForPipelineArgs struct {
-	Pipeline        []map[string]interface{} `json:"pipeline,omitempty" jsonschema:"Pipeline of prior filter stages to scope discovery, e.g. [{\"type\":\"filter\",\"query\":{\"$eq\":[\"ServiceName\",\"<service>\"]}}] (required)"`
+	Pipeline        []map[string]interface{} `json:"pipeline,omitempty" jsonschema:"(Required) Pipeline of prior filter stages to scope discovery, e.g. [{\"type\":\"filter\",\"query\":{\"$and\":[{\"$eq\":[\"ServiceName\",\"<service>\"]}]}}]"`
 	LookbackMinutes int                      `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 15, minimum: 1)"`
 	StartTimeISO    string                   `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
 	EndTimeISO      string                   `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)"`
 	Region          string                   `json:"region,omitempty" jsonschema:"Region to query (optional). Defaults to configured region."`
-	Index           string                   `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Omit this when the user did not specify an index."`
+	Index           string                   `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Use a user-named index or a non-default physical index discovered by get_service_profile; omit for default or when unknown."`
 }
 
 // logSeriesResponse represents the /logs/api/v2/series/json response. Each entry
@@ -591,12 +591,14 @@ func extractSampleBodyLines(result map[string]interface{}) []string {
 //   - service    -> ServiceName
 //   - severity   -> SeverityText
 //   - body       -> Body
+//   - trace_id   -> TraceId
 //   - resource_x -> resources['x']
 //   - default    -> attributes['<name>']
 //
 // The series endpoint returns log attributes bare (only resource attributes are
 // prefixed, with resource_), so a field name keeps its full name: e.g. a real
 // attribute named log_level maps to attributes['log_level'], not attributes['level'].
+// span_id stays attributes['span_id']: the logs API rejects a SpanId filter.
 func logFieldFilterField(name string) string {
 	switch name {
 	case "service":
@@ -605,6 +607,8 @@ func logFieldFilterField(name string) string {
 		return "SeverityText"
 	case "body":
 		return "Body"
+	case "trace_id":
+		return "TraceId"
 	}
 	if rest, ok := strings.CutPrefix(name, "resource_"); ok {
 		return fmt.Sprintf("resources['%s']", rest)
@@ -708,7 +712,8 @@ func discoverLogAttributes(ctx context.Context, client *http.Client, cfg models.
 	}
 
 	// Merge: drop a body-derived entry when (a) an indexed entry already
-	// exposes the SAME filter_field (true duplicate), or (b) it is a
+	// exposes the SAME filter_field or it is trace_id with TraceId indexed
+	// (parsed trace_id maps to attributes['trace_id']), or (b) it is a
 	// severity-family name (level/severity/SeverityText) and any indexed
 	// severity-family field is already present. Indexed severity is the
 	// directly-filterable signal the product UI renders; a parallel
@@ -743,6 +748,9 @@ func discoverLogAttributes(ctx context.Context, client *http.Client, cfg models.
 			}
 			continue
 		}
+		if _, dup := indexedFilterFields["TraceId"]; dup && attr.Name == "trace_id" {
+			continue
+		}
 		if indexedHasSeverity && isSeverityFamilyName(attr.Name) {
 			continue
 		}
@@ -757,7 +765,7 @@ func discoverLogAttributes(ctx context.Context, client *http.Client, cfg models.
 func NewGetLogAttributesForPipelineHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetLogAttributesForPipelineArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetLogAttributesForPipelineArgs) (*mcp.CallToolResult, any, error) {
 		if len(args.Pipeline) == 0 {
-			return nil, nil, fmt.Errorf("pipeline parameter is required. Provide at least one filter stage to scope discovery, e.g. [{\"type\":\"filter\",\"query\":{\"$eq\":[\"ServiceName\",\"<service>\"]}}]")
+			return nil, nil, fmt.Errorf("pipeline parameter is required. Provide at least one filter stage to scope discovery, e.g. [{\"type\":\"filter\",\"query\":{\"$and\":[{\"$eq\":[\"ServiceName\",\"<service>\"]}]}}]")
 		}
 
 		validatedPipeline, err := prepareLogJSONQuery(args.Pipeline, "pipeline")

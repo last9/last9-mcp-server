@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 BIN_DIR="$REPO_DIR/bin"
+L9_START_LOCAL_REFRESH_TOKEN_OVERRIDE="${LAST9_REFRESH_TOKEN-}"
 
 # Load .env if present (sets LAST9_REFRESH_TOKEN etc.)
 if [[ -f "$REPO_DIR/.env" ]]; then
@@ -12,6 +13,10 @@ if [[ -f "$REPO_DIR/.env" ]]; then
   source "$REPO_DIR/.env"
   set +a
 fi
+if [[ -n "$L9_START_LOCAL_REFRESH_TOKEN_OVERRIDE" ]]; then
+  export LAST9_REFRESH_TOKEN="$L9_START_LOCAL_REFRESH_TOKEN_OVERRIDE"
+fi
+unset L9_START_LOCAL_REFRESH_TOKEN_OVERRIDE
 
 export LAST9_HTTP=false
 unset LAST9_PORT

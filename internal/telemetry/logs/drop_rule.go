@@ -31,8 +31,8 @@ type DropRuleFilter struct {
 
 // AddDropRuleArgs represents the input arguments for adding drop rules
 type AddDropRuleArgs struct {
-	Name    string           `json:"name" jsonschema:"Name for the drop rule (e.g. test-service-drop-rule)"`
-	Filters []DropRuleFilter `json:"filters" jsonschema:"Array of filter conditions to match logs for dropping"`
+	Name    string           `json:"name" jsonschema:"(Required) Name for the drop rule (e.g. test-service-drop-rule)"`
+	Filters []DropRuleFilter `json:"filters" jsonschema:"(Required) Array of filter conditions to match logs for dropping"`
 }
 
 func dropOTelSettingsListURL(cfg models.Config) (*url.URL, error) {
@@ -232,13 +232,13 @@ func NewAddDropRuleHandler(client *http.Client, cfg models.Config) func(context.
 
 		resp, err := client.Do(httpReq)
 		if err != nil {
-			return nil, nil, fmt.Errorf("add_drop_rule: request failed: %w", err)
+			return nil, nil, utils.MarkUnknownWriteOutcome(httpReq, nil, fmt.Errorf("add_drop_rule: request failed: %w", err))
 		}
 		defer resp.Body.Close()
 
 		respBody, err := readDropRuleAPIResponse(resp, "{}")
 		if err != nil {
-			return nil, nil, fmt.Errorf("add_drop_rule: %w", err)
+			return nil, nil, utils.MarkUnknownWriteOutcome(httpReq, resp, fmt.Errorf("add_drop_rule: %w", err))
 		}
 
 		return dropRuleToolResult(cfg, respBody), nil, nil

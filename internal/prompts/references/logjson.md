@@ -51,6 +51,7 @@ onset conclusions (a narrow raw sample is not a trend):
 5. Call the `get_logs` tool with canonical time params:
    - Use `start_time_iso` + `end_time_iso` when the user gave explicit absolute dates/times
    - Otherwise use `lookback_minutes` (default: 5 when no time is specified)
+   - Chunked raw searches are limited to 24 chunks (currently at most 24 hours / 1440 minutes). Larger plans are refused before any log query is sent. Narrow `lookback_minutes` or the `start_time_iso`/`end_time_iso` window; do not retry unchanged. Lowering `limit` does not reduce the chunk count. Aggregate pipelines and server-side log search do not use this client-side chunk budget.
 6. Analyze the results and provide insights to the user
 
 **LOG SERVICE INVENTORY BEFORE BROAD SEARCH:**
@@ -58,7 +59,7 @@ onset conclusions (a narrow raw sample is not a trend):
 - Use `prometheus_instant_query` against `physical_index_service_count` to discover log-sending services first.
 - Query pattern: `sum by (name, service_name, env) (physical_index_service_count{destination="logs"})`.
 - `service_name` is the service to use as `ServiceName` in log filters; `env` is the environment when present; `name` is the physical index name.
-- If `name="default"`, omit the `index` parameter on log tools. For a non-default physical index selected by the user, pass `index: "physical_index:<name>"`.
+- If `name="default"`, omit the `index` parameter on log tools. For a non-default physical index selected by the user or discovered in `get_service_profile`, pass `index: "physical_index:<name>"`.
 - If a backend rejects explicit physical index filtering, retry without `index` and tell the user that explicit physical index filtering is unavailable for that backend.
 - After inventory, query one service/env/index at a time. Aggregate by `SeverityText`, a structured attribute, or a specific pattern before fetching raw lines.
 
@@ -71,13 +72,13 @@ onset conclusions (a narrow raw sample is not a trend):
 - `{"$gte": ["Timestamp", "..."]}` in the pipeline is WRONG for time range queries — use the request-level params instead
 
 **CRITICAL INDEX RULES:**
-- Only pass `index` when the user explicitly names a log index in the prompt.
+- Pass `index` when the user names a log index or `get_service_profile` reports a matching non-default physical index. Select indexes using `log_index_envs` for the requested environment; query separately when several indexes match.
 - Accepted `index` values are `physical_index:<name>` and `rehydration_index:<block_name>`.
 - If the user says "rehydration index X", use `rehydration_index:X`.
 - If the user says "physical index X" or just "index X", use `physical_index:X`.
 - If the index came from `physical_index_service_count`, use the metric label `name` as the physical index name.
 - Do not pass `index` for the default physical index (`name="default"`); omit the parameter instead.
-- Do not guess or invent an `index`; omit it entirely when the user did not specify one.
+- Do not guess or invent an `index`; omit it when neither the user nor the profile identifies one. Missing profile routing fields do not establish a default index; never infer index environments from `deployment.envs`.
 
 **CRITICAL ATTRIBUTE DISCOVERY RULES:**
 - **ALWAYS call `get_log_attributes` BEFORE building a filter on any attribute you did not observe in a previous result.**
@@ -143,6 +144,8 @@ The JSON pipeline format supports filtering, parsing, aggregation on log data.
 3. **aggregate** - Perform aggregations (sum, avg, count, etc.)
 4. **window_aggregate** - Time-windowed aggregations
 
+No other stage type exists: `transform` and `select` are rejected.
+
 ### Filter Operations:
 ```json
 {
@@ -194,6 +197,7 @@ The JSON pipeline format supports filtering, parsing, aggregation on log data.
 
 ### Parse Operations:
 Note that regex parsing operators also work as regex filters
+Regexps (`$regex` family and the `regexp` parser) use RE2 syntax: no lookahead/lookbehind, backreferences or possessive quantifiers; negate with `$notregex`.
 ```json
 {
   "type": "parse",

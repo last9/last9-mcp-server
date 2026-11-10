@@ -1,0 +1,91 @@
+package alerting
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"strings"
+
+	"last9-mcp/internal/last9api"
+	"last9-mcp/internal/last9api/alerts"
+	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+// DescribeAlertChartArgs holds the input arguments for describe_alert_chart.
+type DescribeAlertChartArgs struct {
+	Surface     string            `json:"surface" jsonschema:"(Required) Surface identifier; currently covered surfaces: discover-service, discover-exceptions"`
+	ChartKey    string            `json:"chart_key" jsonschema:"(Required) Chart key within the surface, for example apdex, error_rate, response_time, exception_count"`
+	ServiceName string            `json:"service_name" jsonschema:"(Required) Service/entity name the chart is scoped to"`
+	Env         string            `json:"env,omitempty" jsonschema:"Environment when the chart distinguishes one, for example prod"`
+	Attributes  map[string]string `json:"attributes,omitempty" jsonschema:"Extra identity dimensions some charts need; use exactly the key names describe reports"`
+}
+
+// NewDescribeAlertChartHandler returns the MCP tool handler for
+// describe_alert_chart: a read-only enumerate of the alertable signals on a
+// covered chart.
+func NewDescribeAlertChartHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, DescribeAlertChartArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args DescribeAlertChartArgs) (*mcp.CallToolResult, any, error) {
+		surface := strings.TrimSpace(args.Surface)
+		if surface == "" {
+			return utils.ToolErrorResult("surface is required"), nil, nil
+		}
+		if msg := uncoveredSurfaceError(surface, cfg.ToolFilter); msg != "" {
+			return utils.ToolErrorResult(msg), nil, nil
+		}
+		chartKey := strings.TrimSpace(args.ChartKey)
+		if chartKey == "" {
+			return utils.ToolErrorResult("chart_key is required"), nil, nil
+		}
+		serviceName := strings.TrimSpace(args.ServiceName)
+		if serviceName == "" {
+			return utils.ToolErrorResult("service_name is required"), nil, nil
+		}
+
+		body, err := alerts.DescribeAlertChart(ctx, last9api.NewClient(client, cfg), alerts.IntelligenceRequest{
+			Surface:  surface,
+			ChartKey: chartKey,
+			Entity:   alertIntelEntity(serviceName, args.Env, args.Attributes),
+		})
+		if err != nil {
+			var apiErr *utils.UpstreamHTTPError
+			if errors.As(err, &apiErr) {
+				return utils.ToolErrorResult(alertIntelGuidance(apiErr)), nil, nil
+			}
+			return nil, nil, err
+		}
+		out, ok := withChartAlertPath(body)
+		if !ok {
+			return utils.ToolErrorResult(fmt.Sprintf("describe_alert_chart: upstream response is not a JSON object: %.200s", body)), nil, nil
+		}
+		var described alerts.IntelligenceResponse
+		if json.Unmarshal(body, &described) == nil {
+			recordDescribedChart(requestSession(req), surface+"/"+chartKey, described.Signals)
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(out)}}}, nil, nil
+	}
+}
+
+const chartAlertPathNote = "create_alert_from_chart with a listed signal key. Do not copy eval_query into create_alert, create_kpi, prometheus_range_query, or validate_alert_expression; pasted PromQL is not a custom-query parameter on this path."
+
+// withChartAlertPath reports false when body is not a JSON object (`null` decodes to a nil map).
+func withChartAlertPath(body []byte) ([]byte, bool) {
+	var payload map[string]json.RawMessage
+	if json.Unmarshal(body, &payload) != nil || payload == nil {
+		return nil, false
+	}
+	note, err := json.Marshal(chartAlertPathNote)
+	if err != nil {
+		return nil, false
+	}
+	payload["alert_path"] = note
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return nil, false
+	}
+	return out, true
+}

@@ -23,7 +23,8 @@ Rows are returned in the same order the Databases dashboard shows: busiest first
 
 Parameters:
 - env: (Optional) Filter by deployment environment. Accepts a regular expression, so
-  "prod|staging" matches either. Default: all environments.
+  "prod|staging" matches either. Default: all environments. For one exact environment
+  use get_database_queries or get_service_performance_details, which take a literal name.
 - lookback_minutes: (Optional) Time window in minutes (default: 60). The window may not
   exceed 7 days.
 - start_time_iso: (Optional) Start time in RFC3339 format. Overrides lookback_minutes.

@@ -75,7 +75,7 @@ func GetTracesInputSchema() map[string]interface{} {
 func tracejsonQuerySchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":        "array",
-		"description": "JSON pipeline query for traces. An ordered list of stages: filter → parse → transform → aggregate/window_aggregate. Each stage is an object with a 'type' field.",
+		"description": "(Required) JSON pipeline query for traces. An ordered list of stages: filter → parse → transform → aggregate/window_aggregate. Each stage is an object with a 'type' field.",
 		"items": map[string]interface{}{
 			"oneOf": []interface{}{
 				filterStageSchema(),
@@ -187,7 +187,7 @@ func transformStageSchema() map[string]interface{} {
 			"type": stringEnum("transform"),
 			"transforms": map[string]interface{}{
 				"type": "array",
-				"description": "List of transform entries, each with 'function' (object) and 'as' (string or array of strings). " +
+				"description": "List of transform entries, each with 'function' (object) and 'as' (array of output field names, e.g. [\"endpoint\"]). " +
 					"Functions: {\"$split\": [\"field\", \"delim\", index]}, {\"$split_into\": [\"field\", \"delim\"]}, " +
 					"{\"$concat\": [\"f1\", \"f2\"]}, {\"$join\": [\"sep\", \"f1\", \"f2\"]}, " +
 					"{\"$replace_regex\": [\"field\", \"pattern\", \"replacement\"]}, " +

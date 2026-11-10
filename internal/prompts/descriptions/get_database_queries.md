@@ -12,7 +12,7 @@ This is useful for identifying:
 Parameters:
 - db_system: (Required) Database system (e.g. "postgresql", "mysql", "mongodb", "redis").
 - host: (Optional) Database host to filter by (net_peer_name).
-- env: (Optional) Deployment environment filter.
+- env: (Optional) Exact deployment environment name, e.g. production. Default all environments (empty or .*). Anchored ^production$ is accepted and matched exactly; alternation (a|b) and wildcards (prod.*) are rejected. List names with get_service_environments. The response echoes the matched `env`, plus `env_requested` when it differed.
 - lookback_minutes: (Optional) Time window in minutes (default: 60).
 - start_time_iso: (Optional) Start time in RFC3339 format.
 - end_time_iso: (Optional) End time in RFC3339 format.

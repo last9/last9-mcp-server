@@ -7,7 +7,7 @@
 # BUILDPLATFORM == TARGETPLATFORM, so the builder is native and the pure-Go
 # (CGO_ENABLED=0) binary is compiled for TARGETARCH without emulation. The ARGs
 # also keep a plain `docker buildx build --platform` cross-build working locally.
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates
@@ -39,8 +39,9 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -a -installsuff
 # Final stage - minimal image for MCP server
 FROM alpine:latest
 
-# Install ca-certificates for HTTPS requests
-RUN apk --no-cache add ca-certificates
+# Install ca-certificates for HTTPS requests; --upgrade pulls the current
+# bundle even when the base image ships an older one.
+RUN apk add --no-cache --upgrade ca-certificates ca-certificates-bundle
 
 # Create non-root user
 RUN adduser -D -s /bin/sh mcp

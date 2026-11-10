@@ -15,7 +15,7 @@ import (
 )
 
 type GetDatabasesArgs struct {
-	Env             string  `json:"env,omitempty" jsonschema:"Deployment environment to filter by (e.g. production). Accepts a regular expression, e.g. prod|staging"`
+	Env             string  `json:"env,omitempty" jsonschema:"(Optional) Regular expression over deployment environment, e.g. prod|staging matches either. Default all environments. For one exact environment use get_database_queries or get_service_performance_details, which take a literal name."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Minutes to look back (default: 60, minimum: 1, maximum window: 7 days)"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339 format"`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339 format"`
@@ -54,7 +54,7 @@ func NewGetDatabasesHandler(client *http.Client, cfg models.Config) func(context
 
 		meta := deeplink.ToMeta(deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildDatabasesLink())
 		if len(resp.Databases) == 0 && len(fieldErrs) == 0 {
-			return &mcp.CallToolResult{Meta: meta, Content: noDatabasesContent()}, nil, nil
+			return &mcp.CallToolResult{Meta: meta, Content: noDatabasesContent(args, in.TimeRange.From, in.TimeRange.To)}, nil, nil
 		}
 
 		payload, err := json.Marshal(buildPayload(resp.Databases, fieldErrs))
@@ -82,9 +82,13 @@ func discoverInputFor(args GetDatabasesArgs) (databases.DiscoverDatabasesInput, 
 	return in, nil
 }
 
-func noDatabasesContent() []mcp.Content {
+func noDatabasesContent(args GetDatabasesArgs, startUnix, endUnix int64) []mcp.Content {
 	return []mcp.Content{&mcp.TextContent{
-		Text: "No databases found for the given parameters. Databases are discovered from OpenTelemetry client spans (db_system set) and from infrastructure metrics such as CloudWatch. Widen the time range or check that either signal is being sent.",
+		Text: apmEmptyAdvice(
+			"databases",
+			apmGuidanceArgs{env: args.Env, startUnix: startUnix, endUnix: endUnix},
+			"verify OpenTelemetry database client spans or infrastructure metrics are being sent",
+		),
 	}}
 }
 

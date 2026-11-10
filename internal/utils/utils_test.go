@@ -176,6 +176,46 @@ func TestGetTimeRange_TimezoneHandling(t *testing.T) {
 	}
 }
 
+func TestGetTimeRangeValidationErrorsIncludeFormatExamples(t *testing.T) {
+	tests := []struct {
+		name   string
+		params map[string]interface{}
+		want   []string
+	}{
+		{
+			name:   "bad lookback type",
+			params: map[string]interface{}{"lookback_minutes": "2 hours"},
+			want:   []string{"Invalid lookback_minutes", "Use minutes as a number", "60"},
+		},
+		{
+			name:   "bad timestamp",
+			params: map[string]interface{}{"start_time_iso": "yesterday"},
+			want:   []string{"Invalid start_time_iso", "RFC3339", "2026-02-09T15:04:05Z"},
+		},
+		{
+			name: "inverted window",
+			params: map[string]interface{}{
+				"start_time_iso": "2026-02-09T16:04:05Z",
+				"end_time_iso":   "2026-02-09T15:04:05Z",
+			},
+			want: []string{"start_time_iso must be before end_time_iso", "Swap the timestamps"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := GetTimeRange(tt.params, 60)
+			if err == nil {
+				t.Fatal("expected validation error")
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("error %q missing %q", err.Error(), want)
+				}
+			}
+		})
+	}
+}
+
 func TestGetTimeRange_LookbackMinutes(t *testing.T) {
 	tests := []struct {
 		name                   string

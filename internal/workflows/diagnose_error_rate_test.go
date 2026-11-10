@@ -49,6 +49,9 @@ func TestDiagnoseErrorRateAggregatesFirst(t *testing.T) {
 	if !strings.Contains(got, "AGGREGATE FIRST") {
 		t.Errorf("template must instruct aggregate-first:\n%s", got)
 	}
+	if !strings.Contains(got, "do not provide exact exception time bounds") {
+		t.Errorf("template must not treat aggregate exception rows as time-bounded samples:\n%s", got)
+	}
 }
 
 func TestDiagnoseErrorRateRendersEnvBranches(t *testing.T) {
@@ -87,5 +90,66 @@ func TestDiagnoseErrorRateRendersEnvBranches(t *testing.T) {
 	step1 := lineStartingWith(t, got2, "1.")
 	if !strings.Contains(step1, "get_service_environments") || !strings.Contains(step1, "get_service_performance_details") {
 		t.Errorf("env-absent step 1 must sequence env resolution and perf-details in one list item:\n%s", got2)
+	}
+}
+
+// The change check sits right after the performance read, in its own step.
+func TestDiagnoseErrorRateChecksRecentChange(t *testing.T) {
+	res, err := DiagnoseErrorRate.Handler(context.Background(), &mcp.GetPromptRequest{
+		Params: &mcp.GetPromptParams{Arguments: map[string]string{"service": "checkout", "time": "1h", "env": "prod"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := res.Messages[0].Content.(*mcp.TextContent).Text
+	assertChecksRecentChange(t, DiagnoseErrorRate.Name, got)
+	step2 := lineStartingWith(t, got, "2.")
+	if !strings.Contains(step2, "get_change_events (service_name=checkout)") || !strings.Contains(step2, "analyze_change_impact") {
+		t.Errorf("step 2 must find the change and judge it:\n%s", step2)
+	}
+}
+
+func TestDiagnoseErrorRateChecksLogNoveltyBeforeRawLines(t *testing.T) {
+	res, err := DiagnoseErrorRate.Handler(context.Background(), &mcp.GetPromptRequest{
+		Params: &mcp.GetPromptParams{Arguments: map[string]string{"service": "checkout", "time": "1h", "env": "prod"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := res.Messages[0].Content.(*mcp.TextContent).Text
+	for _, want := range []string{
+		"get_emerging_log_patterns(service_name=checkout, env=prod",
+		// An empty result rules out only changes above both thresholds, so rarer or sample-only changes must still be checked.
+		"no log novelty above min_count and change_factor, not unchanged logs",
+		"below_min_count_patterns",
+		"sample_limit_reached",
+		// Error triage compares error templates, but severity_filters drop body-level lines when severity_set is none or partial.
+		`severity_filters=["error", "fatal", "critical"] only when severity_set is "all"`,
+		// Unfiltered, info and debug churn can fill the sample and top_n and fold error templates into other.
+		`When severity_set is none or partial`,
+		`body_filters=["error", "exception", "fatal"]`,
+		`raise top_n`,
+		"get_log_patterns(service_name=checkout, env=prod) over 1h, with the same severity_filters and body_filters rules",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("template should contain %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestDiagnoseErrorRateNamesDominantLogTemplatesBeforeRawLines(t *testing.T) {
+	res, err := DiagnoseErrorRate.Handler(context.Background(), &mcp.GetPromptRequest{
+		Params: &mcp.GetPromptParams{Arguments: map[string]string{"service": "checkout", "time": "1h", "env": "prod"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := res.Messages[0].Content.(*mcp.TextContent).Text
+	emerging := strings.Index(got, "get_emerging_log_patterns(service_name=checkout, env=prod")
+	aggregate := strings.Index(got, "AGGREGATE FIRST")
+	patterns := strings.Index(got, "get_log_patterns(service_name=checkout, env=prod")
+	rawLines := strings.Index(got, "before reading any raw lines")
+	if emerging < 0 || aggregate < emerging || patterns < aggregate || rawLines < patterns {
+		t.Errorf("want get_emerging_log_patterns, the aggregate, then get_log_patterns, all before raw lines:\n%s", got)
 	}
 }

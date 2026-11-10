@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strconv"
 
 	"last9-mcp/internal/deeplink"
@@ -24,10 +23,21 @@ type RedMetrics struct {
 type ServiceDependencyGraphDetails struct {
 	ServiceName      string                `json:"service_name"`
 	Env              string                `json:"env"`
+	EnvRequested     string                `json:"env_requested,omitempty"`
 	Incoming         map[string]RedMetrics `json:"incoming"`
 	Outgoing         map[string]RedMetrics `json:"outgoing"`
 	MessagingSystems map[string]RedMetrics `json:"messaging_systems"`
 	Databases        map[string]RedMetrics `json:"databases"`
+	Hint             string                `json:"hint,omitempty"`
+}
+
+// incomingCallersQuery ranks the services calling escSvc by requests per minute.
+// escSvc and escEnv must already be PromQL-label escaped.
+func incomingCallersQuery(escSvc, escEnv string, windowMin int) string {
+	return fmt.Sprintf(
+		`sum by (client)(sum_over_time(trace_call_graph_count{server="%s", env=~"%s"}[%dm])) / %d`,
+		escSvc, escEnv, windowMin, windowMin,
+	)
 }
 
 func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServiceDependencyGraphArgs) (*mcp.CallToolResult, any, error) {
@@ -38,11 +48,9 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 
 		env := args.Env
-		envForQuery := env
-		if envForQuery == "" {
-			envForQuery = ".*" // default environment
-		} else {
-			envForQuery = regexp.QuoteMeta(envForQuery)
+		envForQuery, literalEnv, envDisplay, err := literalEnvPattern(env)
+		if err != nil {
+			return nil, nil, err
 		}
 		serviceName := args.ServiceName
 		if serviceName == "" {
@@ -60,10 +68,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 
 		// Incoming requests (HTTP server operations):
 		// throughput
-		incomingThroughputQuery := fmt.Sprintf(
-			`sum by (client)(sum_over_time(trace_call_graph_count{server="%s", env=~"%s"}[%s])) / %d`,
-			escSvc, escEnv, timeRange, int((endTimeParam-startTimeParam)/60),
-		)
+		incomingThroughputQuery := incomingCallersQuery(escSvc, escEnv, int((endTimeParam-startTimeParam)/60))
 		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, incomingThroughputQuery, endTimeParam, cfg)
 		if err != nil {
 			return nil, nil, err
@@ -441,11 +446,25 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		// Prepare the final response structure
 		details := ServiceDependencyGraphDetails{
 			ServiceName:      serviceName,
-			Env:              env,
+			Env:              envDisplay,
+			EnvRequested:     envRequested(env, envDisplay),
 			Incoming:         incoming,
 			Outgoing:         outgoing,
 			Databases:        databases,
 			MessagingSystems: messagingSystems,
+		}
+		if len(incoming) == 0 && len(outgoing) == 0 && len(databases) == 0 && len(messagingSystems) == 0 {
+			details.Hint = apmEmptyAdvice(
+				"dependency graph data",
+				apmGuidanceArgs{
+					serviceName: serviceName,
+					env:         literalEnv,
+					startUnix:   startTimeParam,
+					endUnix:     endTimeParam,
+				},
+				"confirm the service emits APM call graph metrics",
+				"try get_service_profile for the service before choosing log or trace tools",
+			)
 		}
 		// Return the response
 		resultJSON, err := json.Marshal(details)
@@ -455,7 +474,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 
 		// Build deep link URL
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, deeplink.APMCatalogEnvExact(env), "dependency")
+		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, deeplink.APMCatalogEnvExact(literalEnv), "dependency")
 
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dashboardURL),

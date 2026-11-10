@@ -24,6 +24,7 @@ func TestServiceDependencyGraph_EnvRegexQuoting(t *testing.T) {
 		{name: "plain env", env: "prod", wantMatch: "prod", wantReject: "staging"},
 		{name: "dotted env", env: "prod.v1", wantMatch: "prod.v1", wantReject: "prodXv1"},
 		{name: "bracketed env", env: "prod[blue]", wantMatch: "prod[blue]", wantReject: "prodb"},
+		{name: "anchored env", env: "^production$", wantMatch: "production", wantReject: "production-eu"},
 	}
 
 	for _, tt := range tests {

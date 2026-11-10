@@ -1,12 +1,23 @@
 Rank APM server-span services over one time window. Each row is one (service, env) with interval request_count, throughput_rpm, http_4xx_count, http_5xx_count, and grpc_error_count. The server sorts, limits, and stamps rank. Cite `rows` only; never invent service names.
 
-Use this tool for fleet ranking by volume, rpm, HTTP 4xx, HTTP 5xx, or gRPC errors. It is the only fleet ranking tool for those questions.
+## When to use
+Fleet ranking by volume, rpm, HTTP 4xx, HTTP 5xx, or gRPC errors. It is the only fleet ranking tool for those questions.
 
-When not to use:
-- Exceptions → get_exceptions
-- Log status codes or log-only services → get_logs
-- Unlabeled percentages or current-vs-baseline change → get_apm_service_deviations
-- One service's RED charts → get_service_performance_details
+## When not to use
+- Exceptions → `get_exceptions`
+- Log status codes or log-only services → `get_logs`
+- Unlabeled percentages or current-vs-baseline change → `get_apm_service_deviations`
+- One service's RED charts → `get_service_performance_details`
+
+## Pairs well with
+- `get_service_environments` (env values)
+- `get_service_performance_details` (drill into a ranked row)
+
+## Output shape
+`rows` of (service, env) with rank and the counts above, plus the envelope listed below.
+
+## Known traps
+`env` is a regex: `prod` also matches `production`; anchor it as `^prod$`.
 
 Language → sort_by (pass the named key; unlabeled "highest errors" is not the default):
 - top / highest HTTP 5xx → http_5xx_count
@@ -49,6 +60,6 @@ Parameters:
 - lookback_minutes: (Optional) Minutes to look back from now. Default 60. Minimum 1.
 - start_time_iso: (Optional) Start of the interval in RFC3339/ISO8601 (e.g. 2026-02-09T15:04:05Z).
 - end_time_iso: (Optional) End of the interval in RFC3339/ISO8601 (e.g. 2026-02-09T16:04:05Z).
-- env: (Optional) Environment Prom regex. Default .*.
+- env: (Optional) Environment PromQL regex. Default .*. Exact single env needs anchors (^prod$). For literal-name matching use get_service_performance_details or get_service_operations_summary.
 - sort_by: (Optional) request_count (default), throughput_rpm, http_4xx_count, http_5xx_count, or grpc_error_count.
 - limit: (Optional) Max ranked rows. Omit or 0 means 10. Other values below 1 are an error. Values above 100 clamp to 100.

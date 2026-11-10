@@ -28,8 +28,27 @@
 	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
 	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
 	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
-	- datasource: (Optional) Name of the datasource to query. If omitted, uses the default configured datasource.
+	- datasource: (Optional) Datasource name; omitted uses the default, a typo its closest match; looser or ambiguous names list candidates, no query. An additional block names it unless the name was exact.
 
 	**Time:** Prefer `lookback_minutes` for relative windows; `start_time_iso`+`end_time_iso` (RFC3339) override lookback. On lookback validation errors, retry with explicit ISO bounds instead of `lookback_minutes`.
 
 	Full metrics usage guide: resource `last9://reference/metrics`
+
+	## When to use
+	A PromQL expression's trend over a window, for metrics no dedicated tool covers.
+
+	## When not to use
+	- One value at one time: `prometheus_instant_query`
+	- Fleet service ranking: `get_service_summary`
+	- One service's RED charts: `get_service_performance_details`
+	- Change against a baseline: `get_apm_service_deviations`
+
+	## Pairs well with
+	- `prometheus_labels` and `prometheus_label_values` (discover names first)
+	- `list_datasources` (pick a datasource)
+
+	## Output shape
+	Series `[{metric, value}]`; each value is `[timestamp, "string"]`.
+
+	## Known traps
+	Values are strings; parse before comparing. A guessed metric name returns an empty result, not an error.

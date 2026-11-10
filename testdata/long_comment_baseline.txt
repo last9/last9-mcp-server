@@ -1,0 +1,269 @@
+description_sections_test.go	4	// sectionedTools are get_workspace_overview, the recommended first call, and
+description_sections_test.go	4	// omittedSections lists sections a tool leaves out because they measurably
+description_sections_test.go	4	// sectionViolations reports missing or misordered required sections and
+dump.go	13	// dumpTools registers every tool and the server instructions exactly as the
+http_server.go	4	// requestToolsets returns the tools a request may see: the startup set
+http_server_test.go	7	// TestStatelessStreamableHandler verifies the HTTP handler runs in stateless
+instructions_test.go	4	// "; alerts are created as drafts" on this line repeated the created-disabled
+instructions_wording_test.go	8	// pinnedInstructionLines is the wording of every prose line in
+integer_args.go	4	// Models sometimes quote integer ids ({"channel_id": "42"}) and the SDK validates
+integer_args.go	4	// coerceIntegerArguments returns args with every number-like string under an integer
+internal/alerting/alert_config_unconfigured_only_test.go	6	// TestGetAlertConfigHandler_NotificationChannelAndUnconfiguredOR_ResolvesKPIs
+internal/alerting/alert_groups_test.go	5	// sampleAlertGroupsWithCaseVariantLabelKeys adds an entity that stores two
+internal/alerting/alert_groups_test.go	7	// TestGetAlertGroupsHandler_LabelCaseInsensitiveAcrossDuplicateCaseVariantKeys
+internal/alerting/alert_groups_test.go	6	// TestMatchesAlertGroupEntityFilters_LabelCaseInsensitiveDuplicateCaseVariantKeys
+internal/alerting/alert_rule_state_overflow_test.go	4	// TestAlertRuleStateHandler_LoopBoundedByCap drives the handler with a range
+internal/alerting/alert_rule_state_overflow_test.go	6	// TestAlertRuleStateHandler_TransportBypassBlocked reproduces the original
+internal/alerting/entity_alert_rules.go	4	// formatEntityAlertRulesResponse formats entity-scoped rules showing expression/indicator
+internal/alerting/get_alert_config.go	4	// See isUnconfiguredOnlyRequest for the semantics. A channel-fetch
+internal/alerting/integration_test.go	4	// At least one rule should have expression_args (static threshold rules created
+internal/alerting/integration_test.go	4	// If any indicators present, each must have PromQL or a lookup failure note.
+internal/alerting/notification_channels.go	8	// isUnconfiguredOnlyRequest reports whether the request is a pure
+internal/alerting/patch_alert.go	4	// The API overwrites the whole stored properties object on PATCH, so fields the caller
+internal/alerting/search_term_omission_test.go	13	// TestSearchTermOmitsTeamTierLabels guards the bug introduced in commit
+internal/alerting/search_term_omission_test.go	4	// "domain" appears only as a label key on entity-1; it is absent
+internal/alerting/search_term_omission_test.go	5	// "staging" appears as a label value (env=staging) on entity-2.
+internal/alerting/search_term_omission_test.go	6	// "checkout" appears in entity-1's Name ("Checkout Alerts"),
+internal/alerting/search_term_omission_test.go	4	// Severity "threat" restricts to rule-2; "domain" (label key on
+internal/alerting/search_term_omission_test.go	7	// TestMatchesAlertConfigSearchTerm exercises the pure predicate directly
+internal/apm/apm_promql_escaping_test.go	14	// This file pins the PromQL-injection fix for the three APM handlers that
+internal/apm/apm_promql_escaping_test.go	4	// apmCaptureServer is a stub Last9 Prom backend that records every PromQL
+internal/apm/apm_promql_escaping_test.go	4	// injectionPayload is the balanced breakout payload from the bug report
+internal/apm/apm_promql_escaping_test.go	4	// safeEscapeInputs are service_name / env values that DO NOT themselves embed
+internal/apm/apm_promql_escaping_test.go	4	// TestAPMHandlers_HappyPathDoubleQuotedMatchers asserts plain values still
+internal/apm/apm_promql_escaping_test.go	4	// TestAPMHandlers_EnvRegexSyntax pins the env contract for the three handlers
+internal/apm/apm_test.go	14	// A single-chunk (<=35 day) window never gets chunked, so a non-2xx
+internal/apm/apm_test.go	6	// TestServiceOperationsSummary_IncludesInboundServerEndpoints is the
+internal/apm/apm_test.go	6	// TestServiceOperationsSummary_AllCategoriesAppended guards all four
+internal/apm/apm_test.go	4	// TestServiceOperationsSummary_EmptyBackendsYieldsNoOperations confirms
+internal/apm/databases.go	6	// Apply MinDurationMs client-side, matching the trace-side $gte filter.
+internal/apm/databases_test.go	11	// TestDatabaseLatencyQueries_NoUnitMultiplier is a regression test for a unit
+internal/apm/databases_test.go	9	// TestGetDatabaseSlowQueriesHandler_MinDurationMs_FiltersLogs is a regression
+internal/apm/deviations.go	5	// operationCardinalityWarningThreshold is the distinct span-name count above
+internal/apm/deviations_cap_regression_test.go	14	// TestDeviationCapRegressionBeatsCrossCategoryImprovement confirms the fix for
+internal/apm/deviations_cap_repro_test.go	4	// TestLimitDeviationResultFillsRemainingCapacityWithStableServices confirms
+internal/apm/deviations_cap_repro_test.go	4	// TestLimitDeviationResultCapsAllStableFleetAlphabetically confirms the
+internal/apm/deviations_cap_repro_test.go	5	// TestLimitDeviationResultRespectsLeaderboardPriorityOrder confirms that when
+internal/apm/deviations_cap_repro_test.go	4	// Two regressions: a low-magnitude reliability regression on svc-a (priority
+internal/apm/deviations_cap_repro_test.go	4	// TestDeviationHandlerWarnsOnHighOperationCardinality confirms the guardrail
+internal/apm/deviations_cap_repro_test.go	4	// TestLimitDeviationResultKeepsTelemetryChangesOverStableServices confirms
+internal/apm/deviations_input_schema.go	5	// GetAPMServiceDeviationsInputSchema returns the MCP-facing JSON Schema for
+internal/apm/deviations_postprocess.go	8	// Deviating identities are admitted in priority order: all regressions
+internal/apm/deviations_postprocess.go	11	// orderedDeviationSlices returns the deviation slices in admission-priority
+internal/apm/deviations_query.go	5	// deviationQueryOverloadError marks datasource responses in the
+internal/apm/deviations_query.go	8	// No candidate pre-filter: the deviation math runs over every identity in
+internal/apm/deviations_query.go	4	// The outer parentheses are load-bearing: the top-level operator here is
+internal/apm/deviations_query_test.go	9	// TestDeviationQueriesHaveNoCandidatePreFilter guards the hard-completeness
+internal/apm/deviations_query_test.go	5	// TestExecuteDeviationQueriesClassifiesOverloadFailuresAsRejected confirms
+internal/apm/deviations_query_test.go	11	// TestErrorPercentageDistributionDividesWholeZeroFilledErrorUnion guards the
+internal/apm/deviations_query_test.go	4	// The errorPercentageExpression is replicated once per distribution
+internal/apm/deviations_query_test.go	4	// parenDepthAt returns the parenthesis nesting depth at position idx in expr,
+internal/apm/deviations_window_test.go	8	// TestResolveDeviationWindowsLookbackFloorBoundary pins the now-dependent
+internal/apm/env_pattern.go	16	// literalEnvPattern converts a tool's env argument into the regex fragment
+internal/apm/golden_signals.go	4	// GoldenSignals are one service's server-span aggregates over one window.
+internal/apm/golden_signals.go	5	// goldenLatencyQuery aggregates each latency quantile series within one env the
+internal/apm/service_performance_details.go	14	// get_service_performance_details used to reuse the full requested
+internal/apm/service_performance_details.go	5	// maxServicePerformanceWindowDays is NOT a data-retention cutoff — a
+internal/apm/service_performance_details.go	4	// perfDetailsMaxTopN caps top_n so a huge requested value can't blow up
+internal/apm/service_performance_details.go	5	// Caps output timestamps per series per chunk. Only safe because every
+internal/apm/service_performance_details.go	12	// splitIntoPerfDetailsChunks splits [start, end) into as-close-to-equal-width
+internal/apm/service_performance_details.go	10	// mergeChunkedSeries stitches per-chunk TimeSeries results (in chunk order)
+internal/apm/service_performance_details.go	4	// chunkWindowSelector renders a chunk's own width as a PromQL range-vector
+internal/apm/service_performance_details.go	21	// fetchChunkedRangeSeries runs a range-vector query once per chunk (via
+internal/apm/service_performance_details.go	16	// fetchChunkedTopK runs an instant-query top-k-style query once per chunk
+internal/apm/service_performance_details.go	7	// mergeTopInt64 merges topk-style instant-query results for count-style
+internal/apm/service_performance_details.go	5	// Ceiling-divide so the reported "got X days" is always strictly
+internal/apm/service_performance_details.go	5	// Get Top Operations by Response Time - keep vector output. This is
+internal/apm/service_performance_details.go	4	// Get Top Operations by Error Rate - keep vector output. Unlike
+internal/apm/service_performance_details_window_test.go	4	// Chunks must be as-close-to-equal-width as possible (all widths within
+internal/apm/service_performance_details_window_test.go	5	// splitIntoPerfDetailsChunks currently never produces a chunk narrower than
+internal/apm/service_performance_details_window_test.go	5	// TestMergeChunkedSeries_MisalignedGridBoundary_NoDuplicatesMonotonic covers
+internal/apm/service_performance_details_window_test.go	5	// The message must not be self-contradictory: at exactly 366 days + 1
+internal/apm/service_performance_details_window_test.go	5	// The budget is per chunk, not per merged series: mergeChunkedSeries
+internal/apm/service_performance_details_window_test.go	4	// TestServicePerformanceDetails_TopN covers the new optional top_n arg
+internal/apm/service_performance_details_window_test.go	4	// TestServicePerformanceDetails_TopNClampsToMax asserts a huge requested
+internal/apm/service_performance_details_window_test.go	10	// deadlineRecordingTransport wraps a RoundTripper and records, for every
+internal/apm/service_performance_details_window_test.go	7	// TestServicePerformanceDetails_PerChunkTimeoutOnlyAppliedWhenChunked asserts
+internal/apm/service_profile.go	4	// The raw JSON is the payload of record; parsing only builds the brief.
+internal/apm/service_summary_input_schema.go	5	// GetServiceSummaryInputSchema returns the MCP-facing JSON Schema for
+internal/auth/token_cancel_initiator_test.go	4	// The shared refresh must not inherit the lifetime of whichever tool call
+internal/auth/token_cancel_waiter_test.go	4	// A tool call that is canceled while another caller's refresh is in flight
+internal/auth/token_manager.go	8	// condMu guards refreshing and is the locker that backs refreshCond. It
+internal/auth/token_manager.go	5	// refreshToken performs a single OAuth refresh. It must be entered with
+internal/auth/token_manager_test.go	4	// fakeJWT builds an unsigned JWT whose payload decodes to the given claims.
+internal/auth/token_manager_test.go	4	// simulateRefreshCompletion mirrors what refreshToken's success path does:
+internal/auth/token_manager_test.go	7	// TestGetAccessToken_DoesNotCrashWhenRefreshInFlight is the direct regression
+internal/auth/token_manager_test.go	5	// TestGetAccessToken_ConcurrentWaitersAllReturnNewToken drives the crashing
+internal/auth/token_manager_test.go	4	// TestGetAccessToken_TriggersRefreshAndReturnsNewToken is an end-to-end check
+internal/auth/token_manager_test.go	6	// TestGetAccessToken_ConcurrentCallersTriggerSingleRefresh verifies the
+internal/auth/token_manager_test.go	4	// TestGetAccessToken_FailedRefreshReturnsStaleTokenAndDoesNotHang verifies
+internal/auth/token_manager_test.go	6	// TestRefreshToken_BackgroundRefreshPathNoDeadlock mirrors the backgroundRefresh
+internal/auth/token_refresh_live_test.go	6	// Live cancel coverage against the real Last9 OAuth endpoint. The unit tests
+internal/changeimpact/alerts.go	5	// startedInScope matches a rule to a scoped service by a service group label
+internal/changeimpact/alerts.go	4	// matchService reads only service keys: any other label (team, component,
+internal/changeimpact/regressions.go	5	// Regression is one verdict trigger. Env is the environment the metric was
+internal/changeimpact/regressions.go	4	// alertRegressions lists the started alerts still firing at the end of the
+internal/changeimpact/report_regressions_test.go	4	// An auto-filer acts on every regression, so an alert that already resolved
+internal/dashboards/http.go	6	// maxAPISuccessBodyBytes caps every dashboard/snapshot success body — doJSONRequest
+internal/deeplink/deeplink.go	4	// BuildAPMServiceLink creates a deep link to the APM service catalog page with the service name in the path
+internal/grafana/http.go	4	// maxAPISuccessBodyBytes caps every Grafana API success body. A large
+internal/grafana/http.go	4	// collectSearchHits walks every page of GET /api/search, keeping the caller's
+internal/grafana/pagination_test.go	5	// TestReviewDashboardPagination is the regression for the finding that search
+internal/grafana/types.go	4	// DashboardResponse is the body of GET /api/dashboards/uid/{uid}. Panels,
+internal/grafana/types.go	4	// DashboardSummary is the filtered view served by grafana_get_dashboard by
+internal/prompts/prompts_test.go	5	// TestAPMServiceDeviationsDescriptionLookbackFloor pins one sentinel phrase of
+internal/telemetry/logs/attributes.go	7	// fetchLogLabels calls GET /logs/api/v1/labels and returns the attribute names.
+internal/telemetry/logs/attributes_for_pipeline.go	17	// LogAttribute is an enriched attribute entry returned by
+internal/telemetry/logs/attributes_for_pipeline.go	6	// sampleBodyURLPattern/sampleBodyBearerPattern/sampleBodyCredentialPattern
+internal/telemetry/logs/attributes_for_pipeline.go	7	// sampleBodyForModel transforms a raw sampled log line into a value safe to
+internal/telemetry/logs/attributes_for_pipeline.go	4	// Redact credential VALUES while preserving the key + separator, so the
+internal/telemetry/logs/attributes_for_pipeline.go	5	// collectSampleBodies walks lines in order, transforms each via
+internal/telemetry/logs/attributes_for_pipeline.go	6	// plaintextBodyHint renders a ONE-stage example that filters Body directly
+internal/telemetry/logs/attributes_for_pipeline.go	4	// logfmtKVPattern extracts key=value pairs from a logfmt-style line, e.g.
+internal/telemetry/logs/attributes_for_pipeline.go	4	// isLogfmtLine reports whether line looks like real logfmt rather than prose
+internal/telemetry/logs/attributes_for_pipeline.go	8	// Well-known plaintext severity/level patterns, tried in priority order.
+internal/telemetry/logs/attributes_for_pipeline.go	5	// sampleBodyDerivedAttributes fetches up to bodySampleLimit raw rows for the
+internal/telemetry/logs/attributes_for_pipeline.go	6	// Cascade is result-level, not per-line: the first format that produces
+internal/telemetry/logs/attributes_for_pipeline.go	11	// Plaintext fallback: no recognized structure at all — the Body is
+internal/telemetry/logs/attributes_for_pipeline.go	13	// logFieldFilterField maps a raw log field name to the exact filter_field string
+internal/telemetry/logs/attributes_for_pipeline.go	4	// fetchLogSeriesFieldNames POSTs the given pipeline to /logs/api/v2/series/json
+internal/telemetry/logs/attributes_for_pipeline.go	22	// Merge: drop a body-derived entry when (a) an indexed entry already
+internal/telemetry/logs/attributes_for_pipeline_test.go	4	// TestGetLogAttributesForPipeline_BodyDerivedFields verifies that top-level keys
+internal/telemetry/logs/attributes_for_pipeline_test.go	5	// TestGetLogAttributesForPipeline_SeverityFamilyDedup verifies that a
+internal/telemetry/logs/attributes_for_pipeline_test.go	5	// TestGetLogAttributesForPipeline_BodyNotJSON verifies a plain-text Body that
+internal/telemetry/logs/attributes_for_pipeline_test.go	8	// TestGetLogAttributesForPipeline_IndexedLevelFieldNotHijackedBySeverityToken
+internal/telemetry/logs/attributes_for_pipeline_test.go	6	// TestGetLogAttributesForPipeline_SeverityTokenSampleBodyIsMatchedLine
+internal/telemetry/logs/attributes_for_pipeline_test.go	4	// TestGetLogAttributesForPipeline_PlaintextInlineLevel verifies a plaintext
+internal/telemetry/logs/attributes_for_pipeline_test.go	5	// TestGetLogAttributesForPipeline_UnstructuredNoLevel verifies a plaintext
+internal/telemetry/logs/attributes_for_pipeline_test.go	8	// TestGetLogAttributesForPipeline_PlaintextFallbackSurvivesIndexedBodyDup
+internal/telemetry/logs/attributes_for_pipeline_test.go	4	// TestGetLogAttributesForPipeline_LogfmtProseRejected verifies incidental
+internal/telemetry/logs/attributes_for_pipeline_test.go	5	// Regression guard: no Source=="body" entry may be a fabricated
+internal/telemetry/logs/attributes_for_pipeline_test.go	4	// TestFirstNonEmptySampleBody_URLRedacted verifies the returned sample body
+internal/telemetry/logs/attributes_for_pipeline_test.go	4	// TestFirstNonEmptySampleBody_SkipsLineThatSanitizesToEmpty verifies that a
+internal/telemetry/logs/attributes_test.go	4	// TestGetLogAttributesHandler_ShortWindowStillUsesLabels verifies that a short
+internal/telemetry/logs/chunking_test.go	9	// Adaptive sizing rules (mirroring the dashboard's getVolumeQueryChunks):
+internal/telemetry/logs/chunking_test.go	4	// 90-min range, offset by 60 seconds (testTimeStart). startMs=60000,
+internal/telemetry/logs/chunking_test.go	4	// Regression: when every chunk returns an upstream error and no chunk
+internal/telemetry/logs/drop_rule.go	5	// readDropRuleAPIResponse returns emptyBody when the API answers 2xx with no
+internal/telemetry/logs/get_emerging_log_patterns.go	4	// windowComparison normalises counts so windows of different length or
+internal/telemetry/logs/get_emerging_log_patterns.go	4	// perMinuteScale is what a window's sampled count is divided by to get lines
+internal/telemetry/logs/input_schema.go	6	// GetLogsInputSchema returns a hand-crafted JSON Schema for the get_logs tool.
+internal/telemetry/logs/input_schema.go	6	// logjsonQuerySchema returns the JSON Schema for the logjson_query array.
+internal/telemetry/logs/integration_test.go	4	// A deliberately non-existent env must return exactly zero logs. Any non-zero
+internal/telemetry/logs/log_pattern_scope.go	4	// sampleWindows fetches the windows concurrently: triage prompts call the
+internal/telemetry/logs/log_patterns_input_schema.go	4	// GetLogPatternsInputSchema is the schema the SDK would infer from
+internal/telemetry/logs/logs.go	8	// ShouldOptimizeLineFilterQuery is intentionally left at the zero value
+internal/telemetry/logs/logs.go	9	// Known over-fetch: each chunk asks the upstream for effectiveLimit rows,
+internal/telemetry/logs/logs.go	4	// partialErr carries chunk context (e.g. "chunk 3/6 failed: ...") and
+internal/telemetry/logs/logs.go	4	// fetchViaLogSearchAPI answers the whole search in one call, letting the API
+internal/telemetry/logs/logs.go	4	// shouldChunkGetLogsQuery returns false for pipelines containing an
+internal/telemetry/logs/query_sanitize.go	6	// Normalize map-form {"$not": {…}} to the documented single-element
+internal/telemetry/logs/query_sanitize_not_normalize_test.go	8	// TestSanitizeNormalizesMapFormNotForBodyHeuristics guards the boundary
+internal/telemetry/logs/query_sanitize_not_normalize_test.go	5	// TestSanitizedMapFormNotReachesCountSanity exercises the full
+internal/telemetry/logs/query_sanitize_not_normalize_test.go	4	// Prometheus baseline server: returns a nonzero service volume so the zero
+internal/telemetry/logs/query_sanitize_test.go	4	// The sanitizer normalizes the map-form $not to the documented
+internal/telemetry/logs/query_sanitize_test.go	5	// The count-sanity guardrail (single service + $count aggregate)
+internal/telemetry/logs/query_sanitize_test.go	7	// TestPrepareLogJSONQueryNonMapAggregateItemRejected verifies that a non-map
+internal/telemetry/logs/query_sanitize_test.go	4	// TestPrepareLogJSONQueryNonMapAggregateNoHTTPFanOut verifies that a get_logs
+internal/telemetry/logs/query_sanitize_test.go	4	// TestPrepareLogJSONQueryCatchAllTips verifies that inputs which pass schema
+internal/telemetry/logs/query_validate.go	5	// traceOnlyLogFields are span/trace fields that have no meaning as top-level
+internal/telemetry/logs/query_validate.go	6	// prepareLogJSONQuery validates then sanitizes a logjson pipeline, then
+internal/telemetry/logs/query_validate.go	4	// validateQuantileNumericDataflow makes one ordered pass over the sanitized
+internal/telemetry/logs/sample_body_test.go	4	// TestGetLogAttributesForPipeline_PlaintextFallbackFiveDistinctSamplesCappedAtThree
+internal/telemetry/logs/schema_test.go	6	// TestGetLogsArgs_SchemaCompatibility ensures the generated JSON Schema for
+internal/telemetry/logs/service_logs.go	8	// ShouldOptimizeLineFilterQuery is intentionally left at the zero value
+internal/telemetry/logs/service_logs.go	8	// Known over-fetch (regression from the pre-PR serial loop): each chunk
+internal/telemetry/logs/service_logs.go	4	// partialErr carries chunk context (e.g. "chunk 3/6 failed: ...") and
+internal/telemetry/logs/service_logs_test.go	4	// TestAddServiceLogsEnvFilter_UsesResourceAttribute verifies the env filter uses
+internal/telemetry/profiles/live_smoke_test.go	6	// Live smoke against a real org. Opt-in only.
+internal/telemetry/setup.go	5	// InitProviders initialises OTLP trace, metric, and log providers, registers
+internal/telemetry/traces/attributes.go	4	// fetchTraceTagNames GETs the global trace tag catalog and returns raw, prefixed
+internal/telemetry/traces/chunking_test.go	6	// Adaptive sizing rules (mirroring the dashboard's getVolumeQueryChunks):
+internal/telemetry/traces/chunking_test.go	4	// Regression: when every chunk returns an upstream error and no chunk
+internal/telemetry/traces/deviations.go	7	// deviationDisallowedFilterFields are top-level tracejson fields the attribute-
+internal/telemetry/traces/deviations_test.go	7	// The sanitizer must not forward a {"$and":[...]} logical operator as a single
+internal/telemetry/traces/deviations_test.go	4	// TraceId/SpanId/ParentSpanId/TraceState/Timestamp are valid get_traces fields
+internal/telemetry/traces/deviations_test.go	9	// Integration test against the live Last9 attribute-deviations endpoint. It is
+internal/telemetry/traces/exception.go	4	// Match the frontend builder: the query is serialized to JSON before it
+internal/telemetry/traces/exception.go	5	// Single quote is the matcher delimiter, not a regex special char. It must
+internal/telemetry/traces/field_mapping.go	10	// enrichAttribute converts a raw attribute name from the traces series API into
+internal/telemetry/traces/field_mapping.go	7	// normalizeTagName converts a filter_field syntax string or raw API tag name
+internal/telemetry/traces/input_schema.go	4	// GetTracesInputSchema returns a hand-crafted JSON Schema for the get_traces tool.
+internal/telemetry/traces/pipeline_sanitize_test.go	7	// A filters-array element that mixes $notnull/$exists with a sibling field
+internal/telemetry/traces/pipeline_sanitize_test.go	4	// The split produced by the existence rewriter sorts its children so the
+internal/telemetry/traces/query_sanitize.go	4	// SanitizeTraceJSONQuery validates a tracejson_query pipeline before forwarding
+internal/telemetry/traces/query_sanitize.go	4	// The backend has no $exists operator (unknown ops compile to
+internal/telemetry/traces/query_sanitize.go	5	// tracejson requires the top-level filter query to be wrapped in a
+internal/telemetry/traces/query_sanitize.go	7	// SanitizeTraceFilterConditions is SanitizeTraceJSONQuery without the top-level
+internal/telemetry/traces/query_sanitize.go	15	// splitFiltersElement expands a single filters-array element into one or more
+internal/telemetry/traces/query_sanitize.go	5	// wrapTopLevelFilterQuery ensures the top-level filter query is wrapped in a
+internal/telemetry/traces/schema_test.go	6	// TestGetTracesArgs_SchemaCompatibility ensures the generated JSON Schema for
+internal/telemetry/traces/service_traces_test.go	4	// TestGetServiceTracesHandler_LegitEmptyResultIsNotError confirms a well-formed
+internal/telemetry/traces/service_traces_test.go	4	// TestGetServiceTracesHandler_MissingResultArraySetsIsErrorAndPreservesDiagnostic
+internal/telemetry/traces/traces.go	5	// fetchTraceJSONQuery executes the trace query by resolving an
+internal/telemetry/traces/traces.go	4	// Aggregate pipelines (group-by, avg/median/quantile/stddev, etc.) must
+internal/telemetry/traces/traces.go	10	// Trace pipelines never reference the Body field, so HasExpensiveBodyParsing
+internal/telemetry/traces/traces.go	4	// partialErr carries chunk context (e.g. "chunk 3/6 failed: ...") and
+internal/telemetry/traces/traces.go	6	// findExactTraceIDInCondition returns a trace ID fast-path when an exact
+internal/toolsets/toolsets.go	4	// Parse expands a comma-separated toolset spec into allowed tool names.
+internal/utils/adaptive_chunks.go	7	// Port of dashboard/app/src/App/scenes/Logs/adaptive-chunk-loader.ts and the
+internal/utils/adaptive_chunks.go	15	// GetAdaptiveLoadingConfig picks the optimal parallelism + chunk-size policy
+internal/utils/adaptive_chunks.go	8	// getAdaptiveChunkSizeMs mirrors the size-decision branch inside frontend
+internal/utils/adaptive_chunks.go	4	// Use the full range as the chunk size for sub-threshold queries.
+internal/utils/adaptive_chunks.go	4	// GetAdaptiveChunks splits [startMs, endMs] into time chunks using the size
+internal/utils/adaptive_chunks.go	4	// splitRangeBackward emits chunks of chunkSizeMs newest-first across the
+internal/utils/adaptive_chunks.go	5	// Defensive only: getAdaptiveChunkSizeMs (the sole public caller's source
+internal/utils/count_sanity.go	8	// SumAggregateCount sums the count values across the groups/buckets of a log
+internal/utils/count_sanity.go	4	// resultRowsEmpty reports whether response's data.result is present AND
+internal/utils/count_sanity.go	5	// zeroCountSanityBlock builds the l9_sanity block emitted when a $count
+internal/utils/count_sanity.go	7	// ceilingPromWindowMinutes returns the PromQL [Nm] length that covers at least
+internal/utils/count_sanity.go	12	// serviceVolumeBaseline fetches the physical_index_service_count PromQL
+internal/utils/count_sanity.go	8	// zeroCountSanityBlockWithBaseline builds the l9_sanity block for a zero
+internal/utils/count_sanity.go	12	// AppendCountSanity attaches a top-level "l9_sanity" block to response
+internal/utils/count_sanity.go	7	// SumAggregateCount also returns !ok when data.result is genuinely
+internal/utils/count_sanity.go	11	// A zero count is the most suspicious outcome of all — silently
+internal/utils/count_sanity.go	4	// Nonzero path only, from here: needs a single scoped service to fetch a
+internal/utils/count_sanity_test.go	4	// oldPromShapeAggregateResponse mirrors the Prometheus instant-query
+internal/utils/count_sanity_test.go	5	// promEmptySeriesServer mimics the real backend shape for a service that
+internal/utils/count_sanity_test.go	9	// TestAppendCountSanity_ZeroMatchedWithParseStageAddsSanityNote verifies the
+internal/utils/count_sanity_test.go	7	// TestAppendCountSanity_ZeroMatchedGroupbyEmptyResultAddsSanityNote verifies
+internal/utils/count_sanity_test.go	5	// TestAppendCountSanity_UnparsableCountRowsNotEmptyResultStaysUntouched
+internal/utils/count_sanity_test.go	6	// TestAppendCountSanity_ZeroMatchedParseStageNoServiceEqAddsSanityNote
+internal/utils/count_sanity_test.go	5	// TestAppendCountSanity_ZeroMatchedBodyRegexFilterNoParseStageAddsSanityNote
+internal/utils/count_sanity_test.go	4	// TestAppendCountSanity_ZeroMatchedNeitherParseStageNorBodyLeavesUntouched
+internal/utils/count_sanity_test.go	5	// TestAppendCountSanity_RawJSONShape verifies at the raw-JSON level (mirroring
+internal/utils/count_sanity_test.go	6	// TestAppendCountSanity_ZeroMatchedGenuineZeroVolumeAddsGenuineZeroNote
+internal/utils/count_sanity_test.go	5	// TestAppendCountSanity_ZeroMatchedBaselineFetchFailureFallsBackToAmbiguousNote
+internal/utils/count_sanity_test.go	8	// TestAppendCountSanity_ZeroMatchedEmptySeriesBaselineIsGenuineZero is the
+internal/utils/count_sanity_test.go	4	// TestAppendCountSanity_ZeroMatchedBaselineMalformedJSONFallsBackToAmbiguousNote
+internal/utils/count_sanity_test.go	5	// TestAppendCountSanity_NonzeroMatchedEmptySeriesBaselineLeavesResponseUntouched
+internal/utils/log_search_api.go	4	// logSearchResponse is the endpoint's body. query_result is the product: if it
+internal/utils/log_search_api.go	5	// UnmarshalJSON reads the [timestamp, count] pair. The timestamp is normally an
+internal/utils/log_search_api.go	8	// DecodeLogSearchResponse flattens the endpoint's envelope into the shape
+internal/utils/log_search_api.go	4	// One malformed series (e.g. a bucket pair with the wrong
+internal/utils/log_search_api.go	4	// summarizeLogVolume folds the per-label-set histogram into a fixed-size
+internal/utils/parallel_chunks.go	9	// RunChunksParallel executes fn for every chunk with a fixed-size semaphore
+internal/utils/pipeline_inspect.go	19	// Port of the body-parse / JSON-parse detection helpers from the frontend
+internal/utils/pipeline_inspect.go	6	// PipelineHasAggregateStage reports whether any stage in the pipeline is an
+internal/utils/pipeline_inspect.go	4	// bodyTouchFilterOperators are the filter operators over Body that
+internal/utils/pipeline_inspect.go	6	// pipelineTouchesBody reports whether pipeline contains a filter condition
+internal/utils/pipeline_inspect.go	4	// anyStageFiltersOnBody walks all filter stages and reports whether any
+internal/utils/pipeline_inspect.go	6	// isOptimizedBodyFilterStage mirrors frontend isFilterStageOptimized
+internal/utils/pipeline_inspect.go	5	// collectBodyConditions returns the set of operator names that appear at
+internal/utils/pipeline_inspect_test.go	4	// TestConditionReferencesBodyLogicalShapes locks the inspectors' handling of
+internal/utils/promql_request_test.go	11	// Regression test for the PromQL range/labels/label-values "timestamp anchor"
+internal/utils/test_helpers.go	8	// SetupTestConfig creates and initializes a test configuration.
+internal/utils/test_helpers.go	4	// Retry up to 5 times on 429 (rate limit). All package binaries race to
+internal/utils/time_expr.go	11	// ParseTimeRangeExpr resolves a range expression against now. Calendar words
+internal/utils/utils.go	4	// EQExample renders a tracejson/logjson equality condition with both operands
+internal/utils/utils.go	6	// ParseToolTimestamp parses tool timestamp input into UTC.
+internal/utils/utils.go	5	// PromResolution is an opt-in resolution hint; the zero value sends neither
+internal/utils/utils.go	5	// The Last9 PromQL HTTP endpoint treats `timestamp` as the END of the
+internal/workflows/utils.go	4	// renderWorkflow errors if any Required arg is blank, then renders the embedded
+main.go	4	// dump-tools runs before full config parsing: it needs no credentials
+schema_validation_test.go	5	// TestSchemaValidationSurfacesAsToolError is the ENG-1319 regression guard:
+tool_metadata_test.go	4	// descriptionBudgetOverrides lists the tools allowed past the default, each
+tools.go	4	// toolGate applies the served-tool filter and records every tool offered to
+tools.go	5	// registerTool registers one admitted tool, keeping only the description
+tools.go	4	// registerWriteTool registers a tool that changes Last9 state. verify is the read call
+toolset_servers.go	4	// toolsetServers caches one MCP server per distinct effective tool set, keyed

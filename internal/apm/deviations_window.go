@@ -52,11 +52,11 @@ func resolveDeviationWindows(args DeviationArgs, now time.Time, queryStep time.D
 		baselineMode = "explicit"
 	}
 
-	if timeSource == "explicit" && (!isAligned(requestedCurrent.Start, queryStep) || !isAligned(requestedCurrent.End, queryStep)) {
-		return DeviationWindows{}, fmt.Errorf("explicit current window boundaries must align to query step")
+	if timeSource == "explicit" && !isWindowAligned(requestedCurrent, queryStep) {
+		return DeviationWindows{}, unalignedWindowError(requestedCurrent, queryStep, "current")
 	}
-	if baselineMode == "explicit" && (!isAligned(requestedBaseline.Start, queryStep) || !isAligned(requestedBaseline.End, queryStep)) {
-		return DeviationWindows{}, fmt.Errorf("explicit baseline window boundaries must align to query step")
+	if baselineMode == "explicit" && !isWindowAligned(requestedBaseline, queryStep) {
+		return DeviationWindows{}, unalignedWindowError(requestedBaseline, queryStep, "baseline")
 	}
 
 	effectiveCurrent := requestedCurrent
@@ -161,6 +161,26 @@ func ceilTime(value time.Time, step time.Duration) time.Time {
 
 func isAligned(value time.Time, step time.Duration) bool {
 	return value.Equal(value.UTC().Truncate(step))
+}
+
+func isWindowAligned(window TimeWindow, step time.Duration) bool {
+	return isAligned(window.Start, step) && isAligned(window.End, step)
+}
+
+// Rounding both ends to the nearest step keeps a step-multiple duration intact,
+// so a snapped baseline still matches the current window it was paired with.
+func unalignedWindowError(window TimeWindow, step time.Duration, name string) error {
+	paramPrefix := ""
+	if name == "baseline" {
+		paramPrefix = "baseline_"
+	}
+	start := window.Start.Round(step)
+	end := window.End.Round(step)
+	if !end.After(start) {
+		end = start.Add(step)
+	}
+	return fmt.Errorf("explicit %s window boundaries must align to the %ds query step; nearest aligned window: %sstart_time_iso=%s %send_time_iso=%s",
+		name, int64(step/time.Second), paramPrefix, start.Format(time.RFC3339), paramPrefix, end.Format(time.RFC3339))
 }
 
 func bucketCapacity(window TimeWindow, step time.Duration) int {

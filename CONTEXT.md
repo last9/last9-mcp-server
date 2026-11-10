@@ -37,19 +37,23 @@ Long DSL manuals, stage catalogs, and deep examples that used to bloat tool desc
 _Avoid_: stuffing manuals into the tool description; using prompts as a dump for reference docs
 
 **Named toolsets** (v1):
-Domain groups that partition the served tool surface: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, plus `all` and the composite `investigate` (`logs`+`traces`+`metrics`+`profiles`+discovery helpers, no dashboard/alert writes). Operators may combine domain toolsets.
+Domain groups that partition the served tool surface: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, plus `all` and the composite `investigate` (`logs`+`traces`+`metrics`+`profiles`+discovery helpers+read-only `get_alert_coverage`, no dashboard/alert writes). Operators may combine domain toolsets.
 _Avoid_: per-tool toggles as the primary UX; write-only toolset as a v1 requirement
 
 **Description whales**:
 The tools whose manuals dominate description tokens and undergo progressive disclosure together: `get_logs`, `get_traces`, and `get_service_logs`.
 _Avoid_: treating every slightly long description as a whale; `get_service_traces` is not a whale by default
 
+**Log pattern**:
+A message template mined from log lines, with variables (ids, numbers, timestamps) replaced by `<*>`. Mined in the MCP server with a Drain-style miner over a bounded sample of lines, because the Last9 API has no log-pattern endpoint; counts are therefore within the sample. Move mining server-side if the API gains one. Prompts that triage an open service window (`on_call_runbook`, `diagnose_error_rate`) check pattern novelty before their first log search, and only on branches that search logs, since novelty samples two windows; prompts already anchored to one signal (an exception, a latency deviation, an attribute question) go straight to their targeted log query.
+_Avoid_: reporting sampled pattern counts as total log volume; paging raw lines to find what changed
+
 **Attribute discovery**:
 Learning which log/trace field names exist for an org. Done via dedicated discovery tools (`get_log_attributes`, `get_log_attributes_for_pipeline`, and trace analogues) — not by injecting the full catalog into the tool description.
 _Avoid_: `{{labels}}` full-catalog injection into served tool descriptions; attribute-name allowlists in descriptions
 
 **Canonical tool snapshot**:
-The `dump-tools` output with unset toolsets (`all` surface). Eval harness and CI contract diffs use this. `dump-tools` also honors toolset selection.
+The `dump-tools` output with unset toolsets (`all` surface): the served `tools` array plus the `instructions` that `initialize` returns for the same toolsets. Eval harness and CI contract diffs use this. `dump-tools` also honors toolset selection.
 _Avoid_: a separate hand-maintained tools.json that drifts from the server
 
 **Net-new**:
@@ -57,7 +61,7 @@ A write against a resource that has no identity yet. The only legal tool is the 
 _Avoid_: treating “create” as the way to add a panel; requiring `list_dashboards` before the first create
 
 **Refine**:
-A write against a resource whose id is already known (returned this turn, or known earlier). The only legal tool is the pair's update tool (e.g. `update_dashboard` with that id). Panel/layout/query edits in the same turn are refine, not net-new.
+A write against a resource whose id is already known (returned this turn, or known earlier). The only legal tools are the pair's update tools (e.g. `patch_dashboard` with that id for panel edits, `update_dashboard` to restructure most of it). Panel/layout/query edits in the same turn are refine, not net-new.
 _Avoid_: a second `create_dashboard` to “fix” or trim panels; upsert as a single tool (HITL must distinguish new vs mutate)
 
 **Write pair**:

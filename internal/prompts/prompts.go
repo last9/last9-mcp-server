@@ -5,6 +5,18 @@ import _ "embed"
 //go:embed descriptions/get_exceptions.md
 var GetExceptionsInstructions string
 
+// ServerInstructions is a text/template rendered against the active toolsets
+// and sent as the server's initialize instructions.
+//
+//go:embed server_instructions.md
+var ServerInstructions string
+
+//go:embed descriptions/get_current_time.md
+var GetCurrentTimeDescription string
+
+//go:embed descriptions/get_workspace_overview.md
+var GetWorkspaceOverviewDescription string
+
 //go:embed references/logjson.md
 var LogjsonReference string
 
@@ -19,6 +31,9 @@ var MetricsReference string
 
 //go:embed references/investigation.md
 var InvestigationReference string
+
+//go:embed references/alerting.md
+var AlertingReference string
 
 //go:embed descriptions/get_service_summary.md
 var GetServiceSummaryDescription string
@@ -41,6 +56,9 @@ var GetServiceDependencyGraphDetails string
 //go:embed descriptions/list_datasources.md
 var ListDatasourcesDescription string
 
+//go:embed descriptions/get_metric_status.md
+var GetMetricStatusDescription string
+
 //go:embed descriptions/prometheus_instant_query.md
 var PromqlInstantQueryDetails string
 
@@ -62,17 +80,74 @@ var GetNotificationChannelsDescription string
 //go:embed descriptions/get_alert_config.md
 var GetAlertConfigDescription string
 
+//go:embed descriptions/create_alert.md
+var CreateAlertDescription string
+
+//go:embed descriptions/update_alert.md
+var UpdateAlertDescription string
+
+//go:embed descriptions/patch_alert.md
+var PatchAlertDescription string
+
+//go:embed descriptions/delete_alert.md
+var DeleteAlertDescription string
+
+//go:embed descriptions/mute_alert_group.md
+var MuteAlertGroupDescription string
+
+//go:embed descriptions/acknowledge_alert.md
+var AcknowledgeAlertDescription string
+
+//go:embed descriptions/reassign_alert.md
+var ReassignAlertDescription string
+
+//go:embed descriptions/create_notification_channel.md
+var CreateNotificationChannelDescription string
+
+//go:embed descriptions/attach_notification_channel.md
+var AttachNotificationChannelDescription string
+
+//go:embed descriptions/detach_notification_channel.md
+var DetachNotificationChannelDescription string
+
+//go:embed descriptions/delete_notification_channel.md
+var DeleteNotificationChannelDescription string
+
+//go:embed descriptions/validate_alert_expression.md
+var ValidateAlertExpressionDescription string
+
+//go:embed descriptions/recommend_alert_config.md
+var RecommendAlertConfigDescription string
+
 //go:embed descriptions/get_alert_groups.md
 var GetAlertGroupsDescription string
 
+//go:embed descriptions/get_alert_operations_summary.md
+var GetAlertOperationsSummaryDescription string
+
+//go:embed descriptions/get_alert_coverage.md
+var GetAlertCoverageDescription string
+
 //go:embed descriptions/get_entity_alert_rules.md
 var GetEntityAlertRulesDescription string
+
+//go:embed descriptions/get_entity_kpis.md
+var GetEntityKPIsDescription string
+
+//go:embed descriptions/create_kpi.md
+var CreateKPIDescription string
 
 //go:embed descriptions/get_alerts.md
 var GetAlertsDescription string
 
 //go:embed descriptions/get_alert_rule_state.md
 var GetAlertRuleStateDescription string
+
+//go:embed descriptions/describe_alert_chart.md
+var DescribeAlertChartDescription string
+
+//go:embed descriptions/create_alert_from_chart.md
+var CreateAlertFromChartDescription string
 
 //go:embed descriptions/get_log_attributes.md
 var GetLogAttributesDescription string
@@ -98,6 +173,9 @@ var GetTraceWaterfallDescription string
 //go:embed descriptions/get_change_events.md
 var GetChangeEventsDescription string
 
+//go:embed descriptions/analyze_change_impact.md
+var AnalyzeChangeImpactDescription string
+
 //go:embed descriptions/get_databases.md
 var GetDatabasesDescription string
 
@@ -122,6 +200,9 @@ var ListDashboardsDescription string
 //go:embed descriptions/get_dashboard.md
 var GetDashboardDescription string
 
+//go:embed descriptions/preview_dashboard.md
+var PreviewDashboardDescription string
+
 //go:embed descriptions/validate_dashboard.md
 var ValidateDashboardDescription string
 
@@ -130,6 +211,9 @@ var CreateDashboardDescription string
 
 //go:embed descriptions/update_dashboard.md
 var UpdateDashboardDescription string
+
+//go:embed descriptions/patch_dashboard.md
+var PatchDashboardDescription string
 
 //go:embed descriptions/delete_dashboard.md
 var DeleteDashboardDescription string
@@ -163,6 +247,12 @@ var GetLogsDescription string
 
 //go:embed descriptions/get_service_logs_base.md
 var GetServiceLogsDescription string
+
+//go:embed descriptions/get_log_patterns.md
+var GetLogPatternsDescription string
+
+//go:embed descriptions/get_emerging_log_patterns.md
+var GetEmergingLogPatternsDescription string
 
 //go:embed descriptions/get_traces_base.md
 var GetTracesDescription string
@@ -202,3 +292,20 @@ var AnalyzeSlowQueriesWorkflow string
 
 //go:embed workflows/on_call_runbook.md
 var OnCallRunbookWorkflow string
+
+//go:embed workflows/author_alert.md
+var AuthorAlertWorkflow string
+
+// WorkflowPartials holds the {{define}} blocks workflow templates share.
+//
+//go:embed workflows/partials.md
+var WorkflowPartials string
+
+//go:embed workflows/create_dashboard_guide.md
+var CreateDashboardGuideWorkflow string
+
+//go:embed workflows/dashboard_examples.md
+var DashboardExamplesWorkflow string
+
+//go:embed workflows/query_guide.md
+var QueryGuideWorkflow string

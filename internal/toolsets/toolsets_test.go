@@ -1,9 +1,140 @@
 package toolsets
 
 import (
+	"sort"
 	"strings"
 	"testing"
 )
+
+func TestParse(t *testing.T) {
+	investigate := func() map[string]bool {
+		want := map[string]bool{}
+		for _, domain := range []string{"logs", "traces", "metrics", "profiles"} {
+			for _, tool := range named[domain] {
+				want[tool] = true
+			}
+		}
+		for _, tool := range append(investigateExtras, core...) {
+			want[tool] = true
+		}
+		return want
+	}()
+	tests := []struct {
+		name    string
+		spec    string
+		wantNil bool
+		wantSet map[string]bool
+		wantErr bool
+	}{
+		{name: "empty means all", spec: "", wantNil: true},
+		{name: "whitespace trims and lowercases", spec: " Alerts ", wantSet: toSet(named["alerts"], core)},
+		{name: "unknown token errors", spec: "bogus", wantErr: true},
+		{name: "all supersedes others", spec: "all", wantNil: true},
+		{name: "all supersedes later tokens", spec: "all,logs", wantNil: true},
+		{name: "investigate composite excludes alerts domain", spec: "investigate", wantSet: investigate},
+		{name: "uppercase valid token", spec: "METRICS", wantSet: toSet(named["metrics"], core)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			set, err := Parse(tt.spec)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got set %v", set)
+				}
+				for _, want := range ValidNames() {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("error %q does not list valid name %q", err, want)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.wantNil {
+				if set != nil {
+					t.Fatalf("want nil set, got %v", set)
+				}
+				return
+			}
+			if set == nil {
+				t.Fatal("want populated set, got nil")
+			}
+			got := make(map[string]bool, len(set))
+			for name := range set {
+				got[name] = true
+			}
+			if len(got) != len(tt.wantSet) {
+				t.Fatalf("set size = %d, want %d\ngot:  %v\nwant: %v", len(got), len(tt.wantSet), sortedKeys(got), sortedKeys(tt.wantSet))
+			}
+			for name := range tt.wantSet {
+				if !got[name] {
+					t.Errorf("missing tool %q\ngot:  %v\nwant: %v", name, sortedKeys(got), sortedKeys(tt.wantSet))
+				}
+			}
+		})
+	}
+}
+
+func TestInvestigateExcludesAlertsDomainTools(t *testing.T) {
+	set, err := Parse("investigate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range []string{"get_alerts", "describe_alert_chart", "create_alert_from_chart", "get_drop_rules", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel", "create_kpi"} {
+		if set.Allows(tool) {
+			t.Errorf("investigate must not include alerts-domain tool %q", tool)
+		}
+	}
+	if !set.Allows("did_you_mean") || !set.Allows("list_datasources") {
+		t.Error("investigate must include its extras")
+	}
+}
+
+func TestAlertsToolsetMembership(t *testing.T) {
+	set, err := Parse("alerts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range []string{"get_alerts", "add_drop_rule", "describe_alert_chart", "create_alert_from_chart", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel", "get_entity_kpis", "create_kpi", "prometheus_range_query", "get_dashboard"} {
+		if !set.Allows(tool) {
+			t.Errorf("alerts toolset must include %q", tool)
+		}
+	}
+}
+
+func TestAllows(t *testing.T) {
+	var nilSet Set
+	if !nilSet.Allows("any_tool") {
+		t.Error("nil set must allow everything")
+	}
+	populated := Set{"member": {}}
+	if !populated.Allows("member") {
+		t.Error("populated set must allow its member")
+	}
+	if populated.Allows("non_member") {
+		t.Error("populated set must reject non-member")
+	}
+}
+
+func toSet(lists ...[]string) map[string]bool {
+	m := map[string]bool{}
+	for _, names := range lists {
+		for _, n := range names {
+			m[n] = true
+		}
+	}
+	return m
+}
+
+func sortedKeys(m map[string]bool) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
 
 func TestParseEmptyIsAll(t *testing.T) {
 	for _, spec := range []string{"", "  ", ","} {
@@ -64,12 +195,12 @@ func TestParseInvestigate(t *testing.T) {
 	if set == nil {
 		t.Fatal("investigate must not expand to nil/all")
 	}
-	for _, want := range []string{"get_logs", "get_traces", "get_trace_attribute_deviations", "get_trace_waterfall", "prometheus_instant_query", "did_you_mean", "get_service_profile", "list_datasources", "get_apm_service_deviations", "get_flamegraph", "get_profile_services"} {
+	for _, want := range []string{"get_logs", "get_traces", "get_trace_attribute_deviations", "get_trace_waterfall", "prometheus_instant_query", "did_you_mean", "get_service_profile", "list_datasources", "get_apm_service_deviations", "get_flamegraph", "get_profile_services", "get_entity_kpis", "get_alert_coverage"} {
 		if !set.Allows(want) {
 			t.Errorf("investigate missing %q", want)
 		}
 	}
-	for _, deny := range []string{"get_alerts", "get_alert_groups", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard", "grafana_get_dashboard"} {
+	for _, deny := range []string{"get_alerts", "get_alert_groups", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard", "grafana_get_dashboard"} {
 		if set.Allows(deny) {
 			t.Errorf("investigate should exclude %q", deny)
 		}
@@ -86,6 +217,30 @@ func TestTraceEvidenceToolsAppearExactlyOnceInTraces(t *testing.T) {
 		}
 		if count != 1 {
 			t.Fatalf("%s appears %d times in traces, want exactly once", want, count)
+		}
+	}
+}
+
+func TestParseAlertCoverageMembership(t *testing.T) {
+	for _, tc := range []struct {
+		spec string
+		want bool
+	}{
+		{"alerts", true},
+		{"investigate", true},
+		{"logs", false},
+		{"traces", false},
+		{"metrics", false},
+		{"profiles", false},
+		{"dashboards", false},
+		{"grafana", false},
+	} {
+		set, err := Parse(tc.spec)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", tc.spec, err)
+		}
+		if got := set.Allows("get_alert_coverage"); got != tc.want {
+			t.Errorf("%s allows get_alert_coverage = %v, want %v", tc.spec, got, tc.want)
 		}
 	}
 }
@@ -145,6 +300,20 @@ func TestParseUnknown(t *testing.T) {
 	for _, name := range []string{"logs", "investigate", "all"} {
 		if !strings.Contains(msg, name) {
 			t.Errorf("error should list %q; got %q", name, msg)
+		}
+	}
+}
+
+func TestEveryToolsetIncludesCore(t *testing.T) {
+	for _, spec := range append(ValidNames(), "logs,alerts") {
+		set, err := Parse(spec)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", spec, err)
+		}
+		for _, tool := range []string{"get_current_time", "get_workspace_overview"} {
+			if !set.Allows(tool) {
+				t.Errorf("toolsets=%s hides core tool %q", spec, tool)
+			}
 		}
 	}
 }

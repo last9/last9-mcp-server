@@ -1,0 +1,412 @@
+package alerting
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"last9-mcp/internal/auth"
+	"last9-mcp/internal/constants"
+	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+// Integration test for get_alerts tool
+func TestGetAlertsHandler_Integration(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
+
+	handler := NewGetAlertsHandler(http.DefaultClient, *cfg)
+
+	tests := []struct {
+		name string
+		args GetAlertsArgs
+	}{
+		{
+			name: "Get alerts with default parameters",
+			args: GetAlertsArgs{},
+		},
+		{
+			name: "Get alerts with custom timestamp and window",
+			args: GetAlertsArgs{
+				Timestamp: float64(time.Now().Unix()),
+				Window:    1800, // 30 minutes
+			},
+		},
+		{
+			name: "Get alerts with 1 hour window",
+			args: GetAlertsArgs{
+				Window: 3600, // 1 hour
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			req := &mcp.CallToolRequest{}
+			result, _, err := handler(ctx, req, tt.args)
+
+			if utils.CheckAPIError(t, err) {
+				return
+			}
+
+			text := utils.GetTextContent(t, result)
+
+			// Try to parse response to verify structure and log summary
+			var alertsResponse AlertsResponse
+			if err := json.Unmarshal([]byte(text), &alertsResponse); err != nil {
+				t.Logf("Integration test successful: alerts retrieved (formatted text response)")
+			} else {
+				totalAlerts := 0
+				for _, rule := range alertsResponse.AlertRules {
+					totalAlerts += len(rule.Alerts)
+				}
+				t.Logf("Integration test successful: %d alert rule(s), %d alert instance(s) (timestamp: %d, window: %ds)",
+					len(alertsResponse.AlertRules), totalAlerts, alertsResponse.Timestamp, alertsResponse.Window)
+			}
+		})
+	}
+}
+
+func TestGetAlertsHandler_WindowValidation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		window, _ := strconv.ParseInt(r.URL.Query().Get("window"), 10, 64)
+		resp := AlertsResponse{
+			Timestamp:  time.Now().Unix(),
+			Window:     window,
+			AlertRules: []AlertRuleData{},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL: server.URL,
+	}
+	cfg.TokenManager = &auth.TokenManager{
+		AccessToken: "mock-token",
+		ExpiresAt:   time.Now().Add(365 * 24 * time.Hour),
+	}
+	handler := NewGetAlertsHandler(server.Client(), cfg)
+
+	tests := []struct {
+		name        string
+		args        GetAlertsArgs
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:    "window=1 (API minimum) is accepted",
+			args:    GetAlertsArgs{Window: 1},
+			wantErr: false,
+		},
+		{
+			name:    "window=900 (default) is accepted",
+			args:    GetAlertsArgs{Window: 900},
+			wantErr: false,
+		},
+		{
+			name:    "window=3600 (API maximum) is accepted",
+			args:    GetAlertsArgs{Window: 3600},
+			wantErr: false,
+		},
+		{
+			name:    "window=0 uses default (accepted)",
+			args:    GetAlertsArgs{Window: 0},
+			wantErr: false,
+		},
+		{
+			name:        "window=3601 exceeds API maximum",
+			args:        GetAlertsArgs{Window: 3601},
+			wantErr:     true,
+			errContains: "window must be between 1 and 3600",
+		},
+		{
+			name:        "window=5400 (90 min) exceeds API maximum",
+			args:        GetAlertsArgs{Window: 5400},
+			wantErr:     true,
+			errContains: "window must be between 1 and 3600",
+		},
+		{
+			name:        "window=86400 far exceeds API maximum",
+			args:        GetAlertsArgs{Window: 86400},
+			wantErr:     true,
+			errContains: "window must be between 1 and 3600",
+		},
+		{
+			name:        "lookback_minutes=61 exceeds max",
+			args:        GetAlertsArgs{LookbackMinutes: 61},
+			wantErr:     true,
+			errContains: "lookback_minutes must be between 1 and 60",
+		},
+		{
+			name:    "lookback_minutes=60 (API maximum) is accepted",
+			args:    GetAlertsArgs{LookbackMinutes: 60},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, tt.args)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error but got nil")
+				}
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+					t.Fatalf("error %q does not contain %q", err.Error(), tt.errContains)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestGetAlertsHandler_TimeParameterPrecedence(t *testing.T) {
+	type capturedRequest struct {
+		timestamp int64
+		window    int64
+	}
+
+	var captured []capturedRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ts, _ := strconv.ParseInt(r.URL.Query().Get("timestamp"), 10, 64)
+		window, _ := strconv.ParseInt(r.URL.Query().Get("window"), 10, 64)
+		captured = append(captured, capturedRequest{
+			timestamp: ts,
+			window:    window,
+		})
+
+		resp := AlertsResponse{
+			Timestamp:  ts,
+			Window:     window,
+			AlertRules: []AlertRuleData{},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL: server.URL,
+	}
+	cfg.TokenManager = &auth.TokenManager{
+		AccessToken: "mock-token",
+		ExpiresAt:   time.Now().Add(365 * 24 * time.Hour),
+	}
+
+	handler := NewGetAlertsHandler(server.Client(), cfg)
+
+	tests := []struct {
+		name            string
+		args            GetAlertsArgs
+		expectedWindow  int64
+		expectedTSExact int64
+	}{
+		{
+			name: "lookback_minutes maps to window",
+			args: GetAlertsArgs{
+				LookbackMinutes: 30,
+			},
+			expectedWindow: 1800,
+		},
+		{
+			name: "window takes precedence over lookback",
+			args: GetAlertsArgs{
+				Window:          1200,
+				LookbackMinutes: 30,
+			},
+			expectedWindow: 1200,
+		},
+		{
+			name: "explicit timestamp and window take precedence",
+			args: GetAlertsArgs{
+				Timestamp:       1700000000,
+				Window:          1500,
+				LookbackMinutes: 30,
+			},
+			expectedWindow:  1500,
+			expectedTSExact: 1700000000,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before := len(captured)
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, tt.args)
+			if err != nil {
+				t.Fatalf("handler returned error: %v", err)
+			}
+
+			if len(captured) != before+1 {
+				t.Fatalf("expected one captured request, got %d", len(captured)-before)
+			}
+
+			got := captured[len(captured)-1]
+			if got.window != tt.expectedWindow {
+				t.Fatalf("window = %d, want %d", got.window, tt.expectedWindow)
+			}
+
+			if tt.expectedTSExact != 0 {
+				if got.timestamp != tt.expectedTSExact {
+					t.Fatalf("timestamp = %d, want %d", got.timestamp, tt.expectedTSExact)
+				}
+				return
+			}
+
+			now := time.Now().Unix()
+			if got.timestamp < now-10 || got.timestamp > now+10 {
+				t.Fatalf("timestamp = %d, expected near now (%d)", got.timestamp, now)
+			}
+		})
+	}
+}
+
+func TestGetAlertsHandler_FormatsAlertInstanceLabelHash(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(AlertsResponse{
+			Timestamp: 1700000000,
+			Window:    3600,
+			AlertRules: []AlertRuleData{{
+				RuleID: "rule-1",
+				Alerts: []AlertInstance{
+					{LabelHash: "instance-hash"},
+					{},
+				},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	cfg := models.Config{APIBaseURL: server.URL}
+	cfg.TokenManager = &auth.TokenManager{
+		AccessToken: "mock-token",
+		ExpiresAt:   time.Now().Add(time.Hour),
+	}
+	result, _, err := NewGetAlertsHandler(server.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, GetAlertsArgs{Window: 3600})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	text := utils.GetTextContent(t, result)
+	if !strings.Contains(text, "      Label Hash: instance-hash\n") {
+		t.Fatalf("formatted response does not expose alert instance label hash:\n%s", text)
+	}
+	if strings.Contains(text, "Label Hash: \n") {
+		t.Fatalf("formatted response emitted an empty label hash:\n%s", text)
+	}
+}
+
+func TestGetAlertsHandler_TimeISOPrecedence(t *testing.T) {
+	expectedUnix := int64(1770649445) // 2026-02-09T15:04:05Z
+	var receivedTimestamp string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedTimestamp = r.URL.Query().Get("timestamp")
+		w.Header().Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
+		_, _ = io.WriteString(w, `{"timestamp":1770649445,"window":900,"alert_rules":[]}`)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL: server.URL,
+		TokenManager: &auth.TokenManager{
+			AccessToken: "test-token",
+			ExpiresAt:   time.Now().Add(24 * time.Hour),
+		},
+	}
+
+	handler := NewGetAlertsHandler(server.Client(), cfg)
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetAlertsArgs{
+		TimeISO:   "2026-02-09T15:04:05Z",
+		Timestamp: 1111111111, // deprecated alias should be ignored when time_iso is present
+		Window:    900,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if receivedTimestamp != "1770649445" {
+		t.Fatalf("expected timestamp query param %d, got %s", expectedUnix, receivedTimestamp)
+	}
+}
+
+func TestGetAlertsHandler_InvalidTimeISO(t *testing.T) {
+	cfg := models.Config{
+		APIBaseURL: "http://example.com",
+		TokenManager: &auth.TokenManager{
+			AccessToken: "test-token",
+			ExpiresAt:   time.Now().Add(24 * time.Hour),
+		},
+	}
+
+	handler := NewGetAlertsHandler(http.DefaultClient, cfg)
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetAlertsArgs{
+		TimeISO: "2026/02/09 15:04:05",
+	})
+	if err == nil {
+		t.Fatalf("expected error for invalid time_iso, got nil")
+	}
+}
+
+func TestGetAlertsHandler_FormatsClaim(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"timestamp":1700000000,"window":900,"alert_rules":[
+			{"rule_id":"claimed","claim":{"owner_user_id":"u1","owner_name":"Ada","owner_email":"ada@example.com","claimed_by_user_id":"u2","claimed_at":1700000100,"muted_until":1700003600}},
+			{"rule_id":"unclaimed"}]}`)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{APIBaseURL: server.URL}
+	cfg.TokenManager = &auth.TokenManager{AccessToken: "mock-token", ExpiresAt: time.Now().Add(time.Hour)}
+	result, _, err := NewGetAlertsHandler(server.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, GetAlertsArgs{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	text := utils.GetTextContent(t, result)
+	claimed, unclaimed, _ := strings.Cut(text, "Alert Rule 2:")
+	for _, want := range []string{
+		"  Claim:\n", "    Owner User ID: u1\n", "    Owner Name: Ada\n", "    Owner Email: ada@example.com\n",
+		"    Claimed By User ID: u2\n", "    Claimed At: 2023-11-14 22:15:00 UTC\n", "    Muted Until: 2023-11-14 23:13:20 UTC\n",
+	} {
+		if !strings.Contains(claimed, want) {
+			t.Errorf("claimed rule output missing %q:\n%s", want, claimed)
+		}
+	}
+	if strings.Contains(unclaimed, "Claim:") {
+		t.Errorf("unclaimed rule must not show a claim:\n%s", unclaimed)
+	}
+}
+
+func TestGetAlertsHandler_ShowsReassignIdentity(t *testing.T) {
+	const groupID = "11111111-2222-4333-8444-555555555555"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"timestamp":1700000000,"window":900,"alert_rules":[{"alert_group_id":"`+groupID+`","alert_group_name":"checkout","rule_id":"rule-1","rule_type":"static","claim":{"owner_user_id":"u1","claimed_by_user_id":"u1","claimed_at":1700000000,"muted_until":0}}]}`)
+	}))
+	defer server.Close()
+
+	result, _, err := NewGetAlertsHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil, GetAlertsArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := resultText(result)
+	for _, want := range []string{groupID, "rule-1", "static"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("get_alerts output missing reassign_alert identity field %q:\n%s", want, text)
+		}
+	}
+}

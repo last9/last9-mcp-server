@@ -37,7 +37,7 @@ prompts, and resources.
 ```bash
 go build .
 go test -race ./...          # integration tests skip without TEST_REFRESH_TOKEN
-go run . dump-tools          # served tools/list, name-sorted, no credentials
+go run . dump-tools          # served tools/list, name-sorted, plus instructions; no credentials
 go run . dump-prompts        # served prompts/list
 ./scripts/start-local.sh     # run against a local .env
 ./scripts/eval-r10.sh        # eval suites against a fresh build of this checkout
@@ -51,7 +51,8 @@ go run . dump-prompts        # served prompts/list
    `internal/prompts/prompts.go` as `<Tool>Description` — see *Tool descriptions*.
 3. **Tool** — create `<package>/<tool_name>.go` with its `Args` struct, its
    `New<Tool>Handler`, and its private helpers — see *Go conventions*.
-4. **Register** — add to `tools.go` via `registerIfAllowed`, and add the tool name to its
+4. **Register** — add to `tools.go` via `registerIfAllowed` (`registerWriteTool` for a
+   tool that changes state), and add the tool name to its
    domain in `internal/toolsets/toolsets.go` — see *Registration*.
 5. **Test** — `<tool_name>_test.go` using `httptest.NewServer`; run `go test -race ./...`.
 6. **Verify** — `go run . dump-tools` shows the tool with the intended description and
@@ -78,9 +79,21 @@ NO:  const getFooDescription = "Fetches..."   // in a handler package
 `get_service_performance_details`, `get_service_dependency_graph`) or `…Instructions`
 (`get_exceptions`). Leave them alone; do not copy the pattern.
 
+**Stay inside the metadata checks.** `tool_metadata_test.go` holds every served tool to a
+description byte budget (default plus a reviewed override map, and a description-plus-schema
+budget for `get_logs`; no other test sets size budgets), registered `last9://` URIs,
+string-only schema enums, a max schema depth, and lowercase verb-first names (`get_`, `list_`,
+`create_`, …; `grafana_` may prefix the verb). Raising an override is a decision for the PR.
+
 **Preserve file bytes exactly.** Several description files intentionally end without a
 trailing newline. No test enforces this — an editor or formatter that auto-appends one
 silently changes the served description and breaks `dump-tools` snapshot diffs.
+
+**Append to `server_instructions.md`; never reword an existing line without a gate run.**
+Rewording unrelated lines has repeatedly regressed trace and log query evals (tq-017,
+lq-mf-005). `instructions_wording_test.go` pins every line: add lines or append tools to a
+group freely; an intentional rewording updates `pinnedInstructionLines` and cites a
+tq-017/log_query gate run in the PR body.
 
 ### Progressive disclosure
 
@@ -89,6 +102,8 @@ The four highest-token tools — `get_logs`, `get_traces`, `get_service_logs`,
 rules + a `last9://reference/...` pointer). Their full manuals live in
 `internal/prompts/references/` (`logjson.md`, `tracejson.md`, `service_logs.md`,
 `metrics.md`, `investigation.md`) and are registered as MCP resources in `resources.go`.
+`alerting.md` is the shared manual for the alert tools; their descriptions keep the critical
+rules and a one-line pointer to it.
 
 - The `*_base.md` suffix means progressive disclosure and nothing else. A description with
   no manual of its own must not carry it.
@@ -100,6 +115,14 @@ rules + a `last9://reference/...` pointer). Their full manuals live in
 **Document every parameter, its default, and its unit.** Unit mistakes propagate straight
 into model behavior — a doc example using milliseconds for a nanosecond field produced
 wrong queries in production.
+
+**The most-used tools carry routing sections.** The tools in `description_sections_test.go`
+`sectionedTools` have `## When to use`, `## When not to use`, `## Pairs well with`,
+`## Output shape` and `## Known traps`, in that order, except sections `omittedSections` leaves
+out for a tool whose evals regressed with them (`get_logs`). The two routing sections are `- `
+bullets, one route each, naming tools in backticks and nothing else. `prompts.TrimRoutes`
+drops a bullet when `--toolsets` leaves out a tool it names, so put cross-domain routes in
+their own bullet; the test checks every name is served under each toolset.
 
 **Point at discovery tools, not attribute allowlists.** Models over-anchor on a list and
 stop discovering. Never inject an org's attribute catalog into a description.
@@ -119,14 +142,35 @@ a Go schema string. Do not require list-before-create unless product asks.
 ### Tools
 
 **Register through `registerIfAllowed`, never `last9mcp.RegisterInstrumentedTool`.**
-`registerIfAllowed` is what enforces `--toolsets` filtering, surfaces registration errors
-instead of discarding them, and recovers the SDK's panic on an invalid tool schema. A tool
-registered directly leaks into every toolset.
+`registerIfAllowed` is what enforces `--toolsets` and `--read-only` filtering, surfaces
+registration errors instead of discarding them, and recovers the SDK's panic on an invalid
+tool schema. A tool registered directly leaks into every toolset and into read-only mode.
 
 ```go
-reg(registerIfAllowed(server, cfg.AllowedTools,
-    &mcp.Tool{Name: "get_foo", Description: prompts.GetFooDescription},
+reg(registerIfAllowed(server, gate,
+    &mcp.Tool{Name: "get_foo", Annotations: readOnlyTool("Get Foo"),
+        Description: prompts.GetFooDescription},
     foo.NewGetFooHandler(client, cfg)))
+```
+
+**Annotate every tool:** `readOnlyTool(title)` or `writeTool(title, destructive, idempotent)`.
+Read-only mode serves a tool only when its `readOnlyHint` is true, and a tool without
+annotations counts as a write tool. A new write tool also goes in `writeTools` in
+`annotations_test.go`.
+
+**A tool that changes Last9 state registers through `registerWriteTool`** with a verify
+call: the read call, starting with the read tool's name, that shows whether the write
+landed; every toolset in `internal/toolsets/toolsets.go` that lists the write tool must also
+list that read tool, or registration fails. Its write requests must go through `last9api.Client.Do` (or mark failures with
+`utils.MarkUnknownWriteOutcome`), and are never retried. After a timeout or lost connection
+the agent is told to run the verify call instead of retrying, so a create cannot duplicate.
+`write_tools_test.go` fails until the tool has a fixture there and passes those checks.
+
+```go
+reg(registerWriteTool(server, gate,
+    &mcp.Tool{Name: "create_foo", Annotations: writeTool("Create Foo", false, false), Description: prompts.CreateFooDescription},
+    "get_foos, looking for one with the name you passed",
+    foo.NewCreateFooHandler(client, cfg)))
 ```
 
 Then add `get_foo` to its domain in `internal/toolsets/toolsets.go`, and verify with
@@ -139,11 +183,29 @@ asserts per-toolset membership and copy — update it in the same change.
 at all three call sites.** They are not tools and must not be nested inside
 `registerAllTools`.
 
-Three call sites: `main.go`, and `dump.go` twice — once for `dump-tools`, once for
+Three call sites: `buildServer` in `main.go` (stdio, and `--http` once per effective toolset
+set), and `dump.go` twice — once for `dump-tools`, once for
 `dump-prompts`. Miss one and `dump_prompts_test.go` fails on a prompt count with no hint why.
 
 MCP prompts live one-per-file in `internal/workflows/`, with their text embedded in
 `internal/prompts/prompts.go` as `<Name>Workflow`.
+
+### Server instructions
+
+`internal/prompts/server_instructions.md` is the tool-selection policy sent on `initialize`.
+It is a `text/template` rendered against the tools `registerAllTools` actually served
+(`tools`/`has` drop the rest), so a tool named there never leaks into a toolset that lacks
+it or a `--read-only` server that hides it. Name a tool only through `tools`/`has`, never
+as bare text. Every new tool goes into one of its groups (discovery, dedicated, raw, write):
+`instructions_test.go` fails, per toolset and read-only variant, if the policy names a tool
+that is not served or omits one that is. It matches backticked text against registered tool
+names, so backticking a parameter such as `service_name` in the policy is fine.
+
+`registerToolsAndInstructions` registers both and has two call sites: `buildServer` in
+`main.go` (startup and each per-request `--http` toolset server) and `dumpTools`, which emits
+the instructions `initialize` returns next to the tools so eval snapshots carry them
+(`dump_test.go` compares the two per toolset). `dump-prompts` skips it: prompts are not
+toolset-gated.
 
 ### Argument structs
 
@@ -156,7 +218,9 @@ Service      string `json:"service" jsonschema:"(Required) Service name"`
 ```
 
 The SDK infers `additionalProperties: false` from the struct, so unknown keys are rejected
-before the handler runs. Seven tools instead pass a hand-built `InputSchema:` (`get_logs`,
+before the handler runs. `registerIfAllowed` turns a number-like string (`"42"`) sent for
+an integer property into its number before that validation (`integer_args.go`); every other
+type mismatch is still rejected. Seven tools instead pass a hand-built `InputSchema:` (`get_logs`,
 `get_traces`, `get_trace_waterfall`, `get_service_summary`, `get_apm_service_deviations`,
 `create_dashboard`, `update_dashboard`) — those do **not** get the inferred strictness. Use
 a struct for new tools; reach for `InputSchema:` only when the schema cannot be expressed as
@@ -167,6 +231,13 @@ one.
 - CLI/env: `--toolsets` / `LAST9_TOOLSETS` (alias `LAST9_MCP_TOOLSETS`). Comma-separated:
   `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`.
 - Empty / unset / `all` → full surface. Unknown names fail fast with the valid list.
+- `core` tools in `toolsets.go` (`get_current_time`, `get_workspace_overview`) join every parsed
+  set; add a tool there only when other tools' arguments depend on it or the server
+  instructions name it as the first call. Toolsets narrow the tool surface, not backend
+  access: `get_workspace_overview` still probes logs, traces, metrics and alerts under
+  `--toolsets=logs`. The API token's scope is what limits backend reads.
+- In `--http` mode, `X-Last9-Toolsets` (or `?toolsets=`) narrows one request to its intersection
+  with the startup set; `toolset_servers.go` caches one server per effective set.
 - `dump-tools` honors the same flags and env, and loads `.env` first. The canonical snapshot
   is unset/`all`; use `--toolsets=investigate` to measure the automation surface.
 
@@ -212,8 +283,9 @@ type Request struct{ Method, Path string; Body any }
   messages, so make it readable.
 - `out` may be `nil` when the response body is not needed.
 - `Do` maps every non-2xx to a sanitized error — endpoint code never inspects status codes.
-- Options (`WithQuery`, `WithRegionHeader`, `WithRegionQuery`) are passed only by endpoints
-  that need them. `WithQuery` merges with the region parameter.
+- Options (`WithQuery`, `WithRegionHeader`, `WithRegionQuery`, `WithMaxResponseBytes`) are
+  passed only by endpoints that need them. `WithQuery` merges with the region parameter.
+  `WithMaxResponseBytes` turns an oversized success body into an error instead of decoding it.
 - A response the API reports as partial comes back alongside its field errors rather than as
   a failure; the tool surfaces them.
 
@@ -318,6 +390,10 @@ NO:  // loop over the rows and build the summary
 
 Leave existing comments alone.
 
+`comment_lint_test.go` fails on any comment block over 3 lines (`//go:` directives excluded)
+that is not in `testdata/long_comment_baseline.txt`. The baseline only shrinks: when you
+shorten or delete a listed block, delete its line; never add one.
+
 Exception: a function in an `internal/last9api/<area>` endpoint file that issues a call
 starts its doc comment with the method and path.
 
@@ -330,10 +406,27 @@ starts its doc comment with the method and path.
 **Take at most 3 parameters**, not counting `ctx` and variadic options. More than 3 means a
 struct, unless a struct genuinely makes it less readable.
 
+### Validation
+
+**Validate arguments before taking a concurrency slot or calling the API.** An invalid
+call must fail with its own diagnostic, not wait on a semaphore or reach the upstream. Test
+it with every slot held, asserting the original error and zero upstream requests.
+
+**A shared predicate that reconciles a newer explicit field with a legacy fallback lets the
+explicit field win whenever it is set.** Normalize the legacy value once, inside the
+predicate, and table-test conflicting inputs through every tool that calls it.
+
 ### Contracts
 
 `contracts/` holds JSON schemas and fixtures pinned by sha256 in `contracts_test.go`.
 Editing one without updating its pin fails a test whose message will not explain itself.
+
+## Pull requests
+
+**After every merge from main, recheck the PR against its base.** Review
+`git diff origin/main...HEAD` and `git log origin/main..HEAD`; update the PR title,
+description, and any stated commit count to match the remaining changes. Close the PR
+if the diff is empty.
 
 ## CHANGELOG
 
