@@ -268,6 +268,7 @@ func logStageEmitsResult(stage map[string]interface{}, stageType string) bool {
 // produce, so the regex must follow the last relevant parse.
 func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix string) error {
 	numericSafeFields := make(map[string]struct{})
+	stringBackedAliases := make(map[string]struct{})
 
 	for stageIndex, stage := range stages {
 		stagePath := fmt.Sprintf("%s[%d]", pathPrefix, stageIndex)
@@ -293,7 +294,8 @@ func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix
 					continue
 				}
 				field, _ := rawArgs[1].(string)
-				if !isStringBackedLogField(field) {
+				_, isStringBackedAlias := stringBackedAliases[field]
+				if !isStringBackedLogField(field) && !isStringBackedAlias {
 					continue
 				}
 				if _, ok := numericSafeFields[field]; ok {
@@ -335,6 +337,22 @@ func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix
 				}
 			}
 		}
+
+		nextStringBackedAliases := make(map[string]struct{})
+		nextNumericSafeFields := make(map[string]struct{})
+		groupBy, _ := stage["groupby"].(map[string]interface{})
+		for field, rawAlias := range groupBy {
+			alias, _ := rawAlias.(string)
+			_, isStringBackedAlias := stringBackedAliases[field]
+			if isStringBackedLogField(field) || isStringBackedAlias {
+				nextStringBackedAliases[alias] = struct{}{}
+				if _, safe := numericSafeFields[field]; safe {
+					nextNumericSafeFields[alias] = struct{}{}
+				}
+			}
+		}
+		stringBackedAliases = nextStringBackedAliases
+		numericSafeFields = nextNumericSafeFields
 	}
 
 	return nil
