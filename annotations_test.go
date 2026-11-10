@@ -74,6 +74,9 @@ func TestDumpToolsServesAnnotations(t *testing.T) {
 			if !a.ReadOnlyHint {
 				t.Errorf("%s: read tool must be served with readOnlyHint: true", tool.Name)
 			}
+			if a.DestructiveHint == nil || *a.DestructiveHint {
+				t.Errorf("%s: read tool must be served with destructiveHint: false", tool.Name)
+			}
 			continue
 		}
 		if a.ReadOnlyHint {
