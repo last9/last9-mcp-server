@@ -35,6 +35,8 @@ type GetTraceWaterfallArgs struct {
 	MaxSpans        int    `json:"max_spans,omitempty" jsonschema:"Maximum spans; default 500, maximum 1000"`
 }
 
+// NewGetTraceWaterfallHandler relays the trace service's sanitized waterfall
+// evidence verbatim; building and redaction happen server-side.
 func NewGetTraceWaterfallHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetTraceWaterfallArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args GetTraceWaterfallArgs) (*mcp.CallToolResult, any, error) {
 		in, err := waterfallInput(args)
@@ -89,6 +91,8 @@ func waterfallInput(args GetTraceWaterfallArgs) (apitraces.GetWaterfallInput, er
 	return apitraces.GetWaterfallInput{TraceID: traceID, Start: start.Unix(), End: end.Unix(), MaxSpans: maxSpans, SelectedSpanID: spanID, Environment: args.Environment}, nil
 }
 
+// A *url.Error carries the request URL, so transport failures keep the trace
+// tools' generic message.
 func waterfallAPIError(err error) error {
 	var tooLarge *last9api.ResponseTooLargeError
 	if errors.As(err, &tooLarge) {
@@ -105,6 +109,8 @@ func waterfallAPIError(err error) error {
 	return err
 }
 
+// checkWaterfallEvidence fails closed unless the body is waterfall evidence that
+// names the sanitizer it went through, reading keys exactly as readEvidenceEnvelope does.
 func checkWaterfallEvidence(body []byte) error {
 	top, err := readEvidenceEnvelope(body, traceWaterfallAnalysisVersion)
 	if err != nil {
@@ -131,6 +137,8 @@ const (
 
 type waterfallRefusedError struct{ Reason waterfallRefusal }
 
+// SystemError marks sanitizer refusals as trace-service faults; the caller can
+// shrink an oversized waterfall.
 func (e *waterfallRefusedError) SystemError() bool { return e.Reason != refusalTooLarge }
 
 func (e *waterfallRefusedError) Error() string {
