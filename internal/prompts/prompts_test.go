@@ -491,6 +491,17 @@ func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 	}
 }
 
+func TestRawLogDescriptionsReserveRawForExactText(t *testing.T) {
+	for name, desc := range map[string]string{
+		"get_logs":         prompts.GetLogsDescription,
+		"get_service_logs": prompts.GetServiceLogsDescription,
+	} {
+		if !strings.Contains(desc, "`raw` only for exact text") {
+			t.Errorf("%s description must reserve raw mode for exact text", name)
+		}
+	}
+}
+
 func TestLogPatternDescriptionsCriticalRules(t *testing.T) {
 	descriptions := map[string]string{
 		"get_log_patterns":          prompts.GetLogPatternsDescription,
