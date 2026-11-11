@@ -24,6 +24,15 @@ func TestBuildDashboardsIndexLink(t *testing.T) {
 	}
 }
 
+func TestBuildRemappingLink(t *testing.T) {
+	b := NewBuilder("acme", "cluster-1")
+	got := b.BuildRemappingLink()
+	want := "/v2/organizations/acme/control-plane/cluster-1/remapping"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
 func TestAPMCatalogEnvExact(t *testing.T) {
 	cases := map[string]string{
 		"":             "",

@@ -356,7 +356,7 @@ func TestGetLogPatterns_ChunkedPathSamplesWithoutTotals(t *testing.T) {
 
 func TestGetLogPatterns_ChunkedPathRejectsAFailedChunk(t *testing.T) {
 	srv, _ := chunkedLogsServer(t, http.StatusBadGateway)
-	if _, err := callLogPatternsChunked(srv, 0); err == nil {
+	if result, err := callLogPatternsChunked(srv, 0); err == nil && (result == nil || !result.IsError) {
 		t.Fatal("want an error when a chunk fails, not an empty pattern list that reads as no logs")
 	}
 }
