@@ -20,8 +20,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const maxNotificationChannelsErrorBodyBytes = 4096
-
 var notificationChannelsTSVEscaper = strings.NewReplacer(
 	"\t", "\\t",
 	"\n", "\\n",
@@ -140,12 +138,7 @@ func fetchNotificationChannels(ctx context.Context, client *http.Client, cfg mod
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxNotificationChannelsErrorBodyBytes+1))
-		bodyText := string(body)
-		if len(body) > maxNotificationChannelsErrorBodyBytes {
-			bodyText = string(body[:maxNotificationChannelsErrorBodyBytes]) + "...(truncated)"
-		}
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, bodyText)
+		return nil, utils.NewUpstreamHTTPError(resp, "notification channels")
 	}
 
 	body, err := io.ReadAll(resp.Body)

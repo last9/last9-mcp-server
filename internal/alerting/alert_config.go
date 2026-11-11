@@ -13,6 +13,7 @@ import (
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 )
 
 const (
@@ -151,8 +152,7 @@ func fetchKPI(
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return kpiResponse{}, fmt.Errorf("API returned %d: %s", resp.StatusCode, string(body))
+		return kpiResponse{}, utils.NewUpstreamHTTPError(resp, "kpi lookup")
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -231,8 +231,7 @@ func fetchAlertConfig(
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, utils.NewUpstreamHTTPError(resp, "alert config")
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -287,8 +286,7 @@ func fetchAlertGroupEntities(
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("entity lookup failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, utils.NewUpstreamHTTPError(resp, "entity lookup")
 	}
 
 	body, err := io.ReadAll(resp.Body)
