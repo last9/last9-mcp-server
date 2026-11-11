@@ -38,6 +38,18 @@ func PipelineHasAggregateStage(pipeline []map[string]interface{}) bool {
 	return false
 }
 
+// PipelineHasSelectStage reports whether any stage is a "select". Its
+// order/limit is a top-N over the whole window, so the pipeline must run as a
+// single request, never chunked.
+func PipelineHasSelectStage(pipeline []map[string]interface{}) bool {
+	for _, stage := range pipeline {
+		if stageType, _ := stage["type"].(string); stageType == "select" {
+			return true
+		}
+	}
+	return false
+}
+
 // hasParseStage reports whether pipeline contains a stage whose "type" is
 // "parse".
 func hasParseStage(pipeline []map[string]interface{}) bool {

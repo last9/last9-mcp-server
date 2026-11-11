@@ -95,6 +95,12 @@ func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 			}
 		}
 
+		if stageType == "select" && i == len(stages)-1 {
+			if err := validateFinalSelectBounds(stage, path); err != nil {
+				return err
+			}
+		}
+
 		if parser, _ := stage["parser"].(string); stageType == "parse" && parser == "regexp" {
 			if pattern, ok := stage["pattern"].(string); ok {
 				if err := utils.CheckPipelineRegex(pattern, path+".pattern"); err != nil {
@@ -655,7 +661,7 @@ func validateStageKeys(stage map[string]interface{}, stageType, path string) err
 			return err
 		}
 	}
-	return nil
+	return validateTraceStageKeyAllowlist(stage, stageType, path)
 }
 
 func validateWindowAggregateStage(stage map[string]interface{}, path string) error {

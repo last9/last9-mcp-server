@@ -232,6 +232,35 @@ The NPM route is easier on Windows — no path management.
 | `OTEL_EXPORTER_OTLP_ENDPOINT`| —                    | OTLP collector endpoint (only when telemetry is enabled) |
 | `OTEL_EXPORTER_OTLP_HEADERS` | —                    | OTLP auth headers (only when telemetry is enabled) |
 
+### Tool phase timing
+
+With internal telemetry enabled, tool spans carry `last9.phase.<phase>.duration_ms`
+(real elapsed milliseconds) and `last9.phase.<phase>.failed` (whether that phase
+returned an error). The same fields are emitted as `tool phase completed` debug
+logs, with `tool` and `phase`, when the configured logger accepts debug records.
+Inputs, query text, credentials and error bodies are not added by these timings.
+
+| Tool | Phases |
+| --- | --- |
+| `get_log_patterns` | `sample`: fetch and decode the sample; `mine`: pattern mining; `deep_link`: resolve the optional index and build the link |
+| `get_logs` | `fetch`: fetch, decode and merge results, including retries and optional count sanity checks; `count_sanity`: the nested optional check; `post_process`: guidance, summary and JSON formatting; `deep_link`: index resolution and link construction |
+| `get_service_profile` | `request`: prepare and send the request through the shared API client and read its complete response, before brief formatting |
+
+Only executed phases are recorded, including failed fetches. Optional helpers
+that suppress errors retain that behavior; `failed: false` does not certify that
+an optional link or count check was available. The nested `count_sanity` duration
+is already included in `fetch`; do not add it twice. Fetch time includes client
+work, so it is not a measurement of backend execution alone. Compare these phases
+on equivalent windows and search paths before tuning sampling or caching.
+
+For a latency investigation, replay the same service, datasource, index, window,
+and limits on the baseline and candidate builds. Record the build SHA, tool total,
+phase durations, `last9.logs.search_path`, retry attributes when present, and
+coverage flags. Compare slow calls as well as typical calls. A slow fetch or
+profile request identifies a network/API phase to investigate; backend execution
+needs its own correlated evidence before assigning the tail to the backend.
+These diagnostics alone do not establish a latency improvement.
+
 ### Read-only mode
 
 `--read-only` (or `LAST9_MCP_READ_ONLY=true`) serves only tools annotated `readOnlyHint: true`, so no tool can create, change or delete alert rules, notification channels, dashboards or drop rules, acknowledge or reassign alerts, or mute groups. A tool without annotations counts as a write tool and is hidden.
@@ -297,6 +326,8 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`get_log_attributes_for_pipeline`** — Log fields actually present for an in-progress pipeline (scoped discovery), each with its exact `filter_field`
 - **`get_drop_rules`** — Log drop rules from [Last9 Control Plane](https://last9.io/control-plane)
 - **`add_drop_rule`** — Create a new drop rule to cut log volume at the source
+- **`get_remapping_rules`** — Remapping rules (`logs_extract`, `logs_map`, `traces_map`) from [Last9 Control Plane](https://last9.io/control-plane)
+- **`add_remapping_rule`** — Create a remapping rule that extracts or maps log and trace attributes at ingestion
 
 ### Traces
 
@@ -320,6 +351,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`create_kpi`** — Create a KPI (PromQL + unit) on an alert group when no existing KPI fits. Create once and keep the returned id
 - **`get_alerts`** — Currently firing alerts within a time window
 - **`get_alert_rule_state`** — Historical firing state (1/0) per alert rule over a time range, grouped by `rule_id`. Filterable by alert group, rule name, label filters, and state.
+- **`get_alert_hygiene`** — Noisy, flapping, stale and unrouted alert rules over 7 or 30 days, ranked, each with the numbers behind the verdict and a suggested fix. Read-only.
 - **`get_notification_channels`** — Configured notification channels (Slack, PagerDuty, email, etc.). `scope=channels` lists the channels themselves (ids for attaching); the default `attached` lists per-alert-group attachments
 - **`recommend_alert_config`** — Read-only design guidance (lifecycle, validation gates, responder context) before creating an alert rule
 - **`validate_alert_expression`** — Dry-run an alert expression against an alert group's KPIs without saving anything
@@ -706,6 +738,27 @@ No parameters. Lists drop rules via `GET /otel_settings/drop?region=...`.
 - Filter keys must use `attributes["key_name"]` or `resource.attributes["key_name"]` (required by the Last9 API).
 - Creates the rule via `POST /otel_settings/drop?region=...&cluster_id=...`.
 
+### get_remapping_rules
+
+- `rule_type` (string, required): `logs_extract`, `logs_map` or `traces_map`.
+- `region` (string, optional): Default: the configured datasource region.
+- Lists rules via `GET /otel_settings/remapping/{rule_type}?region=...`.
+
+### add_remapping_rule
+
+Creates one rule per call; map rules need one call per `target_attribute`.
+
+- `rule_type` (string, required): `logs_extract`, `logs_map` or `traces_map`.
+- `name` (string, required)
+- `remap_keys` (array, required): Source fields. `logs_extract` with `json`: body field names; with `pattern`: exactly one regex with a named capture group. Map rules: attribute paths, first non-empty wins.
+- `target_attribute` (string, required): `logs_extract`: `log_attributes` or `resource_attributes`. `logs_map`: `service`, `severity` or `resource_deployment.environment`. `traces_map`: `service`.
+- `extract_type` (string, `logs_extract` only, required there): `json` or `pattern`.
+- `action` (string, `logs_extract` only): `upsert` (default) or `insert`.
+- `prefix` (string, `logs_extract` only)
+- `preconditions` (array, `logs_extract` only): At most one `{key, value, operator}`; `operator` is `equals` (default), `not_equals` or `like` (regex).
+- `region` (string, optional): Default: the configured datasource region.
+- Creates the rule via `POST /otel_settings/remapping/{rule_type}?region=...`. Never retried; after a timeout, check with `get_remapping_rules`.
+
 ### get_traces
 
 Use for broad searches and aggregations. For exact trace ID lookup, use `get_service_traces`.
@@ -881,6 +934,17 @@ No MCP tool deletes or edits a KPI (use the Last9 UI), so confirm name, query an
 - `state` (string, optional): Filter by state (e.g. `firing`).
 
 Returns a JSON map of `rule_id -> [{timestamp, is_firing}]`. A timestamp at which a rule is absent from the upstream response is reported as `is_firing=0` — this means "not observed as firing", not a confirmed normal state.
+
+### get_alert_hygiene
+
+Read-only audit of enabled alert rules. It never changes anything: each suggested fix is a proposal, applied only once the user explicitly confirms it, through `update_alert` (tuning), `patch_alert` (`is_disabled`), `delete_alert` or `attach_notification_channel` when those are served.
+
+- `window` (string, optional): `7d` or `30d`. Default: `7d`.
+- `limit` (integer, optional): Maximum flagged rules to return, worst first. Default: 20. Range: 1–100.
+
+The window ends now. Categories (a rule may have several): **noisy** (≥ 5 fires/day with < 20% acked; with an unavailable `ack_rate` it is judged on fire rate alone and the reason says so; mute time is not reported), **flapping** (> 4 flaps/day), **stale** (last fired before the window with no firing time in it, or an enabled configured rule with no episode in the window while lifecycle `coverage` is complete and the API's list is not truncated), **unrouted** (no firing in the window reached a channel and the alert group has no channel attached now; when attachments cannot be read the rule counts under `unavailable.routed` instead). Each stat is `{status, count|value, reason}` or null: an unavailable value is never read as zero and skips only the check that needs it, and `unavailable` counts enabled rules per missing value (`fire_count`, `flap_count`, `ack_rate`, `routed`, `rule_config` for rules missing from the alert rules list, whose fixes then carry no current value, and `activity` for configured rules with no episode whose silence the history cannot prove, which are not assessed). `coverage` says how much of the window alert history covered; rates use the covered span, at least one day. `upstream_truncated` is true when the API returned only its loudest 200 rules, so quieter rules were not evaluated. Fixes, built from each rule's configuration in the alert rules list: raise `bad_minutes` (the N in `count_true(result) >= N`) or lengthen `eval_window` (at most 60 minutes); for noisy static thresholds, move the threshold in `condition` (`expr > 100`) or switch the expression to `adaptive_std_cmp(metric, sensitivity, window)`; attach a notification channel; disable or delete stale rules.
+
+Returns compact JSON `{window, from, to, coverage, upstream_truncated, rules_evaluated, flagged_rules, truncated, omitted_for_size, unavailable, rules}`, sized to a 32 KB target: `truncated` is true when flagged rules exceed `limit` or that target, and `omitted_for_size` counts the rules within `limit` cut for size (the worst rule is always kept, so a single rule larger than 32 KB returns alone and exceeds the target); each rule has `findings` (`category`, `reason`, `suggested_fix`, optional `alternative_fix`) and the raw `stats`.
 
 ### get_notification_channels
 

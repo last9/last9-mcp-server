@@ -322,20 +322,20 @@ func TestGetAlertOperationsSummaryMapsAPIErrors(t *testing.T) {
 	}
 }
 
-func hygieneRule(id string, fires int, flaps float64, routed bool) string {
+func opsHygieneRule(id string, fires int, flaps float64, routed bool) string {
 	return fmt.Sprintf(`{"rule_id":%q,"rule_name":"rule %s","fire_count":{"status":"available","count":%d},"flaps_per_day":{"status":"available","value":%g},"routed":%t}`, id, id, fires, flaps, routed)
 }
 
 func TestGetAlertOperationsSummaryIncludeRules(t *testing.T) {
 	rules := []string{
-		hygieneRule("flappy", 5, flappingMinPerDay, true),
-		hygieneRule("calm", 3, flappingMinPerDay-0.01, true),
-		hygieneRule("lost", 1, 0, false),
+		opsHygieneRule("flappy", 5, flappingMinPerDay, true),
+		opsHygieneRule("calm", 3, flappingMinPerDay-0.01, true),
+		opsHygieneRule("lost", 1, 0, false),
 		`{"rule_id":"unknown","fire_count":{"status":"unavailable","reason":"no lifecycle data"},"flaps_per_day":{"status":"unavailable"}}`,
 		`{"rule_id":"odd","fire_count":{"status":"bogus","count":9999},"flaps_per_day":{"status":"bogus","value":50}}`,
 	}
 	for i := 0; i < opsRulesLimit; i++ {
-		rules = append(rules, hygieneRule(fmt.Sprintf("busy%02d", i), 100+i, 0, true))
+		rules = append(rules, opsHygieneRule(fmt.Sprintf("busy%02d", i), 100+i, 0, true))
 	}
 	f := &opsFake{summary: opsSummaryBody, hygiene: `{"truncated":true,"coverage":{"lifecycle":{"status":"partial"}},"rules":[` + strings.Join(rules, ",") + `]}`}
 	args := weekArgs()

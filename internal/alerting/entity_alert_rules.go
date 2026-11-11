@@ -82,8 +82,7 @@ func fetchEntityAlertRules(
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API returned %d: %s", resp.StatusCode, string(body))
+		return nil, utils.NewUpstreamHTTPError(resp, "entity alert rules")
 	}
 
 	body, err := io.ReadAll(resp.Body)
