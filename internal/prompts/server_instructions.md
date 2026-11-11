@@ -9,7 +9,7 @@
 {{- $dashboardReads := tools "get_dashboard" "get_dashboard_snapshot" "grafana_get_dashboard" -}}
 {{- $serviceProfile := tools "get_service_profile" -}}
 {{- $health := tools "get_service_summary" "get_service_performance_details" "get_service_operations_summary" "get_service_dependency_graph" -}}
-{{- $alerts := tools "get_alerts" "get_alert_rule_state" -}}
+{{- $alerts := tools "get_alerts" "get_alert_rule_state" "get_alert_hygiene" -}}
 {{- $alertOps := tools "get_alert_operations_summary" -}}
 {{- $coverage := tools "get_alert_coverage" -}}
 {{- $changes := tools "get_change_events" "analyze_change_impact" -}}
