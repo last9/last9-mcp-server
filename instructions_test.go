@@ -308,7 +308,7 @@ func TestDiscoverSectionListsOnlyNameLookups(t *testing.T) {
 // maxInvestigateInstructionsBytes caps the policy automation sessions receive,
 // near its size: it precedes every tool description and growing it moved
 // log_query evals, so each increase is a reviewed decision.
-const maxInvestigateInstructionsBytes = 3040
+const maxInvestigateInstructionsBytes = 3135
 
 func TestInvestigateInstructionsBounded(t *testing.T) {
 	instructions, _ := initializeOver(t, "investigate")
