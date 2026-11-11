@@ -1,6 +1,6 @@
 module last9-mcp
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/VictoriaMetrics/metricsql v0.87.5
