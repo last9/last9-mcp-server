@@ -7,7 +7,7 @@
 # BUILDPLATFORM == TARGETPLATFORM, so the builder is native and the pure-Go
 # (CGO_ENABLED=0) binary is compiled for TARGETARCH without emulation. The ARGs
 # also keep a plain `docker buildx build --platform` cross-build working locally.
-FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates
