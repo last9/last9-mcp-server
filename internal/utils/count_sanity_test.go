@@ -201,6 +201,34 @@ func TestAppendCountSanity_HighRatioAddsNote(t *testing.T) {
 	}
 }
 
+func TestAppendCountSanity_RatioAboveOneExplainsBaselineGap(t *testing.T) {
+	srv, _ := promVolumeServer(t, 1000)
+	defer srv.Close()
+
+	cfg := sanityTestCfg(t, srv.URL)
+	pipeline := countAggregatePipeline("orders-service")
+	response := aggregateCountResponse("_count", float64(1024.3))
+
+	got := AppendCountSanity(context.Background(), srv.Client(), cfg, pipeline, 0, 480*60*1000, response)
+
+	sanity, ok := got["l9_sanity"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected l9_sanity block, got %#v", got)
+	}
+	if sanity["ratio"] != 1.0243 {
+		t.Errorf("ratio = %v, want 1.0243", sanity["ratio"])
+	}
+	note, _ := sanity["note"].(string)
+	if strings.Contains(note, "% of ALL log lines") {
+		t.Errorf("note must not claim the match is a share of all lines when it exceeds the baseline: %q", note)
+	}
+	for _, want := range []string{"exceeds service_log_volume", "approximate", "re-narrow"} {
+		if !strings.Contains(note, want) {
+			t.Errorf("note %q missing %q", note, want)
+		}
+	}
+}
+
 func TestAppendCountSanity_LowRatioEmptyNote(t *testing.T) {
 	srv, _ := promVolumeServer(t, 100000)
 	defer srv.Close()
