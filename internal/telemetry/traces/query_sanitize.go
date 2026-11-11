@@ -14,6 +14,18 @@ import (
 
 var traceAggregateFieldRef = regexp.MustCompile(`^(?:[A-Za-z_][A-Za-z0-9_]*(?:(?:\.[A-Za-z_][A-Za-z0-9_]*)|(?:\[[0-9]+\]))*|[0-9]+[A-Za-z_][A-Za-z0-9_]*)$`)
 
+var traceStringFields = map[string]struct{}{
+	"ParentSpanId":  {},
+	"ServiceName":   {},
+	"SpanId":        {},
+	"SpanKind":      {},
+	"SpanName":      {},
+	"StatusCode":    {},
+	"StatusMessage": {},
+	"TraceId":       {},
+	"TraceState":    {},
+}
+
 var traceFilterFieldOperators = map[string]struct{}{
 	"$contains":          {},
 	"$containsWords":     {},
@@ -766,6 +778,14 @@ func validateTraceAggregateFunction(function map[string]interface{}, path string
 	for name, raw := range function {
 		args, _ := raw.([]interface{})
 		field, i, ok := telemetry.AggregateFieldArg(name, args)
+		if _, stringBacked := traceStringFields[field]; ok && stringBacked && isTraceQuantile(name) {
+			p := fmt.Sprintf("%s.%s[%d]", path, name, i)
+			return &tracePipelineError{
+				category: traceCategoryInvalidField,
+				path:     p,
+				msg:      fmt.Sprintf("%s field %q at %s must be numeric; use Duration or a numeric attribute/resource field", name, field, p),
+			}
+		}
 		if !ok || traceAggregateFieldRef.MatchString(field) || telemetry.IsMapFieldRef(field) {
 			continue
 		}
@@ -777,6 +797,11 @@ func validateTraceAggregateFunction(function map[string]interface{}, path string
 		return &tracePipelineError{category: traceCategoryInvalidField, path: p, msg: msg}
 	}
 	return nil
+}
+
+func isTraceQuantile(name string) bool {
+	base := strings.TrimSuffix(name, "_over_time")
+	return base == "$quantile" || base == "$quantile_exact"
 }
 
 func validateTraceAlias(as interface{}, path string) error {

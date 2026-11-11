@@ -375,7 +375,12 @@ func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix
 }
 
 func isStringBackedLogField(field string) bool {
-	return strings.HasPrefix(field, "attributes['") || strings.HasPrefix(field, "resources['")
+	switch field {
+	case "Body", "ServiceName", "SeverityText":
+		return true
+	default:
+		return strings.HasPrefix(field, "attributes['") || strings.HasPrefix(field, "resources['")
+	}
 }
 
 func invalidateParsedNumericFields(stage map[string]interface{}, numericSafeFields map[string]struct{}) {
