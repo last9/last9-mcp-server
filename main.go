@@ -238,6 +238,7 @@ func run() int {
 	if err != nil {
 		log.Fatalf("config error: %v", err)
 	}
+	cfg.ServerVersion = Version
 
 	// Evals/replays only: pins relative query windows to a fixed instant.
 	fake, err := utils.InitClock()

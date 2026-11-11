@@ -27,12 +27,12 @@ func TestParse(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "empty means all", spec: "", wantNil: true},
-		{name: "whitespace trims and lowercases", spec: " Alerts ", wantSet: toSet(named["alerts"], core)},
+		{name: "whitespace trims and lowercases", spec: " Alerts ", wantSet: toSet(named["alerts"], core, feedback)},
 		{name: "unknown token errors", spec: "bogus", wantErr: true},
 		{name: "all supersedes others", spec: "all", wantNil: true},
 		{name: "all supersedes later tokens", spec: "all,logs", wantNil: true},
 		{name: "investigate composite excludes alerts domain", spec: "investigate", wantSet: investigate},
-		{name: "uppercase valid token", spec: "METRICS", wantSet: toSet(named["metrics"], core)},
+		{name: "uppercase valid token", spec: "METRICS", wantSet: toSet(named["metrics"], core, feedback)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -88,6 +88,21 @@ func TestInvestigateExcludesAlertsDomainTools(t *testing.T) {
 	}
 	if !set.Allows("did_you_mean") || !set.Allows("list_datasources") {
 		t.Error("investigate must include its extras")
+	}
+}
+
+func TestFeedbackJoinsNamedToolsetsButNotInvestigate(t *testing.T) {
+	for _, spec := range ValidNames() {
+		if spec == "all" {
+			continue
+		}
+		set, err := Parse(spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := set.Allows("send_feedback"), spec != "investigate"; got != want {
+			t.Errorf("Parse(%q).Allows(send_feedback) = %v, want %v", spec, got, want)
+		}
 	}
 }
 

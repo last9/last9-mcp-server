@@ -256,6 +256,7 @@ last9-mcp --read-only --allow-write-tools=acknowledge_alert,mute_alert_group
 
 - **`get_workspace_overview`** — Recommended first call when a request names no service or tool (one that does goes straight to its tool): environments, which signals (logs, traces, metrics) were seen in the last hour, service and alert-group counts, firing alerts, and the current time in one cheap call. A signal not seen in that hour can still have older data, so it stays queryable. A failed sub-call leaves its field `null` and adds an `errors[]` entry. Served under every toolset
 - **`get_current_time`** — Current time, plus absolute bounds for `last 2h`, `yesterday` or `since yesterday 9am IST`, in any IANA zone or common abbreviation. Served under every toolset
+- **`send_feedback`** — Lets the agent report a broken tool, a wrong result, a missing capability or a misleading description straight to the Last9 team, with the server version and, when the client reports it, the client's name and version attached (over `--http`, from per-request `_meta` clientInfo or the `Mcp-Session-Id` returned by `initialize`). Served under every named toolset and in `--read-only` mode; left out of `investigate`
 
 ### Service Health
 
@@ -426,7 +427,7 @@ Server starts at `http://localhost:8080/mcp`.
 
 ### Test with curl
 
-The Streamable HTTP handler runs in **stateless** mode, so any request is served independently. An `initialize` handshake and an `Mcp-Session-Id` header are optional — clients that send them still work (the header is accepted and ignored), and clients can also skip straight to `tools/list` / `tools/call`. Every tool is an independent request/response query; the server issues no server→client notifications, so `GET /mcp` (the SSE stream) returns `405`.
+The Streamable HTTP handler runs in **stateless** mode, so any request is served independently. An `initialize` handshake and an `Mcp-Session-Id` header are optional — clients that send them still work, and clients can also skip straight to `tools/list` / `tools/call`. `initialize` returns an `Mcp-Session-Id` that encodes the client's `clientInfo` name and version (each cut to 100 characters), so any replica can attribute the client's later requests without shared state. The ID is checked for format only, not signed, so like `clientInfo` the identity it carries is self-reported; a malformed ID is ignored. Every tool is an independent request/response query; the server issues no server→client notifications, so `GET /mcp` (the SSE stream) returns `405`.
 
 ```bash
 # List tools — a session handshake is optional in stateless mode
@@ -506,6 +507,15 @@ No parameters. Probes the last 60 minutes concurrently, each sub-call with a sho
 - `timezone` (string, optional): IANA name or abbreviation (IST = Asia/Kolkata, PST/PDT, EST/EDT, UTC, GMT). Default UTC. Unknown zones are an error, and so is the ambiguous `CST` (pass `America/Chicago` or `Asia/Shanghai`).
 
 Returns `now` (and `start`/`end` with `range`) as `{iso, epoch_seconds, local}`; `local` appears only for a non-UTC zone.
+
+### send_feedback
+
+- `category` (string, required): `bug`, `wrong_result`, `missing_capability`, `confusing_description`, `slow`, `praise` or `other`.
+- `summary` (string, required): One sentence, at most 300 characters.
+- `details` (string, optional, omitted by default): At most 4000 characters. Never include secrets or customer data.
+- `tool_name` (string, optional, omitted by default): The Last9 tool the feedback is about, at most 100 characters.
+
+Returns `feedback_id` only after a complete acknowledgement. A failed call may still have delivered the report; do not send the same feedback again. Limited to 20 reports per user per hour.
 
 ### get_exceptions
 
