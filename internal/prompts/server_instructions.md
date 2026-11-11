@@ -25,9 +25,11 @@
 {{- $alertValidate := tools "validate_alert_expression" -}}
 {{- $alertDesign := tools "recommend_alert_config" "describe_alert_chart" -}}
 {{- $dropRules := tools "get_drop_rules" -}}
+{{- $remappingRules := tools "get_remapping_rules" -}}
 {{- $refine := tools "patch_dashboard" "update_dashboard" "update_alert" "patch_alert" "attach_notification_channel" -}}
 {{- $claim := tools "acknowledge_alert" "reassign_alert" -}}
 {{- $addDropRule := tools "add_drop_rule" -}}
+{{- $addRemappingRule := tools "add_remapping_rule" -}}
 {{- $destructive := tools "update_dashboard" "patch_dashboard" "delete_dashboard" "delete_dashboard_snapshot" "update_alert" "patch_alert" "delete_alert" "mute_alert_group" "detach_notification_channel" "delete_notification_channel" -}}
 Last9 observability for the caller's organization. Discover names first, answer with the most specific tool, and treat writes with care.
 {{- if or $overview $time}}
@@ -133,7 +135,7 @@ Read these resources before writing a non-trivial query{{if has "get_logs"}}. Af
 ## Feedback
 When a Last9 tool errors unexpectedly, returns data that looks wrong, misleads you, or cannot do what the user needs, report it once with {{.}}, then continue the task.
 {{- end}}
-{{- if or $validate $alertValidate $alertDesign $dropRules}}
+{{- if or $validate $alertValidate $alertDesign $dropRules $remappingRules}}
 
 ## Check before you write
 {{- with $validate}}
@@ -148,8 +150,11 @@ When a Last9 tool errors unexpectedly, returns data that looks wrong, misleads y
 {{- with $dropRules}}
 - List existing drop rules with {{.}} before adding one.
 {{- end}}
+{{- with $remappingRules}}
+- List existing remapping rules of the same type with {{.}} before adding one.
 {{- end}}
-{{- if or $create $refine $claim $destructive $addDropRule}}
+{{- end}}
+{{- if or $create $refine $claim $destructive $addDropRule $addRemappingRule}}
 
 ## Write tools
 {{- with $create}}
@@ -175,5 +180,8 @@ When a Last9 tool errors unexpectedly, returns data that looks wrong, misleads y
 {{- end}}
 {{- with $addDropRule}}
 - {{.}} drops matching future logs: confirm with the user first.
+{{- end}}
+{{- with $addRemappingRule}}
+- {{.}} rewrites attributes on future logs or traces: confirm with the user first.
 {{- end}}
 {{- end}}

@@ -47,6 +47,7 @@ func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Co
 		if err := SanitizeTraceJSONQuery(args.TracejsonQuery); err != nil {
 			return nil, nil, err
 		}
+		boundFinalSelectLimit(args.TracejsonQuery, effectiveGetTracesLimit(cfg, args.Limit))
 		if _, _, err := parseTimeRangeFromArgs(args); err != nil {
 			return nil, nil, fmt.Errorf("failed to parse time range: %v", err)
 		}
@@ -84,11 +85,22 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 	if err != nil {
 		return nil, err
 	}
+	effectiveLimit := effectiveGetTracesLimit(cfg, args.Limit)
+	maxLimit := configuredMaxGetTracesEntries(cfg)
+	if selectLimit, ok := finalSelectLimit(args.TracejsonQuery); ok {
+		effectiveLimit = min(effectiveLimit, selectLimit)
+		maxLimit = min(maxLimit, maxSelectLimit)
+	}
+	if utils.PipelineHasSelectStage(args.TracejsonQuery) {
+		if err := capTraceResultItems(result, effectiveLimit); err != nil {
+			return nil, err
+		}
+	}
 	addTraceJSONGuidance(result, args, traceGuidanceContext{
 		startMs:        startTime,
 		endMs:          endTime,
-		effectiveLimit: effectiveGetTracesLimit(cfg, args.Limit),
-		maxLimit:       configuredMaxGetTracesEntries(cfg),
+		effectiveLimit: effectiveLimit,
+		maxLimit:       maxLimit,
 	})
 
 	// Build deep link URL
@@ -128,14 +140,12 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 		return executeTraceJSONQuery(ctx, client, cfg, tracejsonQuery, startMs, endMs, effectiveLimit)
 	}
 
-	// Aggregate pipelines (group-by, avg/median/quantile/stddev, etc.) must
-	// never be chunked: concatenating per-chunk aggregate results produces
-	// duplicate group-by keys and mathematically wrong aggregates. Run the
-	// full window as a single request instead.
-	if utils.PipelineHasAggregateStage(args.TracejsonQuery) {
+	// Chunking changes aggregate results and turns select's global top-N into
+	// per-chunk top-N, so both pipeline shapes must run over the full window.
+	if utils.PipelineHasAggregateStage(args.TracejsonQuery) || utils.PipelineHasSelectStage(args.TracejsonQuery) {
 		if chunkingDebug {
 			log.Printf(
-				"[chunking] get_traces aggregate stage detected, using single request start_ms=%d end_ms=%d effective_limit=%d",
+				"[chunking] get_traces aggregate or select stage detected, using single request start_ms=%d end_ms=%d effective_limit=%d",
 				startMs,
 				endMs,
 				effectiveLimit,
@@ -367,6 +377,18 @@ func extractTraceResultItems(result map[string]interface{}) ([]json.RawMessage, 
 	default:
 		return nil, fmt.Errorf("traces API response result is not an array")
 	}
+}
+
+func capTraceResultItems(result map[string]interface{}, limit int) error {
+	items, err := extractTraceResultItems(result)
+	if err != nil {
+		return err
+	}
+	if len(items) <= limit {
+		return nil
+	}
+	result["data"].(map[string]interface{})["result"] = items[:limit]
+	return nil
 }
 
 // effectiveGetTracesLimit returns the capped limit to use across all chunks.
