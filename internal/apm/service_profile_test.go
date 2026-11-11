@@ -3,6 +3,7 @@ package apm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -86,6 +87,54 @@ func TestGetServiceProfileHandler_CoalescesConcurrentProfileFetches(t *testing.T
 	}
 	if got := requests.Load(); got != 1 {
 		t.Fatalf("upstream requests = %d, want one coalesced request", got)
+	}
+}
+
+func TestGetServiceProfileHandler_CancelledCallerDoesNotCancelSharedFetch(t *testing.T) {
+	var requests atomic.Int32
+	requestStarted := make(chan struct{})
+	releaseRequest := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if requests.Add(1) == 1 {
+			close(requestStarted)
+		}
+		<-releaseRequest
+		_, _ = w.Write([]byte(`{"service":"checkout"}`))
+	}))
+	t.Cleanup(server.Close)
+	cfg := models.Config{APIBaseURL: server.URL}
+	cfg.TokenManager = &auth.TokenManager{AccessToken: "tok", ExpiresAt: time.Now().Add(time.Hour)}
+	handler := NewGetServiceProfileHandler(server.Client(), cfg)
+
+	firstCtx, cancelFirst := context.WithCancel(context.Background())
+	firstErr := make(chan error, 1)
+	go func() {
+		_, _, err := handler(firstCtx, &mcp.CallToolRequest{}, GetServiceProfileArgs{ServiceName: "checkout"})
+		firstErr <- err
+	}()
+	<-requestStarted
+	cancelFirst()
+	if err := <-firstErr; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled caller error = %v, want context cancellation", err)
+	}
+
+	secondResult := make(chan *mcp.CallToolResult, 1)
+	secondErr := make(chan error, 1)
+	go func() {
+		result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceProfileArgs{ServiceName: "checkout"})
+		secondResult <- result
+		secondErr <- err
+	}()
+	close(releaseRequest)
+
+	if err := <-secondErr; err != nil {
+		t.Fatalf("second caller: %v", err)
+	}
+	if result := <-secondResult; !strings.Contains(utils.GetTextContent(t, result), `"service":"checkout"`) {
+		t.Fatal("second caller did not receive the shared profile")
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("upstream requests = %d, want the detached fetch shared across callers", got)
 	}
 }
 

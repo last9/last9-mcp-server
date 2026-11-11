@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/last9api"
 	apiservices "last9-mcp/internal/last9api/services"
 	"last9-mcp/internal/models"
@@ -68,7 +69,7 @@ func NewGetServiceProfileHandler(client *http.Client, cfg models.Config) func(co
 
 		endRequest := utils.StartToolPhase(ctx, "get_service_profile", "request")
 		cacheKey := choice.name + "\x00" + service
-		now := time.Now()
+		now := utils.Now()
 		cacheMu.Lock()
 		cached, cacheHit := cache[cacheKey]
 		cacheMu.Unlock()
@@ -76,21 +77,24 @@ func NewGetServiceProfileHandler(client *http.Client, cfg models.Config) func(co
 		if cacheHit && now.Before(cached.expiresAt) {
 			rawJSON = append([]byte(nil), cached.raw...)
 		} else {
-			value, fetchErr, _ := fetchGroup.Do(cacheKey, func() (any, error) {
+			result := fetchGroup.DoChan(cacheKey, func() (any, error) {
 				cacheMu.Lock()
 				cached, cacheHit := cache[cacheKey]
 				cacheMu.Unlock()
-				if cacheHit && time.Now().Before(cached.expiresAt) {
+				if cacheHit && utils.Now().Before(cached.expiresAt) {
 					return append([]byte(nil), cached.raw...), nil
 				}
-				fetched, err := apiservices.GetServiceProfile(ctx, last9api.NewClient(client, queryCfg), payload)
+				fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), constants.DefaultHTTPTimeout)
+				defer cancel()
+				fetched, err := apiservices.GetServiceProfile(fetchCtx, last9api.NewClient(client, queryCfg), payload)
 				if err != nil {
 					return nil, err
 				}
 				cacheMu.Lock()
 				if len(cache) >= serviceProfileCacheMax {
+					now := utils.Now()
 					for key, entry := range cache {
-						if time.Now().After(entry.expiresAt) {
+						if now.After(entry.expiresAt) {
 							delete(cache, key)
 						}
 					}
@@ -101,13 +105,18 @@ func NewGetServiceProfileHandler(client *http.Client, cfg models.Config) func(co
 						}
 					}
 				}
-				cache[cacheKey] = serviceProfileCacheEntry{raw: append([]byte(nil), fetched...), expiresAt: time.Now().Add(serviceProfileCacheTTL)}
+				cache[cacheKey] = serviceProfileCacheEntry{raw: append([]byte(nil), fetched...), expiresAt: utils.Now().Add(serviceProfileCacheTTL)}
 				cacheMu.Unlock()
 				return fetched, nil
 			})
-			err = fetchErr
-			if err == nil {
-				rawJSON = value.([]byte)
+			select {
+			case fetched := <-result:
+				err = fetched.Err
+				if err == nil {
+					rawJSON = fetched.Val.([]byte)
+				}
+			case <-ctx.Done():
+				err = ctx.Err()
 			}
 		}
 		endRequest(err)
