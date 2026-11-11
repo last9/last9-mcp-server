@@ -142,15 +142,15 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, gate *toolG
 	return nil
 }
 
-// withCallDeadline bounds one tool call as a whole: per-request and per-chunk timeouts
-// alone let a chunk loop run for hours. Read handlers can fold canceled requests into a
-// result, so every read result at the deadline is replaced; a write's may name its verify call.
+// withCallDeadline bounds one tool call as a whole: per-chunk timeouts alone let a chunk loop
+// run for hours. Read handlers can fold canceled requests into a result, so a read result at
+// the deadline is replaced unless it carries timeout guidance; a write's may name its verify call.
 func withCallDeadline[In, Out any](timeout time.Duration, readOnly bool, handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		result, out, err := handler(ctx, req, in)
-		if !errors.Is(ctx.Err(), context.DeadlineExceeded) || (err == nil && !readOnly) {
+		if !errors.Is(ctx.Err(), context.DeadlineExceeded) || (err == nil && (!readOnly || utils.HasTimeoutGuidance(result))) {
 			return result, out, err
 		}
 		msg := fmt.Sprintf("Stopped at the %s tool-call deadline", timeout)

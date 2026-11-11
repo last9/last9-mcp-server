@@ -59,6 +59,9 @@ func NewGetLogPatternsHandler(client *http.Client, cfg models.Config) func(conte
 
 		lines, window, err := scope.sample(ctx, client, cfg, start, end)
 		if err != nil {
+			if scanResult := scanErrorResult(err, logPatternsScanSteps); scanResult != nil {
+				return scanResult, nil, nil
+			}
 			return nil, nil, err
 		}
 		patterns, err := mineLogPatterns(lines)

@@ -42,16 +42,21 @@ func TestGetLogsRelays400BodyAndDrains502(t *testing.T) {
 			t.Cleanup(server.Close)
 
 			handler := NewGetLogsHandler(server.Client(), testLogsConfig(server.URL))
-			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+			result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
 				LogjsonQuery: []map[string]interface{}{
 					{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "checkout"}}},
 				},
 				LookbackMinutes: 5,
 			})
-			if err == nil {
+			var got string
+			switch {
+			case err != nil:
+				got = err.Error()
+			case result != nil && result.IsError:
+				got = result.Content[0].(*mcp.TextContent).Text
+			default:
 				t.Fatal("expected tool error")
 			}
-			got := err.Error()
 			if !strings.Contains(got, tt.wantSubstr) {
 				t.Fatalf("error %q missing %q", got, tt.wantSubstr)
 			}
