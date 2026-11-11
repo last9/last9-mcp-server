@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -42,6 +43,49 @@ func TestGetServiceProfileHandler_CachesRepeatedProfile(t *testing.T) {
 	}
 	if utils.GetTextContent(t, second) != utils.GetTextContent(t, first) {
 		t.Fatal("cached response differs from the original response")
+	}
+}
+
+func TestGetServiceProfileHandler_CoalescesConcurrentProfileFetches(t *testing.T) {
+	var requests atomic.Int32
+	requestStarted := make(chan struct{})
+	releaseRequest := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if requests.Add(1) == 1 {
+			close(requestStarted)
+		}
+		<-releaseRequest
+		_, _ = w.Write([]byte(`{"service":"checkout"}`))
+	}))
+	t.Cleanup(server.Close)
+	cfg := models.Config{APIBaseURL: server.URL}
+	cfg.TokenManager = &auth.TokenManager{AccessToken: "tok", ExpiresAt: time.Now().Add(time.Hour)}
+	handler := NewGetServiceProfileHandler(server.Client(), cfg)
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var callers sync.WaitGroup
+	callers.Add(2)
+	for range 2 {
+		go func() {
+			defer callers.Done()
+			<-start
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceProfileArgs{ServiceName: "checkout"})
+			errs <- err
+		}()
+	}
+	close(start)
+	<-requestStarted
+	close(releaseRequest)
+	callers.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Errorf("handler: %v", err)
+		}
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("upstream requests = %d, want one coalesced request", got)
 	}
 }
 
