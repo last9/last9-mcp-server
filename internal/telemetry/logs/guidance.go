@@ -31,12 +31,9 @@ func addGetLogsGuidance(result map[string]interface{}, args GetLogsArgs, guidanc
 		result["l9_guidance"] = utils.EmptyResultGuidanceMap("logs", logsGuidanceOptions(args, guidance.startMs, guidance.endMs))
 		return false
 	}
-	if kind != "streams" {
-		return false
-	}
 	returned := countLogEntriesInResultItems(items)
 	totalMatching := logTotalMatching(result)
-	if isLogResultTruncated(result, logTruncationState{
+	if kind == "streams" && isLogResultTruncated(result, logTruncationState{
 		returned:       returned,
 		totalMatching:  totalMatching,
 		effectiveLimit: guidance.effectiveLimit,
