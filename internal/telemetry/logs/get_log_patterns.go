@@ -58,10 +58,20 @@ func NewGetLogPatternsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, err
 		}
 
+		linkCtx, cancelLink := context.WithCancel(ctx)
+		defer cancelLink()
+		endLink := utils.StartToolPhase(linkCtx, "get_log_patterns", "deep_link")
+		metaCh := make(chan mcp.Meta, 1)
+		go func() {
+			metaCh <- serviceLogsDeepLink(linkCtx, client, cfg, scope.search(start, end))
+		}()
+
 		endSample := utils.StartToolPhase(ctx, "get_log_patterns", "sample")
 		lines, window, err := scope.sample(ctx, client, cfg, start, end)
 		endSample(err)
 		if err != nil {
+			cancelLink()
+			<-metaCh
 			if scanResult := scanErrorResult(err, logPatternsScanSteps); scanResult != nil {
 				return scanResult, nil, nil
 			}
@@ -82,8 +92,7 @@ func NewGetLogPatternsHandler(client *http.Client, cfg models.Config) func(conte
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to format response: %w", err)
 		}
-		endLink := utils.StartToolPhase(ctx, "get_log_patterns", "deep_link")
-		meta := serviceLogsDeepLink(ctx, client, cfg, scope.search(start, end))
+		meta := <-metaCh
 		endLink(nil)
 		return &mcp.CallToolResult{
 			Meta:    meta,
