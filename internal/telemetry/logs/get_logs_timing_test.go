@@ -32,12 +32,15 @@ func TestGetLogsPhaseTiming(t *testing.T) {
 				cfg := apiModeCfg(srv.URL)
 				cfg.UseLogSearchAPI = apiMode
 				ctx, finish := utils.RecordedSpanContext(t)
-				_, _, err := NewGetLogsHandler(srv.Client(), cfg)(ctx, nil, GetLogsArgs{
+				result, _, err := NewGetLogsHandler(srv.Client(), cfg)(ctx, nil, GetLogsArgs{
 					LogjsonQuery: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "checkout"}}}},
 					StartTimeISO: "2026-10-16T10:00:00Z", EndTimeISO: "2026-10-16T10:01:00Z",
 				})
-				if (err != nil) != failed {
-					t.Fatalf("err=%v, want failure %v", err, failed)
+				if err != nil {
+					t.Fatalf("handler returned Go error: %v", err)
+				}
+				if result == nil || result.IsError != failed {
+					t.Fatalf("result=%#v, want IsError %v", result, failed)
 				}
 				attrs := finish()
 				_, sanityTimed := attrs["last9.phase.count_sanity.duration_ms"]

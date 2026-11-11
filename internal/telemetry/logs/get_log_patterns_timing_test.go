@@ -27,11 +27,14 @@ func TestGetLogPatternsPhaseTiming(t *testing.T) {
 			}))
 			defer srv.Close()
 			ctx, finish := utils.RecordedSpanContext(t)
-			_, _, err := NewGetLogPatternsHandler(srv.Client(), apiModeCfg(srv.URL))(ctx, nil, GetLogPatternsArgs{
+			result, _, err := NewGetLogPatternsHandler(srv.Client(), apiModeCfg(srv.URL))(ctx, nil, GetLogPatternsArgs{
 				LogPatternScopeArgs: LogPatternScopeArgs{ServiceName: "checkout", StartTimeISO: patternWindowStartISO, EndTimeISO: patternWindowEndISO},
 			})
-			if (err != nil) != failed {
-				t.Fatalf("err = %v, want failure %v", err, failed)
+			if err != nil {
+				t.Fatalf("handler returned Go error: %v", err)
+			}
+			if result == nil || result.IsError != failed {
+				t.Fatalf("result = %#v, want IsError %v", result, failed)
 			}
 			attrs := finish()
 			for _, phase := range []string{"sample", "mine", "deep_link"} {
