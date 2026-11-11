@@ -198,6 +198,22 @@ func sanitizeLogFieldOperatorArgs(value interface{}, operator logFieldOperator, 
 	}
 
 	sanitized := append([]interface{}(nil), args...)
+	if operator.name == "$notnull" {
+		if len(sanitized) != 1 {
+			return nil, newLogValidationError(
+				LogValidationInvalidField,
+				operator.path,
+				fmt.Sprintf("invalid arguments for $notnull at %s: expected exactly [field], got %d arguments", operator.path, len(sanitized)),
+			)
+		}
+		if _, ok := sanitized[0].(string); !ok {
+			return nil, newLogValidationError(
+				LogValidationInvalidField,
+				operator.path+"[0]",
+				fmt.Sprintf("invalid arguments for $notnull at %s: expected exactly [field] with a string field", operator.path),
+			)
+		}
+	}
 	if operator.fieldArgIndex >= len(sanitized) {
 		return sanitized, nil
 	}
@@ -439,7 +455,11 @@ func sanitizeLogGroupBy(value interface{}, path string, aliases map[string]struc
 func sanitizeLogFieldRef(fieldRef, path string) (string, error) {
 	trimmed := strings.TrimSpace(fieldRef)
 	if trimmed == "" {
-		return fieldRef, nil
+		return "", newLogValidationError(
+			LogValidationInvalidField,
+			path,
+			fmt.Sprintf("invalid log field reference %q at %s: field reference cannot be blank", fieldRef, path),
+		)
 	}
 
 	switch {
