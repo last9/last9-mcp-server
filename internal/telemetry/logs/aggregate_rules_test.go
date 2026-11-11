@@ -191,6 +191,19 @@ func TestPrepareLogJSONQueryDefaultsQuantileExactToPreviousResult(t *testing.T) 
 	}
 }
 
+func TestPrepareLogJSONQueryRejectsExactQuantileOfKnownStringField(t *testing.T) {
+	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
+		for kind, stage := range map[string]map[string]interface{}{
+			"aggregate": aggregateStage(fn1(operator, 0.95, "Body"), "p95"),
+			"window":    windowStage(fn1(operator, 0.95, "Body"), "p95"),
+		} {
+			if _, err := prepareLogJSONQuery([]map[string]interface{}{stage}, "logjson_query"); err == nil {
+				t.Errorf("%s %s: expected a numeric-field error", kind, operator)
+			}
+		}
+	}
+}
+
 func TestPrepareLogJSONQueryDefaultsQuantileExactToWindowGroupByResult(t *testing.T) {
 	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
 		for kind, consumer := range map[string]func(map[string]interface{}, string) map[string]interface{}{

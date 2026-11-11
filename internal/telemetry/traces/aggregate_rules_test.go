@@ -187,6 +187,19 @@ func TestSanitizeTraceJSONQueryDefaultsQuantileExactToPreviousResult(t *testing.
 	}
 }
 
+func TestSanitizeTraceJSONQueryRejectsExactQuantileOfKnownStringField(t *testing.T) {
+	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
+		for kind, stage := range map[string]map[string]interface{}{
+			"aggregate": aggStage(fn1(operator, 0.95, "SpanName"), "p95"),
+			"window":    winStage(fn1(operator, 0.95, "SpanName"), "p95"),
+		} {
+			if err := SanitizeTraceJSONQuery([]map[string]interface{}{stage}); err == nil {
+				t.Errorf("%s %s: expected a numeric-field error", kind, operator)
+			}
+		}
+	}
+}
+
 func TestSanitizeTraceJSONQueryDefaultsQuantileExactToEveryWindowResult(t *testing.T) {
 	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
 		for kind, consumer := range map[string]func(map[string]interface{}, string) map[string]interface{}{
