@@ -257,6 +257,12 @@ func TestPrepareLogJSONQueryRejectsInvalidAggregateAlias(t *testing.T) {
 	requireInvalidField(t, err, "logjson_query[0].function", "exactly one key")
 }
 
+func TestPrepareLogJSONQueryRejectsWhitespaceOnlyAggregateOperand(t *testing.T) {
+	stage := aggregateStage(fn1("$sum", "   "), "total")
+	_, err := prepareLogJSONQuery([]map[string]interface{}{stage}, "logjson_query")
+	requireInvalidField(t, err, "logjson_query[0].aggregates[0].function.$sum[0]", "field reference cannot be blank")
+}
+
 func TestPrepareLogJSONQueryQuantileExactNeedsNumericGuard(t *testing.T) {
 	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
 		for kind, consumer := range map[string]func(map[string]interface{}, string) map[string]interface{}{

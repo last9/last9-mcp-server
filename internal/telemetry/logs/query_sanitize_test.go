@@ -237,6 +237,27 @@ func TestSanitizeLogJSONQueryRejectsNonArrayFieldOperatorArgs(t *testing.T) {
 	}
 }
 
+func TestSanitizeLogJSONQueryRejectsMalformedNotNullArgs(t *testing.T) {
+	for _, args := range [][]interface{}{
+		{},
+		{123},
+		{"Body", "extra"},
+	} {
+		_, err := sanitizeLogJSONQuery([]map[string]interface{}{
+			{
+				"type":  "filter",
+				"query": map[string]interface{}{"$notnull": args},
+			},
+		})
+		if err == nil {
+			t.Fatalf("expected $notnull args %v to be rejected", args)
+		}
+		if !strings.Contains(err.Error(), "$notnull") || !strings.Contains(err.Error(), "exactly [field]") {
+			t.Fatalf("unexpected error for args %v: %v", args, err)
+		}
+	}
+}
+
 func TestSanitizeLogJSONQueryRejectsGroupByCollisions(t *testing.T) {
 	_, err := sanitizeLogJSONQuery([]map[string]interface{}{
 		{
