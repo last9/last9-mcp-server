@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,6 +17,33 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+func TestGetServiceProfileHandler_CachesRepeatedProfile(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		_, _ = w.Write([]byte(`{"service":"checkout","telemetry":{"logs":"present"}}`))
+	}))
+	t.Cleanup(server.Close)
+	cfg := models.Config{APIBaseURL: server.URL}
+	cfg.TokenManager = &auth.TokenManager{AccessToken: "tok", ExpiresAt: time.Now().Add(time.Hour)}
+	handler := NewGetServiceProfileHandler(server.Client(), cfg)
+
+	first, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceProfileArgs{ServiceName: "checkout"})
+	if err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	second, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceProfileArgs{ServiceName: "checkout"})
+	if err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("upstream requests = %d, want one within the cache TTL", got)
+	}
+	if utils.GetTextContent(t, second) != utils.GetTextContent(t, first) {
+		t.Fatal("cached response differs from the original response")
+	}
+}
 
 func TestGetServiceProfileHandler_ForwardsRegionAndService(t *testing.T) {
 	var captured apiservices.GetServiceProfileInput
