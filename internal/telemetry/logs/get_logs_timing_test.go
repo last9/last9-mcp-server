@@ -36,8 +36,11 @@ func TestGetLogsPhaseTiming(t *testing.T) {
 					LogjsonQuery: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "checkout"}}}},
 					StartTimeISO: "2026-10-16T10:00:00Z", EndTimeISO: "2026-10-16T10:01:00Z",
 				})
-				if gotFailed := err != nil || result != nil && result.IsError; gotFailed != failed {
-					t.Fatalf("result=%v err=%v, want failure %v", result, err, failed)
+				if err != nil {
+					t.Fatalf("handler returned Go error: %v", err)
+				}
+				if result == nil || result.IsError != failed {
+					t.Fatalf("result=%#v, want IsError %v", result, failed)
 				}
 				attrs := finish()
 				_, sanityTimed := attrs["last9.phase.count_sanity.duration_ms"]
