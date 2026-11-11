@@ -232,6 +232,35 @@ The NPM route is easier on Windows — no path management.
 | `OTEL_EXPORTER_OTLP_ENDPOINT`| —                    | OTLP collector endpoint (only when telemetry is enabled) |
 | `OTEL_EXPORTER_OTLP_HEADERS` | —                    | OTLP auth headers (only when telemetry is enabled) |
 
+### Tool phase timing
+
+With internal telemetry enabled, tool spans carry `last9.phase.<phase>.duration_ms`
+(real elapsed milliseconds) and `last9.phase.<phase>.failed` (whether that phase
+returned an error). The same fields are emitted as `tool phase completed` debug
+logs, with `tool` and `phase`, when the configured logger accepts debug records.
+Inputs, query text, credentials and error bodies are not added by these timings.
+
+| Tool | Phases |
+| --- | --- |
+| `get_log_patterns` | `sample`: fetch and decode the sample; `mine`: pattern mining; `deep_link`: resolve the optional index and build the link |
+| `get_logs` | `fetch`: fetch, decode and merge results, including retries and optional count sanity checks; `count_sanity`: the nested optional check; `post_process`: guidance, summary and JSON formatting; `deep_link`: index resolution and link construction |
+| `get_service_profile` | `request`: prepare and send the request through the shared API client and read its complete response, before brief formatting |
+
+Only executed phases are recorded, including failed fetches. Optional helpers
+that suppress errors retain that behavior; `failed: false` does not certify that
+an optional link or count check was available. The nested `count_sanity` duration
+is already included in `fetch`; do not add it twice. Fetch time includes client
+work, so it is not a measurement of backend execution alone. Compare these phases
+on equivalent windows and search paths before tuning sampling or caching.
+
+For a latency investigation, replay the same service, datasource, index, window,
+and limits on the baseline and candidate builds. Record the build SHA, tool total,
+phase durations, `last9.logs.search_path`, retry attributes when present, and
+coverage flags. Compare slow calls as well as typical calls. A slow fetch or
+profile request identifies a network/API phase to investigate; backend execution
+needs its own correlated evidence before assigning the tail to the backend.
+These diagnostics alone do not establish a latency improvement.
+
 ### Read-only mode
 
 `--read-only` (or `LAST9_MCP_READ_ONLY=true`) serves only tools annotated `readOnlyHint: true`, so no tool can create, change or delete alert rules, notification channels, dashboards or drop rules, acknowledge or reassign alerts, or mute groups. A tool without annotations counts as a write tool and is hidden.

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"last9-mcp/internal/auth"
-	"last9-mcp/internal/constants"
+	apiservices "last9-mcp/internal/last9api/services"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -18,9 +18,9 @@ import (
 )
 
 func TestGetServiceProfileHandler_ForwardsRegionAndService(t *testing.T) {
-	var captured serviceProfileRequest
+	var captured apiservices.GetServiceProfileInput
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != constants.EndpointServiceProfile {
+		if r.URL.Path != "/service_profile" {
 			t.Errorf("path %s", r.URL.Path)
 		}
 		if r.Method != http.MethodPost {
@@ -197,7 +197,7 @@ func TestGetServiceProfileHandler_EmptyServiceName(t *testing.T) {
 
 func TestGetServiceProfileHandler_APIError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != constants.EndpointServiceProfile {
+		if r.URL.Path != "/service_profile" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -223,5 +223,45 @@ func TestGetServiceProfileHandler_APIError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "500") {
 		t.Errorf("expected HTTP status in error message, got: %v", err)
+	}
+}
+
+func TestGetServiceProfilePhaseTiming(t *testing.T) {
+	for _, outcome := range []string{"success", "upstream failure", "incomplete body"} {
+		t.Run(outcome, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if outcome == "upstream failure" {
+					time.Sleep(5 * time.Millisecond)
+					http.Error(w, "private upstream diagnostic", http.StatusInternalServerError)
+					return
+				}
+				if outcome == "incomplete body" {
+					w.Header().Set("Content-Length", "10000")
+				}
+				w.WriteHeader(http.StatusOK)
+				w.(http.Flusher).Flush()
+				time.Sleep(5 * time.Millisecond)
+				_, _ = w.Write([]byte(`{"service":"api","future_field":true}`))
+			}))
+			defer server.Close()
+			cfg := models.Config{APIBaseURL: server.URL, TokenManager: &auth.TokenManager{AccessToken: "tok", ExpiresAt: time.Now().Add(time.Hour)}}
+			ctx, finish := utils.RecordedSpanContext(t)
+			result, _, err := NewGetServiceProfileHandler(server.Client(), cfg)(ctx, nil, GetServiceProfileArgs{ServiceName: "api"})
+			failed := outcome != "success"
+			if (err != nil) != failed {
+				t.Fatalf("err=%v, want failure %v", err, failed)
+			}
+			attrs := finish()
+			value, ok := attrs["last9.phase.request.duration_ms"]
+			if !ok || value.AsFloat64() < 5 {
+				t.Errorf("request duration=%v, must include body read", value)
+			}
+			if got := attrs["last9.phase.request.failed"].AsBool(); got != failed {
+				t.Errorf("request failed=%v, want %v", got, failed)
+			}
+			if !failed && !strings.Contains(utils.GetTextContent(t, result), `{"service":"api","future_field":true}`) {
+				t.Fatal("raw response changed")
+			}
+		})
 	}
 }

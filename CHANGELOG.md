@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `get_traces` now documents that filter-only queries return span rows, so trace-level questions deduplicate by `TraceId` before using `get_service_traces` with an exact ID to fetch the complete trace (#544).
+- `get_logs` `l9_sanity` no longer reports a matched count above `service_log_volume` as e.g. "102.43% of ALL log lines": when `ratio` exceeds 1 the note says the volume baseline is a separate ingestion metric that can trail the log store, so the ratio is approximate (#527).
 - `get_logs` and `get_log_patterns` return a scan that timed out (budget, HTTP 408/504) or failed upstream (HTTP 5xx) as an error result with `l9_guidance`: its `cause` (`timeout` or `scan_failed`), why wide scans fail, and `next_steps` (a selective `$contains`/`$eq` filter before `parse`, a shorter window, a lower `sample_size`). A timed-out result also carries `_meta.l9_guidance_cause: "timeout"`, and the overall tool-call deadline keeps it instead of replacing it with generic text. Previously these were bare error text with no next step. HTTP 400/422 errors are unchanged (#526).
 - `get_logs` no longer reports nonempty aggregate rows as empty when their `values` arrays are empty (#447).
 - `get_traces` now rejects unknown pipeline stage keys locally with the allowed keys for that stage, instead of sending malformed stages upstream (#418).
