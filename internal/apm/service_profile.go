@@ -1,15 +1,14 @@
 package apm
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
-	"last9-mcp/internal/constants"
+	"last9-mcp/internal/last9api"
+	apiservices "last9-mcp/internal/last9api/services"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -24,14 +23,6 @@ const briefUnavailableMarker = "Service profile: brief unavailable — the respo
 type GetServiceProfileArgs struct {
 	ServiceName string `json:"service_name" jsonschema:"(Required) Service to derive a telemetry profile for"`
 	Datasource  string `json:"datasource,omitempty" jsonschema:"Datasource name; omitted uses the default, a near miss its closest match (named in an additional content block)."`
-}
-
-type serviceProfileRequest struct {
-	Service  string `json:"service"`
-	ReadURL  string `json:"read_url"`
-	Username string `json:"username"`
-	Password string `json:"password"`
-	Region   string `json:"region"`
 }
 
 // NewGetServiceProfileHandler returns the handler for the get_service_profile MCP tool.
@@ -51,48 +42,18 @@ func NewGetServiceProfileHandler(client *http.Client, cfg models.Config) func(co
 		}
 		queryCfg := choice.cfg
 
-		payload := serviceProfileRequest{
+		payload := apiservices.GetServiceProfileInput{
 			Service:  service,
 			ReadURL:  queryCfg.PrometheusReadURL,
 			Username: queryCfg.PrometheusUsername,
 			Password: queryCfg.PrometheusPassword,
-			Region:   queryCfg.Region,
 		}
 
-		bodyBytes, err := json.Marshal(payload)
+		endRequest := utils.StartToolPhase(ctx, "get_service_profile", "request")
+		rawJSON, err := apiservices.GetServiceProfile(ctx, last9api.NewClient(client, queryCfg), payload)
+		endRequest(err)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to marshal request: %w", err)
-		}
-
-		apiURL := fmt.Sprintf("%s%s", queryCfg.APIBaseURL, constants.EndpointServiceProfile)
-		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(bodyBytes))
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create request: %w", err)
-		}
-
-		if queryCfg.TokenManager == nil {
-			return nil, nil, fmt.Errorf("token manager is not configured")
-		}
-
-		httpReq.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
-		httpReq.Header.Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
-		httpReq.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+queryCfg.TokenManager.GetAccessToken(ctx))
-
-		resp, err := client.Do(httpReq)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to fetch service profile: %w", err)
-		}
-		defer resp.Body.Close()
-
-		// Request body carries Prometheus credentials; a raw echo of the upstream
-		// error would surface them to the model.
-		if resp.StatusCode != http.StatusOK {
-			return nil, nil, utils.NewUpstreamHTTPError(resp, "service profile")
-		}
-
-		rawJSON, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to read response: %w", err)
+			return nil, nil, err
 		}
 
 		// The raw JSON is the payload of record; parsing only builds the brief.
