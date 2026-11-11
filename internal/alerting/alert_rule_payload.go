@@ -8,6 +8,8 @@ import (
 const (
 	severityBreach = "breach"
 	severityThreat = "threat"
+
+	maxEvalWindowMinutes = 60
 )
 
 type AlertExpressionArg struct {
@@ -68,8 +70,8 @@ func validateAlertRulePayload(rule AlertRulePayload) error {
 	if strings.TrimSpace(arg.ID) == "" {
 		return fmt.Errorf("alert_rule.expression_args[%q].id is required", rule.PrimaryIndicator)
 	}
-	if rule.EvalWindow != nil && (*rule.EvalWindow < 0 || *rule.EvalWindow > 60) {
-		return fmt.Errorf("alert_rule.eval_window must be between 0 and 60 minutes")
+	if rule.EvalWindow != nil && (*rule.EvalWindow < 0 || *rule.EvalWindow > maxEvalWindowMinutes) {
+		return fmt.Errorf("alert_rule.eval_window must be between 0 and %d minutes", maxEvalWindowMinutes)
 	}
 	if rule.Severity != nil && *rule.Severity != severityBreach && *rule.Severity != severityThreat {
 		return fmt.Errorf("alert_rule.severity must be breach or threat")
