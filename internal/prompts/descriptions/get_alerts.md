@@ -6,9 +6,9 @@
 	- timestamp: Unix timestamp for the query time (deprecated alias, defaults to current time)
 	- window: Time window in seconds to look back for alerts (defaults to 900 seconds = 15 minutes, range: 1-3600). Max is 3600 seconds (1 hour). If the user asks for a longer period (e.g. 90 minutes, 2 hours, a day), cap window at 3600 — do not pass the raw computed value (such as 5400 or 7200), as the server rejects anything above 3600.
 	- lookback_minutes: Relative time window in minutes (range: 1-60). Used only when window is not provided.
-	
+
 	Uses the datasource configured in the server config (or default if not specified).
-	
+
 	Each alert includes:
 	- id: Unique identifier for this alert instance
 	- rule_id: ID of the alert rule that triggered this alert
@@ -21,7 +21,7 @@
 	- annotations: Additional context and descriptions
 	- generator_url: URL to the source of the alert
 	- fingerprint: Unique fingerprint for this alert instance
-	
+
 	Each alert rule that has been acknowledged or has an owner also carries a claim block (omitted when the rule is unclaimed):
 	- owner_user_id / owner_name / owner_email: the responder who owns the rule
 	- claimed_by_user_id: the user who recorded the claim

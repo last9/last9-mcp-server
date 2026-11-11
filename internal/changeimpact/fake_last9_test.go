@@ -77,8 +77,16 @@ func (f *fakeLast9) serve(t *testing.T) *httptest.Server {
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"contract_version": "investigation-evidence/v1",
 				"analysis_version": "trace-attribute-deviations/v1",
-				"evidence":         map[string]any{"warnings": []string{"candidate_limit_reached"}},
-				"data":             map[string]any{"deviations": f.traceDeviations},
+				"request": map[string]any{
+					"scope": map[string]any{}, "requested_window": map[string]any{}, "effective_window": map[string]any{},
+				},
+				"evidence": map[string]any{
+					"partial": false, "truncated": false, "warnings": []string{"candidate_limit_reached"}, "provenance": map[string]any{},
+				},
+				"interpretation": map[string]any{
+					"evidence_quality": "medium", "claim_type": "correlation", "summary": "", "limitations": []string{},
+				},
+				"data": map[string]any{"deviations": f.traceDeviations},
 			})
 		default:
 			t.Errorf("unexpected request %s", r.URL.Path)

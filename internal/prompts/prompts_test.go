@@ -620,6 +620,15 @@ func TestGetTraceWaterfallDescriptionSendsRedactionToAnAdmin(t *testing.T) {
 	}
 }
 
+func TestGetTraceWaterfallDescriptionExplainsSerializedSpanTruncation(t *testing.T) {
+	description := prompts.GetTraceWaterfallDescription
+	for _, phrase := range []string{"serialized-byte limit", "serialized_spans", "spans are missing"} {
+		if !strings.Contains(description, phrase) {
+			t.Fatalf("description must explain byte-limited missing spans with %q", phrase)
+		}
+	}
+}
+
 func TestCreateAlertDescriptionStatesDuplicateNameRefusal(t *testing.T) {
 	if !strings.Contains(prompts.CreateAlertDescription, "already uses (case-insensitive) is refused") {
 		t.Error("create_alert does not say a duplicate rule_name is refused")

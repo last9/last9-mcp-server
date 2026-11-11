@@ -51,7 +51,7 @@ func NewGetTraceWaterfallHandler(client *http.Client, cfg models.Config) func(co
 			return nil, nil, err
 		}
 		dl := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildTracesLink(in.Start*1000, in.End*1000, nil, in.TraceID, "")
-		return &mcp.CallToolResult{Meta: deeplink.ToMeta(dl), Content: []mcp.Content{&mcp.TextContent{Text: string(body)}}}, nil, nil
+		return newTraceWaterfallToolResult(body, deeplink.ToMeta(dl)), nil, nil
 	}
 }
 
@@ -88,14 +88,7 @@ func waterfallInput(args GetTraceWaterfallArgs) (apitraces.GetWaterfallInput, er
 	if err != nil {
 		return apitraces.GetWaterfallInput{}, err
 	}
-	return apitraces.GetWaterfallInput{
-		TraceID:        traceID,
-		Start:          start.Unix(),
-		End:            end.Unix(),
-		MaxSpans:       maxSpans,
-		SelectedSpanID: spanID,
-		Environment:    args.Environment,
-	}, nil
+	return apitraces.GetWaterfallInput{TraceID: traceID, Start: start.Unix(), End: end.Unix(), MaxSpans: maxSpans, SelectedSpanID: spanID, Environment: args.Environment}, nil
 }
 
 // A *url.Error carries the request URL, so transport failures keep the trace
@@ -156,5 +149,13 @@ func (e *waterfallRefusedError) Error() string {
 		return fmt.Sprintf("The trace service's waterfall was not redacted by %s, so it was withheld. Retrying will not help.", traceEvidenceSanitizerVersion)
 	default:
 		return "The trace service's waterfall carries no sanitizer block, so it may be unredacted and was withheld. Retrying will not help."
+	}
+}
+
+func newTraceWaterfallToolResult(body []byte, meta mcp.Meta) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		Meta:              meta,
+		Content:           []mcp.Content{&mcp.TextContent{Text: string(body)}},
+		StructuredContent: json.RawMessage(body),
 	}
 }

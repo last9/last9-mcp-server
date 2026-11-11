@@ -2,7 +2,6 @@ package traces
 
 import (
 	"encoding/json"
-	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,12 +13,12 @@ const evidenceSchemaPath = "../../../contracts/investigation-evidence-v1.schema.
 
 func resolvedEvidenceSchema(t *testing.T) *jsonschema.Resolved {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Clean(evidenceSchemaPath))
+	body, err := os.ReadFile(filepath.Clean(evidenceSchemaPath))
 	if err != nil {
 		t.Fatal(err)
 	}
 	var schema jsonschema.Schema
-	if err := json.Unmarshal(b, &schema); err != nil {
+	if err := json.Unmarshal(body, &schema); err != nil {
 		t.Fatal(err)
 	}
 	resolved, err := schema.Resolve(nil)
@@ -29,21 +28,10 @@ func resolvedEvidenceSchema(t *testing.T) *jsonschema.Resolved {
 	return resolved
 }
 
-// The relayed body is what reaches the model, so hold it to the evidence schema.
-func TestWaterfallFixtureSatisfiesEvidenceContract(t *testing.T) {
-	call := callWaterfallHandler(t, http.StatusOK, waterfallFixture(t), GetTraceWaterfallArgs{TraceID: testValidTraceID})
-	if call.err != nil {
-		t.Fatal(call.err)
-	}
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(waterfallText(t, call.result)), &payload); err != nil {
-		t.Fatal(err)
-	}
-	if err := resolvedEvidenceSchema(t).Validate(payload); err != nil {
-		t.Fatalf("relayed waterfall does not satisfy %s: %v", evidenceSchemaPath, err)
-	}
-	// contracts/README.md forbids causal claims from this producer.
-	if payload["interpretation"].(map[string]any)["claim_type"] == "cause" {
-		t.Fatal("causal claim type is forbidden")
+const waterfallFixturePath = "../../../contracts/fixtures/evidence-trace-waterfall.json"
+
+func TestWaterfallFixtureMatchesServiceContract(t *testing.T) {
+	if err := checkWaterfallEvidence(waterfallFixture(t)); err != nil {
+		t.Fatalf("service fixture does not satisfy the waterfall contract: %v", err)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -27,13 +28,15 @@ const (
 // Request bounds, mirroring the endpoint's v1 limits so bad values fail here by name.
 const (
 	deviationMaxCandidates        = 8
-	deviationRankedResultsDefault = 10
+	deviationRankedResultsDefault = 5
 	deviationRankedResultsMax     = 10
+	deviationReturnedResultsMax   = 5
 	deviationMinimumCohortDefault = 100
 	deviationMinimumCohortMin     = 20
 	deviationValueSupportDefault  = 20
 	deviationValueSupportMin      = 10
 	deviationLookbackMaxMinutes   = 15
+	deviationMaxResponseBodyBytes = 4 << 20
 )
 
 type GetTraceAttributeDeviationsArgs struct {
@@ -41,9 +44,11 @@ type GetTraceAttributeDeviationsArgs struct {
 	ServiceName         string                   `json:"service_name" jsonschema:"(Required) Exact service name to analyze"`
 	Environment         string                   `json:"environment" jsonschema:"(Required) Exact deployment.environment value"`
 	Operation           string                   `json:"operation,omitempty" jsonschema:"Optional exact span/operation name"`
+	Population          string                   `json:"population,omitempty" jsonschema:"Population scope: service when operation is absent, operation when operation is present; the default is derived from operation"`
 	Filters             []map[string]interface{} `json:"filters,omitempty" jsonschema:"Optional additional trace filter conditions in trace JSON operator form"`
 	CandidateAttributes []string                 `json:"candidate_attributes,omitempty" jsonschema:"Candidate attributes from get_trace_attributes_for_pipeline; maximum 8. Omit for bounded safe discovery."`
-	LatencyThresholdMs  float64                  `json:"latency_threshold_ms,omitempty" jsonschema:"Latency split in milliseconds; required for latency mode"`
+	LatencyThresholdMs  *float64                 `json:"latency_threshold_ms,omitempty" jsonschema:"Latency split in milliseconds; use exactly one latency selector in latency mode"`
+	LatencyPercentile   *float64                 `json:"latency_percentile,omitempty" jsonschema:"Whole-number latency percentile in the same scoped population; greater than 0 and less than 100; use exactly one latency selector in latency mode"`
 	StartTimeISO        string                   `json:"start_time_iso,omitempty" jsonschema:"Current/analysis window start in RFC3339"`
 	EndTimeISO          string                   `json:"end_time_iso,omitempty" jsonschema:"Current/analysis window end in RFC3339"`
 	LookbackMinutes     int                      `json:"lookback_minutes,omitempty" jsonschema:"Lookback ending now; default 15, maximum 15"`
@@ -51,7 +56,7 @@ type GetTraceAttributeDeviationsArgs struct {
 	BaselineEndISO      string                   `json:"baseline_end_time_iso,omitempty" jsonschema:"(Required for time mode) Equal-duration baseline end in RFC3339"`
 	MinimumCohortSize   int                      `json:"minimum_cohort_size,omitempty" jsonschema:"Minimum spans required in each cohort; default 100, minimum 20"`
 	MinimumValueSupport int                      `json:"minimum_value_support,omitempty" jsonschema:"Minimum pooled observations for a ranked value; default 20, minimum 10"`
-	Limit               int                      `json:"limit,omitempty" jsonschema:"Maximum ranked deviations; default 10, maximum 10"`
+	Limit               int                      `json:"limit,omitempty" jsonschema:"Requested ranked deviations; default 5. Values 6-10 are accepted for legacy compatibility, but at most 5 are returned with truncation metadata."`
 }
 
 type deviationAPIRequest struct {
@@ -63,17 +68,21 @@ type deviationAPIRequest struct {
 }
 
 type deviationAPIScope struct {
-	ServiceName string                   `json:"service_name"`
-	Environment string                   `json:"environment"`
-	Operation   string                   `json:"operation,omitempty"`
-	Filters     []map[string]interface{} `json:"filters,omitempty"`
+	ServiceName string `json:"service_name"`
+	Environment string `json:"environment"`
+	Operation   string `json:"operation,omitempty"`
+	// The deployed endpoint rejects population as an unknown scope key. Keep it
+	// local until the backend accepts the advertised forward-compatible field.
+	Population string                   `json:"-"`
+	Filters    []map[string]interface{} `json:"filters,omitempty"`
 }
 
 type deviationAPIComparison struct {
 	Mode               string             `json:"mode"`
 	Target             deviationAPIWindow `json:"target"`
 	Control            deviationAPIWindow `json:"control"`
-	LatencyThresholdMs *float64           `json:"latency_threshold_ms"`
+	LatencyThresholdMs *float64           `json:"latency_threshold_ms,omitempty"`
+	LatencyPercentile  *float64           `json:"latency_percentile,omitempty"`
 }
 
 type deviationAPIWindow struct {
@@ -94,7 +103,6 @@ type deviationAPILimits struct {
 	MaximumRankedResults int `json:"maximum_ranked_results"`
 }
 
-// AttributeDeviation is one ranked attribute value from the deviations endpoint.
 type AttributeDeviation struct {
 	Attribute            string  `json:"attribute"`
 	Value                any     `json:"value"`
@@ -105,7 +113,6 @@ type AttributeDeviation struct {
 	Interpretation       string  `json:"interpretation,omitempty"`
 }
 
-// AttributeDeviations is the ranked part of an attribute-deviations response.
 type AttributeDeviations struct {
 	Deviations []AttributeDeviation
 	Warnings   []string
@@ -117,12 +124,13 @@ func NewGetTraceAttributeDeviationsHandler(client *http.Client, cfg models.Confi
 		if err != nil {
 			return nil, nil, err
 		}
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(body)}}}, nil, nil
+		return &mcp.CallToolResult{
+			Content:           []mcp.Content{&mcp.TextContent{Text: string(body)}},
+			StructuredContent: json.RawMessage(body),
+		}, nil, nil
 	}
 }
 
-// QueryTraceAttributeDeviations runs the get_trace_attribute_deviations analysis
-// and returns its ranked values and evidence warnings.
 func QueryTraceAttributeDeviations(ctx context.Context, client *http.Client, cfg models.Config, args GetTraceAttributeDeviationsArgs) (AttributeDeviations, error) {
 	body, err := fetchAttributeDeviations(ctx, client, cfg, args)
 	if err != nil {
@@ -162,6 +170,10 @@ func buildDeviationAPIRequest(args GetTraceAttributeDeviationsArgs, now time.Tim
 	if mode != "latency" && mode != "errors" && mode != "time" {
 		return deviationAPIRequest{}, fmt.Errorf("comparison_mode must be latency, errors, or time")
 	}
+	population, err := deviationPopulation(args)
+	if err != nil {
+		return deviationAPIRequest{}, err
+	}
 	if err := validateDeviationFilterFields(args.Filters, "filters"); err != nil {
 		return deviationAPIRequest{}, err
 	}
@@ -178,7 +190,7 @@ func buildDeviationAPIRequest(args GetTraceAttributeDeviationsArgs, now time.Tim
 	if err != nil {
 		return deviationAPIRequest{}, err
 	}
-	threshold, err := deviationLatencyThreshold(mode, args.LatencyThresholdMs)
+	threshold, percentile, err := deviationLatencySelectors(mode, args.LatencyThresholdMs, args.LatencyPercentile)
 	if err != nil {
 		return deviationAPIRequest{}, err
 	}
@@ -186,7 +198,31 @@ func buildDeviationAPIRequest(args GetTraceAttributeDeviationsArgs, now time.Tim
 	if err != nil {
 		return deviationAPIRequest{}, err
 	}
-	return newDeviationAPIRequest(args, mode, target, control, threshold, limits), nil
+	return newDeviationAPIRequest(args, population, mode, target, control, threshold, percentile, limits), nil
+}
+
+func deviationPopulation(args GetTraceAttributeDeviationsArgs) (string, error) {
+	population := strings.ToLower(strings.TrimSpace(args.Population))
+	operationPresent := strings.TrimSpace(args.Operation) != ""
+	if population == "" {
+		if operationPresent {
+			return "operation", nil
+		}
+		return "service", nil
+	}
+	switch population {
+	case "service":
+		if operationPresent {
+			return "", fmt.Errorf("operation must be omitted when population is service")
+		}
+	case "operation":
+		if !operationPresent {
+			return "", fmt.Errorf("operation is required when population is operation")
+		}
+	default:
+		return "", fmt.Errorf("population must be service or operation")
+	}
+	return population, nil
 }
 
 // deviationDisallowedFilterFields are top-level tracejson fields the attribute-
@@ -321,24 +357,36 @@ func deviationControlWindow(args GetTraceAttributeDeviationsArgs, mode string, t
 	return control, nil
 }
 
-func deviationLatencyThreshold(mode string, value float64) (*float64, error) {
+func deviationLatencySelectors(mode string, thresholdValue, percentileValue *float64) (*float64, *float64, error) {
 	if mode == "latency" {
-		if value <= 0 {
-			return nil, fmt.Errorf("latency_threshold_ms must be positive for latency mode")
+		if (thresholdValue != nil) == (percentileValue != nil) {
+			return nil, nil, fmt.Errorf("latency mode requires exactly one of latency_threshold_ms or latency_percentile")
 		}
-		return &value, nil
+		if thresholdValue != nil && *thresholdValue <= 0 {
+			return nil, nil, fmt.Errorf("latency_threshold_ms must be positive for latency mode")
+		}
+		if percentileValue != nil && (*percentileValue <= 0 || *percentileValue >= 100) {
+			return nil, nil, fmt.Errorf("latency_percentile must be greater than 0 and less than 100")
+		}
+		if percentileValue != nil && math.Trunc(*percentileValue) != *percentileValue {
+			return nil, nil, fmt.Errorf("latency_percentile must be a whole number")
+		}
+		if thresholdValue != nil {
+			return thresholdValue, nil, nil
+		}
+		return nil, percentileValue, nil
 	}
-	if value != 0 {
-		return nil, fmt.Errorf("latency_threshold_ms is only valid for latency mode")
+	if thresholdValue != nil || percentileValue != nil {
+		return nil, nil, fmt.Errorf("latency threshold selectors are only valid for latency mode")
 	}
-	return nil, nil
+	return nil, nil, nil
 }
 
-func newDeviationAPIRequest(args GetTraceAttributeDeviationsArgs, mode string, target, control deviationAPIWindow, threshold *float64, limits deviationAPILimits) deviationAPIRequest {
+func newDeviationAPIRequest(args GetTraceAttributeDeviationsArgs, population, mode string, target, control deviationAPIWindow, threshold, percentile *float64, limits deviationAPILimits) deviationAPIRequest {
 	return deviationAPIRequest{
 		ContractVersion: attributeDeviationsVersion,
-		Scope:           deviationAPIScope{ServiceName: args.ServiceName, Environment: args.Environment, Operation: args.Operation, Filters: args.Filters},
-		Comparison:      deviationAPIComparison{Mode: mode, Target: target, Control: control, LatencyThresholdMs: threshold},
+		Scope:           deviationAPIScope{ServiceName: args.ServiceName, Environment: args.Environment, Operation: args.Operation, Population: population, Filters: args.Filters},
+		Comparison:      deviationAPIComparison{Mode: mode, Target: target, Control: control, LatencyThresholdMs: threshold, LatencyPercentile: percentile},
 		Candidates:      deviationAPICandidates{Attributes: args.CandidateAttributes, AutoDiscover: len(args.CandidateAttributes) == 0},
 		Limits:          limits,
 	}
@@ -369,9 +417,12 @@ func callAttributeDeviationsAPI(ctx context.Context, client *http.Client, cfg mo
 	if response.StatusCode != http.StatusOK {
 		return nil, newTraceHTTPError(response)
 	}
-	responseBody, readErr := io.ReadAll(io.LimitReader(response.Body, 4<<20))
+	responseBody, readErr := io.ReadAll(io.LimitReader(response.Body, deviationMaxResponseBodyBytes+1))
 	if readErr != nil {
 		return nil, newTraceInvalidResponseError(readErr)
+	}
+	if len(responseBody) > deviationMaxResponseBodyBytes {
+		return nil, newTraceInvalidResponseError(fmt.Errorf("attribute-deviations response exceeds %d bytes", deviationMaxResponseBodyBytes))
 	}
 	if !json.Valid(responseBody) {
 		return nil, newTraceInvalidResponseError(nil)
@@ -379,5 +430,65 @@ func callAttributeDeviationsAPI(ctx context.Context, client *http.Client, cfg mo
 	if err := checkEvidenceContract(responseBody, attributeDeviationsVersion); err != nil {
 		return nil, err
 	}
+	if err := checkDeviationResponseContract(responseBody); err != nil {
+		return nil, err
+	}
 	return responseBody, nil
+}
+
+// The handler forwards this body verbatim, so a payload that is not the promised
+// envelope would have the model reasoning over fields that do not exist.
+func checkDeviationResponseContract(body []byte) error {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return newTraceInvalidResponseError(err)
+	}
+	request, requestOK := rawObject(envelope["request"])
+	if !requestOK || !rawJSONObject(request["scope"]) || !rawJSONObject(request["requested_window"]) || !rawJSONObject(request["effective_window"]) {
+		return newTraceInvalidResponseError(fmt.Errorf("response request must contain object scope and windows"))
+	}
+	evidence, evidenceOK := rawObject(envelope["evidence"])
+	if !evidenceOK || !rawBool(evidence["partial"]) || !rawBool(evidence["truncated"]) || !rawJSONArray(evidence["warnings"]) || !rawJSONObject(evidence["provenance"]) {
+		return newTraceInvalidResponseError(fmt.Errorf("response evidence is missing required typed fields"))
+	}
+	interpretation, interpretationOK := rawObject(envelope["interpretation"])
+	if !interpretationOK || !rawString(interpretation["evidence_quality"]) || !rawString(interpretation["claim_type"]) || !rawString(interpretation["summary"]) || !rawJSONArray(interpretation["limitations"]) {
+		return newTraceInvalidResponseError(fmt.Errorf("response interpretation is missing required typed fields"))
+	}
+	data, dataOK := rawObject(envelope["data"])
+	var deviations []json.RawMessage
+	if !dataOK || json.Unmarshal(data["deviations"], &deviations) != nil || deviations == nil {
+		return newTraceInvalidResponseError(fmt.Errorf("response missing required data.deviations array"))
+	}
+	if len(deviations) > deviationReturnedResultsMax {
+		return newTraceInvalidResponseError(fmt.Errorf(
+			"response returned %d deviations; maximum supported is %d", len(deviations), deviationReturnedResultsMax))
+	}
+	return nil
+}
+
+func rawObject(raw json.RawMessage) (map[string]json.RawMessage, bool) {
+	var object map[string]json.RawMessage
+	err := json.Unmarshal(raw, &object)
+	return object, len(raw) > 0 && err == nil && object != nil
+}
+
+func rawJSONObject(raw json.RawMessage) bool {
+	_, ok := rawObject(raw)
+	return ok
+}
+
+func rawJSONArray(raw json.RawMessage) bool {
+	var array []json.RawMessage
+	return len(raw) > 0 && json.Unmarshal(raw, &array) == nil && array != nil
+}
+
+func rawBool(raw json.RawMessage) bool {
+	var value bool
+	return len(raw) > 0 && json.Unmarshal(raw, &value) == nil
+}
+
+func rawString(raw json.RawMessage) bool {
+	var value string
+	return len(raw) > 0 && json.Unmarshal(raw, &value) == nil
 }

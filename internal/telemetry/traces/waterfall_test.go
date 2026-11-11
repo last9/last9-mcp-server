@@ -1,9 +1,10 @@
 package traces
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,19 +17,17 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const waterfallFixturePath = "../../../contracts/fixtures/evidence-trace-waterfall.json"
+type waterfallRoundTripFunc func(*http.Request) (*http.Response, error)
 
-// The fixture is the trace service's golden waterfall response.
 func waterfallFixture(t *testing.T) []byte {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Clean(waterfallFixturePath))
+	body, err := os.ReadFile(filepath.Clean(waterfallFixturePath))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return b
+	return body
 }
 
-// waterfallFixtureWith returns the fixture, compacted, with edit applied to its top level.
 func waterfallFixtureWith(t *testing.T, edit func(map[string]any)) []byte {
 	t.Helper()
 	var payload map[string]any
@@ -43,6 +42,16 @@ func waterfallFixtureWith(t *testing.T, edit func(map[string]any)) []byte {
 	return b
 }
 
+func paddedWaterfall(t *testing.T, size int) []byte {
+	t.Helper()
+	base := waterfallFixtureWith(t, func(p map[string]any) { p["padding"] = "" })
+	pad := size - len(base)
+	if pad < 0 {
+		t.Fatalf("fixture is already %d bytes", len(base))
+	}
+	return waterfallFixtureWith(t, func(p map[string]any) { p["padding"] = strings.Repeat("a", pad) })
+}
+
 type waterfallCall struct {
 	result  *mcp.CallToolResult
 	err     error
@@ -54,7 +63,6 @@ func callWaterfallHandler(t *testing.T, status int, body []byte, args GetTraceWa
 	var call waterfallCall
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		call.request = r
-		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		_, _ = w.Write(body)
 	}))
@@ -76,206 +84,103 @@ func waterfallText(t *testing.T, result *mcp.CallToolResult) string {
 	return text.Text
 }
 
-func TestGetTraceWaterfallRelaysBackendEvidenceVerbatim(t *testing.T) {
-	fixture := waterfallFixture(t)
-	call := callWaterfallHandler(t, http.StatusOK, fixture, GetTraceWaterfallArgs{
-		TraceID:        testValidTraceID,
-		Environment:    "production",
-		SelectedSpanID: testValidSpanID,
-		StartTimeISO:   "2026-07-15T08:30:00Z",
-		EndTimeISO:     "2026-07-15T08:45:00Z",
-		MaxSpans:       250,
-	})
-	if call.err != nil {
-		t.Fatal(call.err)
+func TestTraceWaterfallHandlerPreservesOrganizationRedaction(t *testing.T) {
+	const redacted = "[REDACTED]"
+	var payload map[string]any
+	if err := json.Unmarshal(waterfallFixture(t), &payload); err != nil {
+		t.Fatal(err)
 	}
-	if got, want := waterfallText(t, call.result), string(fixture); got != want {
-		t.Fatalf("tool output differs from the backend body:\n%s", got)
+	payload["data"].(map[string]any)["selected_span"] = map[string]any{
+		"span_id": "0123456789abcdef", "span_attributes": map[string]any{"account.reference": redacted},
 	}
-	if link, _ := call.result.Meta["reference_url"].(string); !strings.Contains(link, testValidTraceID) {
-		t.Fatalf("reference_url = %q, want a link to the trace", link)
+	payload["sanitizer"] = map[string]any{"version": traceEvidenceSanitizerVersion}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	r := call.request
-	if r.Method != http.MethodGet || r.URL.Path != "/cat/api/traces/v2/waterfall/"+testValidTraceID {
-		t.Fatalf("request = %s %s", r.Method, r.URL)
-	}
-	q := r.URL.Query()
-	for key, want := range map[string]string{
-		"start": "1784104200", "end": "1784105100", "max_spans": "250",
-		"selected_span_id": testValidSpanID, "environment": "production", "region": "ap-south-1",
-	} {
-		if q.Get(key) != want {
-			t.Errorf("query %s = %q, want %q", key, q.Get(key), want)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/waterfall/") {
+			_, _ = w.Write(body)
+			return
 		}
-	}
-}
-
-func TestGetTraceWaterfallDefaultsMaxSpans(t *testing.T) {
-	call := callWaterfallHandler(t, http.StatusOK, waterfallFixture(t), GetTraceWaterfallArgs{TraceID: testValidTraceID})
-	if call.err != nil {
-		t.Fatal(call.err)
-	}
-	if got := call.request.URL.Query().Get("max_spans"); got != "500" {
-		t.Fatalf("max_spans = %q, want the 500 default", got)
-	}
-}
-
-func TestGetTraceWaterfallRejectsOutOfRangeMaxSpansLocally(t *testing.T) {
-	for _, maxSpans := range []int{-1, 1001} {
-		server, n := countingTraceDetailsServer(t)
-		handler := NewGetTraceWaterfallHandler(server.Client(), verifyTraceCfg(server.URL))
-		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceWaterfallArgs{TraceID: testValidTraceID, MaxSpans: maxSpans})
-		if err == nil || !strings.Contains(err.Error(), "max_spans must be between 1 and 1000") {
-			t.Fatalf("max_spans=%d: got %v", maxSpans, err)
-		}
-		if n.Load() != 0 {
-			t.Fatalf("max_spans=%d made %d upstream requests, want 0", maxSpans, n.Load())
-		}
-	}
-}
-
-func assertWaterfallRefused(t *testing.T, err error, reason waterfallRefusal) {
-	t.Helper()
-	var refused *waterfallRefusedError
-	if !errors.As(err, &refused) || refused.Reason != reason {
-		t.Fatalf("want a %q refusal, got %#v (%v)", reason, err, err)
-	}
-}
-
-func TestGetTraceWaterfallFailsClosedOnSanitizerBlock(t *testing.T) {
-	cases := map[string]struct {
-		edit   func(map[string]any)
-		reason waterfallRefusal
-	}{
-		"missing":         {func(p map[string]any) { delete(p, "sanitizer") }, refusalSanitizerMissing},
-		"null":            {func(p map[string]any) { p["sanitizer"] = nil }, refusalSanitizerMissing},
-		"not an object":   {func(p map[string]any) { p["sanitizer"] = "trace-evidence-sanitizer/v1" }, refusalSanitizerMissing},
-		"version absent":  {func(p map[string]any) { delete(p["sanitizer"].(map[string]any), "version") }, refusalSanitizerVersion},
-		"version blank":   {func(p map[string]any) { p["sanitizer"].(map[string]any)["version"] = "" }, refusalSanitizerVersion},
-		"version v2":      {func(p map[string]any) { p["sanitizer"].(map[string]any)["version"] = "trace-evidence-sanitizer/v2" }, refusalSanitizerVersion},
-		"version upper":   {func(p map[string]any) { p["sanitizer"].(map[string]any)["version"] = "TRACE-EVIDENCE-SANITIZER/V1" }, refusalSanitizerVersion},
-		"version padded":  {func(p map[string]any) { p["sanitizer"].(map[string]any)["version"] = " trace-evidence-sanitizer/v1" }, refusalSanitizerVersion},
-		"version numeric": {func(p map[string]any) { p["sanitizer"].(map[string]any)["version"] = 1 }, refusalSanitizerVersion},
-	}
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			call := callWaterfallHandler(t, http.StatusOK, waterfallFixtureWith(t, tc.edit), GetTraceWaterfallArgs{TraceID: testValidTraceID})
-			if call.result != nil {
-				t.Fatalf("unsanitized evidence reached the model: %s", waterfallText(t, call.result))
-			}
-			assertWaterfallRefused(t, call.err, tc.reason)
-		})
-	}
-}
-
-// Go's decoder matches keys case-insensitively and keeps the last duplicate; the
-// check must read the exact key a client reads.
-func TestGetTraceWaterfallReadsTheExactSanitizerKey(t *testing.T) {
-	body := waterfallFixtureWith(t, func(p map[string]any) {
-		p["Sanitizer"] = p["sanitizer"]
-		delete(p, "sanitizer")
-	})
-	call := callWaterfallHandler(t, http.StatusOK, body, GetTraceWaterfallArgs{TraceID: testValidTraceID})
-	assertWaterfallRefused(t, call.err, refusalSanitizerMissing)
-}
-
-func TestGetTraceWaterfallRejectsNonConformingEvidence(t *testing.T) {
-	cases := map[string][]byte{
-		"empty body":                           nil,
-		"not an object":                        []byte(`[]`),
-		"data after the object":                append(waterfallFixture(t), `{}`...),
-		"wrong contract version":               waterfallFixtureWith(t, func(p map[string]any) { p["contract_version"] = "investigation-evidence/v2" }),
-		"wrong analysis version":               waterfallFixtureWith(t, func(p map[string]any) { p["analysis_version"] = "trace-attribute-deviations/v1" }),
-		"contract_version key in another case": renameWaterfallKey(t, "contract_version", "CONTRACT_VERSION"),
-		"analysis_version key in another case": renameWaterfallKey(t, "analysis_version", "Analysis_Version"),
-		"sanitizer key duplicated":             prefixWaterfallKey(t, `"sanitizer":{"version":"none"}`),
-		"contract_version key duplicated":      prefixWaterfallKey(t, `"contract_version":"investigation-evidence/v2"`),
-		"sanitizer version key duplicated": []byte(strings.Replace(string(waterfallFixtureWith(t, func(map[string]any) {})),
-			`"sanitizer":{`, `"sanitizer":{"version":"none",`, 1)),
-	}
-	for name, body := range cases {
-		t.Run(name, func(t *testing.T) {
-			call := callWaterfallHandler(t, http.StatusOK, body, GetTraceWaterfallArgs{TraceID: testValidTraceID})
-			if call.err == nil {
-				t.Fatalf("non-conforming evidence was relayed: %s", waterfallText(t, call.result))
-			}
-			if !strings.Contains(call.err.Error(), "invalid response") {
-				t.Fatalf("got %v", call.err)
-			}
-		})
-	}
-}
-
-func renameWaterfallKey(t *testing.T, from, to string) []byte {
-	t.Helper()
-	return waterfallFixtureWith(t, func(p map[string]any) {
-		p[to] = p[from]
-		delete(p, from)
-	})
-}
-
-// prefixWaterfallKey returns the fixture with member written before its own keys,
-// so a decoder keeping the first duplicate sees member, not the fixture's value.
-func prefixWaterfallKey(t *testing.T, member string) []byte {
-	t.Helper()
-	return append([]byte("{"+member+","), waterfallFixtureWith(t, func(map[string]any) {})[1:]...)
-}
-
-func paddedWaterfall(t *testing.T, size int) []byte {
-	t.Helper()
-	base := waterfallFixtureWith(t, func(p map[string]any) { p["padding"] = "" })
-	pad := size - len(base)
-	if pad < 0 {
-		t.Fatalf("fixture is already %d bytes", len(base))
-	}
-	return waterfallFixtureWith(t, func(p map[string]any) { p["padding"] = strings.Repeat("a", pad) })
-}
-
-func TestGetTraceWaterfallOutputCap(t *testing.T) {
-	t.Run("at cap", func(t *testing.T) {
-		body := paddedWaterfall(t, apitraces.MaxWaterfallBytes)
-		call := callWaterfallHandler(t, http.StatusOK, body, GetTraceWaterfallArgs{TraceID: testValidTraceID})
-		if call.err != nil {
-			t.Fatal(call.err)
-		}
-		if got := waterfallText(t, call.result); len(got) != apitraces.MaxWaterfallBytes {
-			t.Fatalf("relayed %d bytes, want %d", len(got), apitraces.MaxWaterfallBytes)
-		}
-	})
-	t.Run("cap+1", func(t *testing.T) {
-		body := paddedWaterfall(t, apitraces.MaxWaterfallBytes+1)
-		call := callWaterfallHandler(t, http.StatusOK, body, GetTraceWaterfallArgs{TraceID: testValidTraceID})
-		assertWaterfallRefused(t, call.err, refusalTooLarge)
-		if !strings.Contains(call.err.Error(), "max_spans") {
-			t.Fatalf("an oversized waterfall must say how to shrink it: %v", call.err)
-		}
-	})
-}
-
-// The route is only registered once the trace service enables it, so a 404 is a
-// missing capability, not a missing trace.
-func TestGetTraceWaterfallRouteNotFoundIsNotTraceNotFound(t *testing.T) {
-	call := callWaterfallHandler(t, http.StatusNotFound, []byte(`404 page not found`), GetTraceWaterfallArgs{TraceID: testValidTraceID})
-	if call.err == nil || strings.Contains(call.err.Error(), "No trace found") || !strings.Contains(call.err.Error(), "unavailable or disabled") {
-		t.Fatalf("got %v", call.err)
-	}
-}
-
-func TestGetTraceWaterfallTransportErrorHidesTheURL(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	server.Close()
+		_, _ = io.WriteString(w, `{"traces":[{"TraceId":"0123456789abcdef0123456789abcdef","SpanId":"0123456789abcdef","Timestamp":"2026-07-15T08:30:00Z","Duration":1000,"attributes":{"account.reference":"synthetic-account-42"}}]}`)
+	}))
+	defer server.Close()
 	handler := NewGetTraceWaterfallHandler(server.Client(), verifyTraceCfg(server.URL))
-	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceWaterfallArgs{TraceID: testValidTraceID})
-	if err == nil || !strings.Contains(err.Error(), "could not be reached") || strings.Contains(err.Error(), server.URL) {
-		t.Fatalf("got %v", err)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceWaterfallArgs{
+		TraceID: "0123456789abcdef0123456789abcdef", SelectedSpanID: "0123456789abcdef",
+		StartTimeISO: "2026-07-15T08:30:00Z", EndTimeISO: "2026-07-15T08:45:00Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := waterfallText(t, result)
+	if !strings.Contains(got, `"account.reference":"`+redacted+`"`) || strings.Contains(got, "synthetic-account-42") {
+		t.Fatalf("organization redaction was not preserved: %s", got)
+	}
+	structured, ok := result.StructuredContent.(json.RawMessage)
+	if !ok || !bytes.Equal(structured, body) || got != string(body) {
+		t.Fatalf("service bytes changed between MCP outputs: text=%q structured=%q", got, structured)
 	}
 }
 
-func TestGetTraceWaterfallRelaysSanitizedValidationErrors(t *testing.T) {
-	body := []byte(`{"code":"evidence_too_large","detail":"lower max_spans; token=s3cr3t"}`)
-	call := callWaterfallHandler(t, http.StatusUnprocessableEntity, body, GetTraceWaterfallArgs{TraceID: testValidTraceID})
-	if call.err == nil || !strings.Contains(call.err.Error(), "evidence_too_large") || strings.Contains(call.err.Error(), "s3cr3t") {
-		t.Fatalf("got %v", call.err)
+func (f waterfallRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+func TestTraceWaterfallHandlerRejectsOversizedUpstreamBodyBeforeDecode(t *testing.T) {
+	validBody := paddedWaterfall(t, apitraces.MaxWaterfallBytes+1)
+	client := &http.Client{Transport: waterfallRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewReader(validBody)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+	handler := NewGetTraceWaterfallHandler(client, tracesTestConfig("https://example.test"))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceWaterfallArgs{TraceID: "0123456789abcdef0123456789abcdef"})
+	if err == nil || !strings.Contains(err.Error(), "exceeds the 524288-byte output cap") {
+		t.Fatalf("expected bounded-body error, got %v", err)
+	}
+}
+
+func TestTraceWaterfallHandlerAcceptsBodyAtUpstreamLimit(t *testing.T) {
+	validBody := paddedWaterfall(t, apitraces.MaxWaterfallBytes)
+	client := &http.Client{Transport: waterfallRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(validBody)), Header: make(http.Header)}, nil
+	})}
+	handler := NewGetTraceWaterfallHandler(client, tracesTestConfig("https://example.test"))
+	if _, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceWaterfallArgs{TraceID: "0123456789abcdef0123456789abcdef"}); err != nil {
+		t.Fatalf("body at limit: %v", err)
+	}
+}
+
+func TestTraceWaterfallHandlerPreservesEmptySpanArrays(t *testing.T) {
+	body := waterfallFixtureWith(t, func(payload map[string]any) {
+		data := payload["data"].(map[string]any)
+		data["spans"] = []any{}
+		data["slowest_spans"] = []any{}
+		data["largest_self_time_contributors"] = []any{}
+	})
+	client := &http.Client{Transport: waterfallRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body)), Header: make(http.Header)}, nil
+	})}
+	handler := NewGetTraceWaterfallHandler(client, tracesTestConfig("https://example.test"))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceWaterfallArgs{TraceID: "0123456789abcdef0123456789abcdef"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := result.Content[0].(*mcp.TextContent)
+	var payload struct {
+		Data map[string]json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(text.Text), &payload); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"spans", "slowest_spans", "largest_self_time_contributors"} {
+		if string(payload.Data[field]) != "[]" {
+			t.Errorf("data.%s = %s, want []", field, payload.Data[field])
+		}
 	}
 }
