@@ -161,6 +161,9 @@ No other stage type exists: `transform` and `select` are rejected.
     "$ieq":  [field, value],  // Case-insensitive equals
     "$ineq": [field, value],  // Case-insensitive not equals
 
+    // Existence
+    "$notnull": [field],      // Field is present and not null
+
     // Numeric comparison — value must be a string containing a number
     "$gt":  [field, value],   // Greater than
     "$lt":  [field, value],   // Less than
@@ -447,7 +450,7 @@ These are examples of pipeline json structure and available stages and functions
     "query": {
       "$and": [
         {"$gt": ["attributes['duration']", "100"]},
-        {"$neq": ["attributes['user_id']", ""]}
+        {"$notnull": ["attributes['user_id']"]}
       ]
     }
   }
@@ -746,7 +749,7 @@ These are examples of pipeline json structure and available stages and functions
 2. **Use proper field references**: Body, ServiceName, attributes['field'], resources['field']; never emit bare dotted refs.
 3. **Chain operations logically**: scope filter → parse → filter/groupby → aggregate (parse before any stage that references a Body-derived field)
 4. **For time-based queries**, use window_aggregate with appropriate time units.
-5. **For existence checks**, use $neq operator
+5. **For existence checks**, use `$notnull`; aggregate outputs are never null, so do not apply it to aggregate aliases
 6. **For text searches**, use `$containsWords` on `Body` (word-boundary aware, higher precision); use `$contains` for attribute substring matches
 7. **CRITICAL: When user query has no explicit logical operators (and/or), always wrap filter conditions in $and array, even for single conditions**
 8. **Group multiple conditions** with $and or $or as appropriate when explicitly specified
@@ -759,7 +762,7 @@ These are examples of pipeline json structure and available stages and functions
 - "where X contains Y" (attribute field) → `{"$contains": [field, value]}`
 - "where X equals/is Y" → `{"$eq": [field, value]}`
 - "where X is greater than Y" → `{"$gt": [field, value]}`
-- "where X exists" → `{"$neq": [field, ""]}`
+- "where X exists" → `{"$notnull": [field]}`
 - "parse as JSON/regex/logfmt" → `{"type": "parse", "parser": "..."}`
 - "sum/average/count of X" → `{"type": "aggregate", "aggregates": [{"function": {"$sum": ["attributes['alias']"]}, "as": "_sum"}]}`
 - "per N minutes" → `{"type": "window_aggregate", "window": ["N", "minutes"]}`

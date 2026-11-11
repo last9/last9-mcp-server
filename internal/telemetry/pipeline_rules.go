@@ -177,3 +177,61 @@ func CheckNumericComparison(operator, field string, value interface{}, path stri
 	}
 	return &PipelineArgError{path, msg}
 }
+
+// CollectStageAliases stops at the closest aggregate because each aggregating
+// stage replaces the columns exposed by the engine.
+func CollectStageAliases(stages []map[string]interface{}, upto int) map[string]struct{} {
+	for i := upto - 1; i >= 0; i-- {
+		stage := stages[i]
+		if t, _ := stage["type"].(string); t != "aggregate" && t != "window_aggregate" {
+			continue
+		}
+		names := map[string]struct{}{}
+		add := func(v interface{}) {
+			if s, ok := v.(string); ok && aggregateAliasPattern.MatchString(s) {
+				names[s] = struct{}{}
+			}
+		}
+		add(stage["as"])
+		aggs, _ := stage["aggregates"].([]interface{})
+		for _, a := range aggs {
+			if m, ok := a.(map[string]interface{}); ok {
+				add(m["as"])
+			}
+		}
+		groupBy, _ := stage["groupby"].(map[string]interface{})
+		for _, alias := range groupBy {
+			add(alias)
+		}
+		return names
+	}
+	return nil
+}
+
+// CollectAggregateOutputAliases returns function outputs from the closest aggregate stage.
+func CollectAggregateOutputAliases(stages []map[string]interface{}, upto int) map[string]struct{} {
+	for i := upto - 1; i >= 0; i-- {
+		stage := stages[i]
+		stageType, _ := stage["type"].(string)
+		if stageType != "aggregate" && stageType != "window_aggregate" {
+			continue
+		}
+		names := map[string]struct{}{}
+		add := func(v interface{}) {
+			if s, ok := v.(string); ok && aggregateAliasPattern.MatchString(s) {
+				names[s] = struct{}{}
+			}
+		}
+		if stageType == "window_aggregate" {
+			add(stage["as"])
+		}
+		aggregates, _ := stage["aggregates"].([]interface{})
+		for _, aggregate := range aggregates {
+			if item, ok := aggregate.(map[string]interface{}); ok {
+				add(item["as"])
+			}
+		}
+		return names
+	}
+	return nil
+}
