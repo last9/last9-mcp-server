@@ -3,6 +3,7 @@ package dashboards
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -62,5 +63,31 @@ func TestListDashboardsHandler_ServesLockedPerRow(t *testing.T) {
 	}
 	if _, ok := rows[2]["locked"]; ok {
 		t.Fatalf("row without readonly gained locked: %s", text)
+	}
+}
+
+func TestListDashboardsHandler_BoundsLargeResponses(t *testing.T) {
+	rows := make([]map[string]any, 500)
+	for i := range rows {
+		rows[i] = map[string]any{
+			"id":         fmt.Sprintf("00000000-0000-4000-8000-%012d", i),
+			"name":       strings.Repeat("dashboard ", 12),
+			"updated_at": "2026-11-12T00:00:00Z",
+			"readonly":   i%2 == 0,
+		}
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(rows)
+	}))
+	defer srv.Close()
+
+	handler := NewListDashboardsHandler(srv.Client(), testDashboardConfig(srv.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ListDashboardsArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	if len(text) >= 32*1024 {
+		t.Fatalf("response is %d bytes, want less than 32 KiB", len(text))
 	}
 }
