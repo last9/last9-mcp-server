@@ -121,7 +121,8 @@ func metadataObjectSchema() map[string]interface{} {
 // metadata as JSON objects rather than byte arrays.
 func GetCreateDashboardInputSchema() map[string]interface{} {
 	return map[string]interface{}{
-		"type": "object",
+		"type":                 "object",
+		"additionalProperties": false,
 		"properties": map[string]interface{}{
 			"dashboard": dashboardObjectSchema("(Required) Dashboard definition with name and panels."),
 			"metadata":  metadataObjectSchema(),

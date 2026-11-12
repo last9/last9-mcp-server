@@ -31,6 +31,9 @@ func NewCreateDashboardHandler(client *http.Client, cfg models.Config) func(cont
 		if err != nil {
 			return nil, nil, mapDashboardAPIError(err)
 		}
+		if err := requireDashboardInResponse(body); err != nil {
+			return nil, nil, err
+		}
 
 		id := dashboardIDFromResponse(body)
 		// No fallback id: the helper re-extracts from the same body.
