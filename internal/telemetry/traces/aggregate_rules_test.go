@@ -176,7 +176,7 @@ func TestSanitizeTraceJSONQuery_RejectsMalformedAggregateMapKeys(t *testing.T) {
 }
 
 func TestSanitizeTraceJSONQueryDefaultsQuantileExactToPreviousResult(t *testing.T) {
-	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
+	for _, operator := range []string{"$quantile_exact"} {
 		t.Run(operator, func(t *testing.T) {
 			for kind, consumer := range map[string]func(map[string]interface{}, string) map[string]interface{}{
 				"aggregate": func(fn map[string]interface{}, as string) map[string]interface{} { return aggStage(fn, as) },
@@ -209,6 +209,15 @@ func TestSanitizeTraceJSONQueryDefaultsQuantileExactToPreviousResult(t *testing.
 	}
 }
 
+func TestSanitizeTraceJSONQueryRejectsImplicitQuantileExactOverTime(t *testing.T) {
+	stages := []map[string]interface{}{
+		winStage(fn1("$count"), "__result__"),
+		winStage(fn1("$quantile_exact_over_time", 0.95), "p95"),
+	}
+	err := SanitizeTraceJSONQuery(stages)
+	requireTraceInvalidField(t, err, "tracejson_query[1].function.$quantile_exact_over_time", "[level, field]")
+}
+
 func TestSanitizeTraceJSONQueryRejectsExactQuantileOfKnownStringField(t *testing.T) {
 	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
 		for kind, stage := range map[string]map[string]interface{}{
@@ -223,7 +232,7 @@ func TestSanitizeTraceJSONQueryRejectsExactQuantileOfKnownStringField(t *testing
 }
 
 func TestSanitizeTraceJSONQueryDefaultsQuantileExactToEveryWindowResult(t *testing.T) {
-	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
+	for _, operator := range []string{"$quantile_exact"} {
 		for kind, consumer := range map[string]func(map[string]interface{}, string) map[string]interface{}{
 			"aggregate": func(fn map[string]interface{}, as string) map[string]interface{} { return aggStage(fn, as) },
 			"window":    winStage,
@@ -244,7 +253,7 @@ func TestSanitizeTraceJSONQueryDefaultsQuantileExactToEveryWindowResult(t *testi
 }
 
 func TestSanitizeTraceJSONQueryDefaultsQuantileExactToSelectedResult(t *testing.T) {
-	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
+	for _, operator := range []string{"$quantile_exact"} {
 		for kind, consumer := range map[string]func(map[string]interface{}, string) map[string]interface{}{
 			"aggregate": func(fn map[string]interface{}, as string) map[string]interface{} { return aggStage(fn, as) },
 			"window":    winStage,
@@ -301,6 +310,24 @@ func TestSanitizeTraceJSONQuery_AggregatesEarlierDigitLeadingAlias(t *testing.T)
 				t.Errorf("%s alias %q: %v", first["type"], as, err)
 			}
 		}
+	}
+}
+
+func TestSanitizeTraceJSONQueryRejectsNumericAggregateOfStringGroupByAlias(t *testing.T) {
+	first := aggStage(fn1("$count"), "n")
+	first["groupby"] = map[string]interface{}{"SpanName": "span_alias"}
+	for name, consumer := range map[string]map[string]interface{}{
+		"aggregate": aggStage(fn1("$sum", "span_alias"), "total"),
+		"window":    winStage(fn1("$sum", "span_alias"), "total"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := SanitizeTraceJSONQuery([]map[string]interface{}{first, consumer})
+			path := "tracejson_query[1].function.$sum[0]"
+			if name == "aggregate" {
+				path = "tracejson_query[1].aggregates[0].function.$sum[0]"
+			}
+			requireTraceInvalidField(t, err, path, "string-backed")
+		})
 	}
 }
 
