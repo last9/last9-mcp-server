@@ -19,6 +19,7 @@ import (
 	"last9-mcp/internal/grafana"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/prompts"
+	"last9-mcp/internal/remapping"
 	"last9-mcp/internal/suggest"
 	"last9-mcp/internal/telemetry/logs"
 	"last9-mcp/internal/telemetry/profiles"
@@ -141,15 +142,15 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, gate *toolG
 	return nil
 }
 
-// withCallDeadline bounds one tool call as a whole: per-request and per-chunk timeouts
-// alone let a chunk loop run for hours. Read handlers can fold canceled requests into a
-// result, so every read result at the deadline is replaced; a write's may name its verify call.
+// withCallDeadline bounds one tool call as a whole: per-chunk timeouts alone let a chunk loop
+// run for hours. Read handlers can fold canceled requests into a result, so a read result at
+// the deadline is replaced unless it carries timeout guidance; a write's may name its verify call.
 func withCallDeadline[In, Out any](timeout time.Duration, readOnly bool, handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		result, out, err := handler(ctx, req, in)
-		if !errors.Is(ctx.Err(), context.DeadlineExceeded) || (err == nil && !readOnly) {
+		if !errors.Is(ctx.Err(), context.DeadlineExceeded) || (err == nil && (!readOnly || utils.HasTimeoutGuidance(result))) {
 			return result, out, err
 		}
 		msg := fmt.Sprintf("Stopped at the %s tool-call deadline", timeout)
@@ -411,6 +412,20 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 	}, "get_drop_rules, looking for a rule with the name you passed",
 		logs.NewAddDropRuleHandler(client, cfg)))
 
+	// Register remapping rules tools
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "get_remapping_rules",
+		Annotations: readOnlyTool("Get Remapping Rules"),
+		Description: prompts.GetRemappingRulesDescription,
+	}, remapping.NewGetRemappingRulesHandler(client, cfg)))
+
+	reg(registerWriteTool(server, gate, &mcp.Tool{
+		Name:        "add_remapping_rule",
+		Annotations: writeTool("Add Remapping Rule", false, false),
+		Description: prompts.AddRemappingRuleDescription,
+	}, "get_remapping_rules with the same rule_type, looking for a rule with the name you passed",
+		remapping.NewAddRemappingRuleHandler(client, cfg)))
+
 	// Register notification channels tool
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
 		Name:        "get_notification_channels",
@@ -581,6 +596,12 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Description: prompts.GetAlertRuleStateDescription,
 		InputSchema: alerting.AlertRuleStateInputSchema(),
 	}, alerting.NewAlertRuleStateHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "get_alert_hygiene",
+		Annotations: readOnlyTool("Get Alert Hygiene"),
+		Description: prompts.GetAlertHygieneDescription,
+	}, alerting.NewGetAlertHygieneHandler(client, cfg)))
 
 	// Register get traces tool (enhanced with trace query instructions)
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
