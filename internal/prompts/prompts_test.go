@@ -93,6 +93,7 @@ var promptDescriptionFiles = map[string]string{
 	"prometheus_labels.md":                 prompts.PromqlLabelsQueryDetails,
 	"prometheus_range_query_base.md":       prompts.PromqlRangeQueryDetails,
 	"recommend_alert_config.md":            prompts.RecommendAlertConfigDescription,
+	"set_dashboard_lock.md":                prompts.SetDashboardLockDescription,
 	"update_alert.md":                      prompts.UpdateAlertDescription,
 	"update_dashboard.md":                  prompts.UpdateDashboardDescription,
 	"validate_alert_expression.md":         prompts.ValidateAlertExpressionDescription,
@@ -1063,6 +1064,14 @@ func TestGetAlertsRoutingStatesDefaultWindow(t *testing.T) {
 	for _, phrase := range []string{"default 15 minutes", "at most 1 hour"} {
 		if !strings.Contains(routing, phrase) {
 			t.Errorf("get_alerts When to use section missing %q:\n%s", phrase, routing)
+		}
+	}
+}
+
+func TestPreviewDashboardDescriptionExplainsLockState(t *testing.T) {
+	for _, phrase := range []string{"locked:false", "dashboard is locked"} {
+		if !strings.Contains(prompts.PreviewDashboardDescription, phrase) {
+			t.Errorf("preview_dashboard description missing %q", phrase)
 		}
 	}
 }

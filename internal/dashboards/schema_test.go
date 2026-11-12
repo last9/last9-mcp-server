@@ -306,6 +306,11 @@ func TestUpdateDashboardInputSchema_RequiresIDAndDashboard(t *testing.T) {
 	if err := validateInputSchema(t, GetUpdateDashboardInputSchema(), validArgs); err != nil {
 		t.Fatalf("expected update args to validate: %v", err)
 	}
+	validArgs["extra"] = true
+	if err := validateInputSchema(t, GetUpdateDashboardInputSchema(), validArgs); err == nil {
+		t.Fatal("expected unknown update argument to fail validation")
+	}
+	delete(validArgs, "extra")
 
 	missingIDArgs := map[string]any{
 		"dashboard": map[string]any{

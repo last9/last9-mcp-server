@@ -62,6 +62,9 @@ func TestListDashboardsHandler_Integration(t *testing.T) {
 	if !json.Valid([]byte(text)) {
 		t.Fatalf("expected JSON body, got: %s", text)
 	}
+	if len(text) >= listDashboardsResponseBound {
+		t.Fatalf("default list is %d bytes, want < %d", len(text), listDashboardsResponseBound)
+	}
 	t.Logf("list_dashboards ok (reference_url=%s, bytes=%d)", refURL, len(text))
 }
 
@@ -77,12 +80,15 @@ func TestGetDashboardHandler_Integration(t *testing.T) {
 	}
 
 	listText := utils.GetTextContent(t, listResult)
-	var overviews []struct {
-		ID string `json:"id"`
+	var page struct {
+		Dashboards []struct {
+			ID string `json:"id"`
+		} `json:"dashboards"`
 	}
-	if err := json.Unmarshal([]byte(listText), &overviews); err != nil {
+	if err := json.Unmarshal([]byte(listText), &page); err != nil {
 		t.Fatalf("decode list response: %v\nbody: %s", err, listText)
 	}
+	overviews := page.Dashboards
 	if len(overviews) == 0 {
 		t.Skip("no dashboards in org; skipping get_dashboard integration test")
 	}
