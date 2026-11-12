@@ -208,6 +208,31 @@ func CollectStageAliases(stages []map[string]interface{}, upto int) map[string]s
 	return nil
 }
 
+// CollectShadowedStageAliases returns output names from aggregate stages older
+// than the closest aggregate. Those columns are no longer exposed by the engine.
+func CollectShadowedStageAliases(stages []map[string]interface{}, upto int) map[string]struct{} {
+	shadowed := map[string]struct{}{}
+	foundClosest := false
+	for i := upto - 1; i >= 0; i-- {
+		stage := stages[i]
+		t, _ := stage["type"].(string)
+		if t != "aggregate" && t != "window_aggregate" {
+			continue
+		}
+		if !foundClosest {
+			foundClosest = true
+			continue
+		}
+		for name := range CollectStageAliases(stages, i+1) {
+			shadowed[name] = struct{}{}
+		}
+	}
+	for name := range CollectStageAliases(stages, upto) {
+		delete(shadowed, name)
+	}
+	return shadowed
+}
+
 // CollectAggregateOutputAliases returns function outputs from the closest aggregate stage.
 func CollectAggregateOutputAliases(stages []map[string]interface{}, upto int) map[string]struct{} {
 	for i := upto - 1; i >= 0; i-- {
