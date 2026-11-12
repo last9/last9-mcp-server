@@ -71,8 +71,11 @@ func NewPreviewDashboardHandler(client *http.Client, cfg models.Config) func(con
 			report["diff"] = diff
 		}
 		// Ops never touch readonly, so the candidate still carries the stored lock state.
-		if lock := dashboardLockOf(dashboard); args.ID != "" && lock.locked() {
-			report["locked"] = "dashboard is locked " + lockAuthor(lock) + ": patch_dashboard and update_dashboard will refuse to save it. " + lockRecovery
+		if lock := dashboardLockOf(dashboard); args.ID != "" && lock.Readonly != nil {
+			report["locked"] = false
+			if lock.locked() {
+				report["locked"] = "dashboard is locked " + lockAuthor(lock) + ": patch_dashboard and update_dashboard will refuse to save it. " + lockRecovery
+			}
 		}
 		raw, err = previewResult(report)
 		if err != nil {
