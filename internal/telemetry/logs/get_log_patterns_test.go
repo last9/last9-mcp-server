@@ -189,6 +189,29 @@ func TestGetLogPatterns_WideWindowStopsAfterNewestChunkFillsSample(t *testing.T)
 	}
 }
 
+func TestGetLogPatterns_WideWindowBoundsLegacySearch(t *testing.T) {
+	srv, hits := chunkedLogsServer(t, http.StatusOK,
+		"timeout calling db 1", "timeout calling db 2", "timeout calling db 3", "timeout calling db 4")
+	cfg := apiModeCfg(srv.URL)
+	cfg.UseLogSearchAPI = false
+
+	result, _, err := NewGetLogPatternsHandler(srv.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, GetLogPatternsArgs{
+		LogPatternScopeArgs: LogPatternScopeArgs{
+			ServiceName: "checkout", StartTimeISO: "2026-10-09T11:00:00Z", EndTimeISO: patternWindowEndISO, SampleSize: 4,
+		},
+	})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	got := decodeToolJSON[GetLogPatternsResponse](t, result)
+	if hits.Load() != 1 {
+		t.Errorf("requests = %d, want the newest one-hour search to fill the sample", hits.Load())
+	}
+	if got.Window.SampledLines != 4 || !got.Window.SampleLimitReached {
+		t.Errorf("window = %+v, want a capped four-line sample", got.Window)
+	}
+}
+
 func TestGetLogPatterns_WideWindowReturnsPartialSampleWhenOlderChunkTimesOut(t *testing.T) {
 	var requests atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
