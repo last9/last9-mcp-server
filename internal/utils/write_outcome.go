@@ -36,6 +36,13 @@ func MarkUnknownWriteOutcome(req *http.Request, resp *http.Response, err error) 
 	return &WriteOutcomeUnknownError{Cause: cause, Err: err}
 }
 
+// MarkUnusableWriteResponse wraps err, raised on a write's 2xx response whose body names
+// no usable result, in *WriteOutcomeUnknownError: the API answered success, so the write
+// may have been applied.
+func MarkUnusableWriteResponse(err error) error {
+	return &WriteOutcomeUnknownError{Cause: "the API answered success but its response had no usable result", Err: err}
+}
+
 func isWriteMethod(method string) bool {
 	return method != http.MethodGet && method != http.MethodHead && method != http.MethodOptions
 }

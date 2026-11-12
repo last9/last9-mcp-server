@@ -51,6 +51,40 @@ func TestUpdateDashboardInputSchema_DashboardIsObject(t *testing.T) {
 	assertDashboardObjectSchema(t, GetUpdateDashboardInputSchema(), []string{"id", "dashboard"})
 }
 
+func TestDashboardInputSchema_RejectsUnknownTopLevelArguments(t *testing.T) {
+	tests := []struct {
+		name   string
+		schema map[string]interface{}
+		args   map[string]interface{}
+	}{
+		{
+			name:   "create",
+			schema: GetCreateDashboardInputSchema(),
+			args: map[string]interface{}{
+				"dashboard": map[string]interface{}{"name": "test", "panels": []interface{}{}},
+				"extra":     true,
+			},
+		},
+		{
+			name:   "update",
+			schema: GetUpdateDashboardInputSchema(),
+			args: map[string]interface{}{
+				"id":        "dashboard-id",
+				"dashboard": map[string]interface{}{"name": "test", "panels": []interface{}{}},
+				"extra":     true,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := validateInputSchema(t, tt.schema, tt.args); err == nil {
+				t.Fatal("expected unknown top-level argument to be rejected")
+			}
+		})
+	}
+}
+
 func validateInputSchema(t *testing.T, inputSchema map[string]interface{}, args any) error {
 	t.Helper()
 
