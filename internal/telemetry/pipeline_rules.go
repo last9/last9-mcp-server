@@ -20,7 +20,7 @@ type aggregateSpec struct {
 }
 
 func oneArg(name string) aggregateSpec {
-	return aggregateSpec{0, 1, 0, fmt.Sprintf(`{"%s":["attributes['latency_ms']"]}`, name)}
+	return aggregateSpec{1, 1, 0, fmt.Sprintf(`{"%s":["attributes['latency_ms']"]}`, name)}
 }
 
 // aggregateFunctions mirrors the function set shared by the logs and traces
@@ -28,7 +28,7 @@ func oneArg(name string) aggregateSpec {
 var aggregateFunctions = map[string]aggregateSpec{
 	"$count":          {0, 1, 0, `{"$count":[]}`},
 	"$rate":           {0, 1, 0, `{"$rate":[]}`},
-	"$sum":            {0, 1, 0, `{"$sum":["attributes['bytes']"]}`},
+	"$sum":            {1, 1, 0, `{"$sum":["attributes['bytes']"]}`},
 	"$min":            oneArg("$min"),
 	"$max":            oneArg("$max"),
 	"$avg":            oneArg("$avg"),
