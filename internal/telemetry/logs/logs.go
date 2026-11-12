@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
-	"strings"
 	"time"
 
 	"last9-mcp/internal/constants"
@@ -68,11 +67,34 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse time range: %v", err)
 	}
+	normalizedIndex, err := utils.NormalizeLogIndex(args.Index)
+	if err != nil {
+		return nil, err
+	}
+	args.Index = normalizedIndex
+
+	hasExplicitIndex := normalizedIndex != ""
+	var cancelLink context.CancelFunc
+	var resolvedIndexCh chan string
+	if hasExplicitIndex {
+		var linkCtx context.Context
+		linkCtx, cancelLink = context.WithCancel(ctx)
+		defer cancelLink()
+		resolvedIndexCh = make(chan string, 1)
+		go func() {
+			resolvedIndex, _ := utils.ResolveLogIndexDashboardParam(linkCtx, client, cfg, normalizedIndex)
+			resolvedIndexCh <- resolvedIndex
+		}()
+	}
 
 	endFetch := utils.StartToolPhase(ctx, "get_logs", "fetch")
 	result, err := fetchLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args)
 	endFetch(err)
 	if err != nil {
+		if cancelLink != nil {
+			cancelLink()
+			<-resolvedIndexCh
+		}
 		if scanResult := scanErrorResult(err, getLogsScanSteps); scanResult != nil {
 			return scanResult, nil
 		}
@@ -96,12 +118,8 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 	endLink := utils.StartToolPhase(ctx, "get_logs", "deep_link")
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 	dashboardIndex := ""
-	hasExplicitIndex := strings.TrimSpace(args.Index) != ""
 	if hasExplicitIndex {
-		resolvedIndex, err := utils.ResolveLogIndexDashboardParam(ctx, client, cfg, args.Index)
-		if err == nil {
-			dashboardIndex = resolvedIndex
-		}
+		dashboardIndex = <-resolvedIndexCh
 	}
 	dashboardURL := dlBuilder.BuildLogsLink(startTime, endTime, logjsonQuery, dashboardIndex)
 	var meta mcp.Meta

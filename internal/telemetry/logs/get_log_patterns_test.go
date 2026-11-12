@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -21,6 +22,42 @@ type logSearchStub struct {
 	// envelope holds extra top-level fields (logs_truncated, search_stats)
 	// added to every response.
 	envelope map[string]any
+}
+
+func TestGetLogPatterns_ResolvesDeepLinkWhileSampling(t *testing.T) {
+	resolverStarted := make(chan struct{})
+	var resolverOnce sync.Once
+	var resolverStartedDuringSearch atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/logs_settings/physical_indexes":
+			resolverOnce.Do(func() { close(resolverStarted) })
+			_, _ = io.WriteString(w, `{"properties":[{"id":"idx-1","name":"archive"}]}`)
+		default:
+			select {
+			case <-resolverStarted:
+				resolverStartedDuringSearch.Store(true)
+			case <-time.After(100 * time.Millisecond):
+			}
+			_, _ = io.WriteString(w, `{"query_result":{"status":"success","data":{"resultType":"streams","result":[]}}}`)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	result, _, err := NewGetLogPatternsHandler(server.Client(), apiModeCfg(server.URL))(context.Background(), &mcp.CallToolRequest{}, GetLogPatternsArgs{
+		LogPatternScopeArgs: LogPatternScopeArgs{
+			ServiceName: "checkout", StartTimeISO: patternWindowStartISO, EndTimeISO: patternWindowEndISO, Index: "physical_index:archive",
+		},
+	})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if !resolverStartedDuringSearch.Load() {
+		t.Fatal("deep-link index resolution started only after log sampling completed")
+	}
+	if result.Meta == nil {
+		t.Fatal("resolved deep link missing from result metadata")
+	}
 }
 
 // serve answers each log search with the lines listed for the request's
@@ -148,6 +185,134 @@ func TestGetLogPatterns_ClustersSampleAndFoldsTailIntoOther(t *testing.T) {
 		if !strings.Contains(string(pipeline), want) {
 			t.Errorf("pipeline %s missing %s", pipeline, want)
 		}
+	}
+}
+
+func TestGetLogPatterns_WideWindowStopsAfterNewestChunkFillsSample(t *testing.T) {
+	const (
+		wideStartISO    = "2026-10-09T11:00:00Z"
+		newestHourStart = int64(1792144800)
+	)
+	stub := &logSearchStub{}
+	srv := stub.serve(t,
+		map[int64][]string{newestHourStart: repeatLines("timeout calling payments after %d ms", 4)},
+		map[int64]int{newestHourStart: 20000},
+	)
+
+	result, _, err := NewGetLogPatternsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), &mcp.CallToolRequest{}, GetLogPatternsArgs{
+		LogPatternScopeArgs: LogPatternScopeArgs{
+			ServiceName: "checkout", StartTimeISO: wideStartISO, EndTimeISO: patternWindowEndISO, SampleSize: 4,
+		},
+	})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	got := decodeToolJSON[GetLogPatternsResponse](t, result)
+	if got.Window.StartTime != wideStartISO || got.Window.EndTime != patternWindowEndISO {
+		t.Errorf("window = %+v, want the requested seven-day window", got.Window)
+	}
+	if got.Window.SampledLines != 4 || !got.Window.SampleLimitReached {
+		t.Errorf("window = %+v, want a capped four-line sample", got.Window)
+	}
+	if got.Window.TotalMatchingLines != nil {
+		t.Errorf("total_matching_lines = %v, want omitted because only part of the window was searched", got.Window.TotalMatchingLines)
+	}
+	requests := stub.requests()
+	if len(requests) != 1 {
+		t.Fatalf("requests = %d, want the newest chunk to fill the sample", len(requests))
+	}
+	if start, end := int64(requests[0]["start"].(float64)), int64(requests[0]["end"].(float64)); start != newestHourStart || end-start != 3600 {
+		t.Errorf("searched [%d,%d], want the newest one-hour chunk", start, end)
+	}
+}
+
+func TestGetLogPatterns_WideWindowBoundsLegacySearch(t *testing.T) {
+	srv, hits := chunkedLogsServer(t, http.StatusOK,
+		"timeout calling db 1", "timeout calling db 2", "timeout calling db 3", "timeout calling db 4")
+	cfg := apiModeCfg(srv.URL)
+	cfg.UseLogSearchAPI = false
+
+	result, _, err := NewGetLogPatternsHandler(srv.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, GetLogPatternsArgs{
+		LogPatternScopeArgs: LogPatternScopeArgs{
+			ServiceName: "checkout", StartTimeISO: "2026-10-09T11:00:00Z", EndTimeISO: patternWindowEndISO, SampleSize: 4,
+		},
+	})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	got := decodeToolJSON[GetLogPatternsResponse](t, result)
+	if hits.Load() != 1 {
+		t.Errorf("requests = %d, want the newest one-hour search to fill the sample", hits.Load())
+	}
+	if got.Window.SampledLines != 4 || !got.Window.SampleLimitReached {
+		t.Errorf("window = %+v, want a capped four-line sample", got.Window)
+	}
+}
+
+func TestGetLogPatterns_WideWindowReturnsPartialSampleWhenOlderChunkTimesOut(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request: %v", err)
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		start, end := int64(body["start"].(float64)), int64(body["end"].(float64))
+		if end-start > 3600 || requests.Load() > 1 {
+			http.Error(w, "scan timed out", http.StatusGatewayTimeout)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"query_result": map[string]any{"status": "success", "data": map[string]any{
+				"resultType": "streams",
+				"result": []any{map[string]any{"stream": map[string]any{"severity": "ERROR"}, "values": []any{
+					[]any{fmt.Sprint(start * 1e9), "timeout calling payments"},
+				}}},
+			}},
+			"total_matching_lines": 1,
+		})
+	}))
+	t.Cleanup(srv.Close)
+
+	result, _, err := NewGetLogPatternsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), &mcp.CallToolRequest{}, GetLogPatternsArgs{
+		LogPatternScopeArgs: LogPatternScopeArgs{
+			ServiceName: "checkout", StartTimeISO: "2026-10-16T08:00:00Z", EndTimeISO: patternWindowEndISO, SampleSize: 4,
+		},
+	})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("want the successful newest sample, got error result: %s", result.Content[0].(*mcp.TextContent).Text)
+	}
+	got := decodeToolJSON[GetLogPatternsResponse](t, result)
+	if requests.Load() != 2 || got.Window.SampledLines != 1 || !got.Window.SampleLimitReached {
+		t.Errorf("requests=%d window=%+v, want one sampled line marked partial after two requests", requests.Load(), got.Window)
+	}
+	if len(got.Patterns) != 1 || got.Patterns[0].Template != "timeout calling payments" {
+		t.Errorf("patterns = %+v, want the retained newest sample", got.Patterns)
+	}
+}
+
+func TestGetLogPatterns_WideSparseWindowBoundsSearchChunks(t *testing.T) {
+	stub := &logSearchStub{}
+	srv := stub.serve(t, nil, nil)
+	result, _, err := NewGetLogPatternsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), &mcp.CallToolRequest{}, GetLogPatternsArgs{
+		LogPatternScopeArgs: LogPatternScopeArgs{
+			ServiceName: "checkout", StartTimeISO: "2026-10-15T10:00:00Z", EndTimeISO: patternWindowEndISO,
+		},
+	})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	got := decodeToolJSON[GetLogPatternsResponse](t, result)
+	if len(stub.requests()) != maxPatternSampleChunks {
+		t.Errorf("requests = %d, want cap %d", len(stub.requests()), maxPatternSampleChunks)
+	}
+	if !got.Window.SampleLimitReached || got.Window.SampledLines != 0 {
+		t.Errorf("window = %+v, want an empty partial sample", got.Window)
 	}
 }
 
