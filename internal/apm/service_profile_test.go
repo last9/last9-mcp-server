@@ -3,9 +3,12 @@ package apm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,6 +19,124 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+func TestGetServiceProfileHandler_CachesRepeatedProfile(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		_, _ = w.Write([]byte(`{"service":"checkout","telemetry":{"logs":"present"}}`))
+	}))
+	t.Cleanup(server.Close)
+	cfg := models.Config{APIBaseURL: server.URL}
+	cfg.TokenManager = &auth.TokenManager{AccessToken: "tok", ExpiresAt: time.Now().Add(time.Hour)}
+	handler := NewGetServiceProfileHandler(server.Client(), cfg)
+
+	first, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceProfileArgs{ServiceName: "checkout"})
+	if err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	second, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceProfileArgs{ServiceName: "checkout"})
+	if err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("upstream requests = %d, want one within the cache TTL", got)
+	}
+	if utils.GetTextContent(t, second) != utils.GetTextContent(t, first) {
+		t.Fatal("cached response differs from the original response")
+	}
+}
+
+func TestGetServiceProfileHandler_CoalescesConcurrentProfileFetches(t *testing.T) {
+	var requests atomic.Int32
+	requestStarted := make(chan struct{})
+	releaseRequest := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if requests.Add(1) == 1 {
+			close(requestStarted)
+		}
+		<-releaseRequest
+		_, _ = w.Write([]byte(`{"service":"checkout"}`))
+	}))
+	t.Cleanup(server.Close)
+	cfg := models.Config{APIBaseURL: server.URL}
+	cfg.TokenManager = &auth.TokenManager{AccessToken: "tok", ExpiresAt: time.Now().Add(time.Hour)}
+	handler := NewGetServiceProfileHandler(server.Client(), cfg)
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var callers sync.WaitGroup
+	callers.Add(2)
+	for range 2 {
+		go func() {
+			defer callers.Done()
+			<-start
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceProfileArgs{ServiceName: "checkout"})
+			errs <- err
+		}()
+	}
+	close(start)
+	<-requestStarted
+	close(releaseRequest)
+	callers.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Errorf("handler: %v", err)
+		}
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("upstream requests = %d, want one coalesced request", got)
+	}
+}
+
+func TestGetServiceProfileHandler_CancelledCallerDoesNotCancelSharedFetch(t *testing.T) {
+	var requests atomic.Int32
+	requestStarted := make(chan struct{})
+	releaseRequest := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if requests.Add(1) == 1 {
+			close(requestStarted)
+		}
+		<-releaseRequest
+		_, _ = w.Write([]byte(`{"service":"checkout"}`))
+	}))
+	t.Cleanup(server.Close)
+	cfg := models.Config{APIBaseURL: server.URL}
+	cfg.TokenManager = &auth.TokenManager{AccessToken: "tok", ExpiresAt: time.Now().Add(time.Hour)}
+	handler := NewGetServiceProfileHandler(server.Client(), cfg)
+
+	firstCtx, cancelFirst := context.WithCancel(context.Background())
+	firstErr := make(chan error, 1)
+	go func() {
+		_, _, err := handler(firstCtx, &mcp.CallToolRequest{}, GetServiceProfileArgs{ServiceName: "checkout"})
+		firstErr <- err
+	}()
+	<-requestStarted
+	cancelFirst()
+	if err := <-firstErr; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled caller error = %v, want context cancellation", err)
+	}
+
+	secondResult := make(chan *mcp.CallToolResult, 1)
+	secondErr := make(chan error, 1)
+	go func() {
+		result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceProfileArgs{ServiceName: "checkout"})
+		secondResult <- result
+		secondErr <- err
+	}()
+	close(releaseRequest)
+
+	if err := <-secondErr; err != nil {
+		t.Fatalf("second caller: %v", err)
+	}
+	if result := <-secondResult; !strings.Contains(utils.GetTextContent(t, result), `"service":"checkout"`) {
+		t.Fatal("second caller did not receive the shared profile")
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("upstream requests = %d, want the detached fetch shared across callers", got)
+	}
+}
 
 func TestGetServiceProfileHandler_ForwardsRegionAndService(t *testing.T) {
 	var captured apiservices.GetServiceProfileInput

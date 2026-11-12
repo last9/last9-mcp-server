@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -21,6 +22,42 @@ type logSearchStub struct {
 	// envelope holds extra top-level fields (logs_truncated, search_stats)
 	// added to every response.
 	envelope map[string]any
+}
+
+func TestGetLogPatterns_ResolvesDeepLinkWhileSampling(t *testing.T) {
+	resolverStarted := make(chan struct{})
+	var resolverOnce sync.Once
+	var resolverStartedDuringSearch atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/logs_settings/physical_indexes":
+			resolverOnce.Do(func() { close(resolverStarted) })
+			_, _ = io.WriteString(w, `{"properties":[{"id":"idx-1","name":"archive"}]}`)
+		default:
+			select {
+			case <-resolverStarted:
+				resolverStartedDuringSearch.Store(true)
+			case <-time.After(100 * time.Millisecond):
+			}
+			_, _ = io.WriteString(w, `{"query_result":{"status":"success","data":{"resultType":"streams","result":[]}}}`)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	result, _, err := NewGetLogPatternsHandler(server.Client(), apiModeCfg(server.URL))(context.Background(), &mcp.CallToolRequest{}, GetLogPatternsArgs{
+		LogPatternScopeArgs: LogPatternScopeArgs{
+			ServiceName: "checkout", StartTimeISO: patternWindowStartISO, EndTimeISO: patternWindowEndISO, Index: "physical_index:archive",
+		},
+	})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if !resolverStartedDuringSearch.Load() {
+		t.Fatal("deep-link index resolution started only after log sampling completed")
+	}
+	if result.Meta == nil {
+		t.Fatal("resolved deep link missing from result metadata")
+	}
 }
 
 // serve answers each log search with the lines listed for the request's

@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `validate_dashboard` no longer reports `overall: pass` with `panels_total: 0` when nothing was validated. A `{dashboard, metadata}` create envelope passed as `dashboard_definition` is unwrapped and its inner dashboard validated; a dashboard with no panels returns `success: false`, `error: "no_panels"`; panel fields from other formats (Grafana `gridPos`, `title`, `type`, and `targets` on panels that need queries) and mistyped fields such as a string `queries[].legend` or a non-object `csv` are listed per panel in `shape_problems` and make `overall` `fail` (#498).
 
 ### Changed
+- `get_log_patterns` and `get_logs` resolve explicit-index dashboard links concurrently with their backend log reads, removing a serial settings request from their latency; `get_service_profile` reuses successful service-and-datasource responses for 30 seconds, coalescing concurrent misses (#552).
 - `get_logs` and `get_service_logs` cap raw MCP tool results at 32000 bytes, retaining whole entries and marking truncation with structured returned/fetched counts. Their hints preserve backend-limit uncertainty and recommend a lower request limit; a single oversized entry returns an error. Summary and aggregate results are unchanged (#447).
 
 ## [0.23.0] - 2026-11-04
