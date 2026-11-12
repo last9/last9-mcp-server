@@ -148,6 +148,19 @@ func TestDashboardWrites_BuiltInRefusalIsNotLocked(t *testing.T) {
 	}
 }
 
+func TestDashboardWrites_PermissionRefusalDoesNotClaimReadonly(t *testing.T) {
+	for _, tool := range dashboardWriteTools {
+		t.Run(tool, func(t *testing.T) {
+			ls := newLockingServer(t, unknownLockFixture, http.StatusForbidden, `{"message":"not permitted to modify this dashboard"}`)
+			res, err := callDashboardWrite(t, tool, ls.srv)
+			text := userErrorText(t, res, err)
+			if strings.Contains(text, "readonly") || strings.Contains(text, "copy it") || !strings.Contains(text, "403") {
+				t.Fatalf("text = %q", text)
+			}
+		})
+	}
+}
+
 func TestDashboardWrites_UnlockedDashboardIsWritten(t *testing.T) {
 	unlocked := strings.Replace(lockedFixture, `"readonly":true`, `"readonly":false`, 1)
 	for _, tool := range dashboardWriteTools {
