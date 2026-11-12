@@ -36,7 +36,7 @@ func NewDeleteDashboardHandler(client *http.Client, cfg models.Config) func(cont
 			return lockedResult(lock), nil, nil
 		}
 		if err != nil && status == http.StatusForbidden {
-			return forbiddenWriteResult(err), nil, nil
+			return forbiddenWriteResult(err, isBuiltInReadonlyRefusal(status, string(body))), nil, nil
 		}
 		if err != nil {
 			return nil, nil, mapDashboardAPIError(err)

@@ -125,7 +125,7 @@ func NewPatchDashboardHandler(client *http.Client, cfg models.Config) func(conte
 				return lockedResult(lock), nil, nil
 			}
 			if isForbidden(err) {
-				return forbiddenWriteResult(err), nil, nil
+				return forbiddenWriteResult(err, upstreamBuiltInReadonlyRefusal(err)), nil, nil
 			}
 			return nil, nil, mapDashboardAPIError(err)
 		}

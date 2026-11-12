@@ -71,6 +71,15 @@ func upstreamLockedRefusal(err error) bool {
 	return errors.As(err, &upstream) && isDashboardLockedRefusal(upstream.StatusCode, upstream.Body)
 }
 
+func isBuiltInReadonlyRefusal(status int, body string) bool {
+	return status == http.StatusForbidden && strings.Contains(strings.ToLower(body), "built-in dashboards are read-only")
+}
+
+func upstreamBuiltInReadonlyRefusal(err error) bool {
+	var upstream *utils.UpstreamHTTPError
+	return errors.As(err, &upstream) && isBuiltInReadonlyRefusal(upstream.StatusCode, upstream.Body)
+}
+
 func isForbidden(err error) bool {
 	var upstream *utils.UpstreamHTTPError
 	return errors.As(err, &upstream) && upstream.StatusCode == http.StatusForbidden
@@ -125,8 +134,10 @@ func lockAuthor(lock dashboardLock) string {
 const lockRecovery = "Ask its author or an org admin to unlock it with set_dashboard_lock, " +
 	"or copy it with create_dashboard and edit the copy."
 
-// forbiddenWriteResult serves any other write 403 (a built-in dashboard) as a user error.
-func forbiddenWriteResult(err error) *mcp.CallToolResult {
-	return utils.ToolErrorResult(fmt.Sprintf(
-		"dashboard is readonly and cannot be modified, so nothing was written; copy it with create_dashboard and edit the copy: %v", err))
+func forbiddenWriteResult(err error, builtIn bool) *mcp.CallToolResult {
+	prefix := "dashboard write was forbidden, so nothing was written"
+	if builtIn {
+		prefix = "dashboard is readonly and cannot be modified, so nothing was written; copy it with create_dashboard and edit the copy"
+	}
+	return utils.ToolErrorResult(fmt.Sprintf("%s: %v", prefix, err))
 }
