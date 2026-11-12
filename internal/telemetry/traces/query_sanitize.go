@@ -63,6 +63,7 @@ var traceFilterLogicalOperators = map[string]struct{}{
 // Normalizations are applied in place — callers forward the slice they passed in.
 func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 	hasResult := false
+	stringBackedAliases := map[string]struct{}{}
 	for i, stage := range stages {
 		stageType, _ := stage["type"].(string)
 		path := fmt.Sprintf("tracejson_query[%d]", i)
@@ -75,6 +76,9 @@ func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 		if stageType == "window_aggregate" {
 			function, _ := stage["function"].(map[string]interface{})
 			if err := rejectShadowedAggregateFields(function, path+".function", shadowedAliases); err != nil {
+				return err
+			}
+			if err := rejectStringAliasNumericAggregate(function, path+".function", stringBackedAliases); err != nil {
 				return err
 			}
 		}
@@ -103,7 +107,7 @@ func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 		}
 
 		if stageType == "aggregate" {
-			if err := validateAggregateStage(stage, path, shadowedAliases); err != nil {
+			if err := validateAggregateStage(stage, path, shadowedAliases, stringBackedAliases); err != nil {
 				return err
 			}
 		}
@@ -129,6 +133,9 @@ func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 		}
 
 		hasResult = traceStageHasResult(stage, stageType, hasResult)
+		if stageType == "aggregate" || stageType == "window_aggregate" {
+			stringBackedAliases = nextTraceStringBackedAliases(stage, stringBackedAliases)
+		}
 	}
 	return nil
 }
@@ -139,7 +146,7 @@ func applyImplicitQuantileExactDefault(stage map[string]interface{}, hasResult b
 	}
 	apply := func(function map[string]interface{}) {
 		for name, rawArgs := range function {
-			if strings.TrimSuffix(name, "_over_time") != "$quantile_exact" {
+			if name != "$quantile_exact" {
 				continue
 			}
 			if args, ok := rawArgs.([]interface{}); ok {
@@ -738,7 +745,7 @@ func validateWindowAggregateStage(stage map[string]interface{}, path string) err
 	return validateTraceAlias(stage["as"], path+".as")
 }
 
-func validateAggregateStage(stage map[string]interface{}, path string, shadowedAliases map[string]struct{}) error {
+func validateAggregateStage(stage map[string]interface{}, path string, shadowedAliases, stringBackedAliases map[string]struct{}) error {
 	rawAggregates, ok := stage["aggregates"]
 	if !ok {
 		return nil
@@ -780,6 +787,9 @@ func validateAggregateStage(stage map[string]interface{}, path string, shadowedA
 				if err := rejectShadowedAggregateFields(function, fmt.Sprintf("%s.aggregates[%d].function", path, j), shadowedAliases); err != nil {
 					return err
 				}
+				if err := rejectStringAliasNumericAggregate(function, fmt.Sprintf("%s.aggregates[%d].function", path, j), stringBackedAliases); err != nil {
+					return err
+				}
 			}
 		}
 		if err := validateTraceAlias(entry["as"], fmt.Sprintf("%s.aggregates[%d].as", path, j)); err != nil {
@@ -787,6 +797,47 @@ func validateAggregateStage(stage map[string]interface{}, path string, shadowedA
 		}
 	}
 	return nil
+}
+
+func rejectStringAliasNumericAggregate(function map[string]interface{}, path string, stringBackedAliases map[string]struct{}) error {
+	for name, raw := range function {
+		base := strings.TrimSuffix(name, "_over_time")
+		if base == "$count" || base == "$rate" || base == "$uniq" {
+			continue
+		}
+		args, _ := raw.([]interface{})
+		field, i, ok := telemetry.AggregateFieldArg(name, args)
+		if !ok {
+			continue
+		}
+		if _, stringBacked := stringBackedAliases[field]; !stringBacked {
+			continue
+		}
+		p := fmt.Sprintf("%s.%s[%d]", path, name, i)
+		return &tracePipelineError{
+			category: traceCategoryInvalidField,
+			path:     p,
+			msg:      fmt.Sprintf("%s field %q at %s is a string-backed groupby output and cannot be used by a numeric aggregate", name, field, p),
+		}
+	}
+	return nil
+}
+
+func nextTraceStringBackedAliases(stage map[string]interface{}, previous map[string]struct{}) map[string]struct{} {
+	next := map[string]struct{}{}
+	groupBy, _ := stage["groupby"].(map[string]interface{})
+	for field, rawAlias := range groupBy {
+		alias, _ := rawAlias.(string)
+		if alias == "" {
+			continue
+		}
+		_, builtInString := traceStringFields[field]
+		_, priorString := previous[field]
+		if builtInString || priorString {
+			next[alias] = struct{}{}
+		}
+	}
+	return next
 }
 
 func rejectShadowedAggregateFields(function map[string]interface{}, path string, shadowedAliases map[string]struct{}) error {
