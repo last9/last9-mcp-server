@@ -49,19 +49,6 @@ func normalizeEscapedHTML(body []byte) []byte {
 	return encodeJSON(value)
 }
 
-func withDashboardRowsLocked(body []byte) []byte {
-	var rows []map[string]json.RawMessage
-	if err := json.Unmarshal(body, &rows); err != nil {
-		return body
-	}
-	for _, row := range rows {
-		if readonly, ok := row["readonly"]; ok && row != nil {
-			row["locked"] = readonly
-		}
-	}
-	return encodeJSON(rows)
-}
-
 func encodeJSON(v any) []byte {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
