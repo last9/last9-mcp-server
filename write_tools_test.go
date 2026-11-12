@@ -42,6 +42,7 @@ var writeToolFixtures = map[string]writeToolFixture{
 	},
 	"delete_dashboard":          {args: `{"id":"dash-1"}`},
 	"delete_dashboard_snapshot": {args: `{"id":"snap-1"}`},
+	"set_dashboard_lock":        {args: `{"id":"dash-1","locked":true}`},
 	"create_alert": {
 		args:  `{"entity_id":"entity-1","alert_rule":` + testAlertRule + `}`,
 		reads: map[string]string{"/entities/entity-1/alert-rules": `{"rules":[]}`},

@@ -807,6 +807,13 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 	}, "list_dashboards; id is no longer listed if the delete landed",
 		dashboards.NewDeleteDashboardHandler(client, cfg)))
 
+	reg(registerWriteTool(server, gate, &mcp.Tool{
+		Name:        "set_dashboard_lock",
+		Annotations: writeTool("Set Dashboard Lock", false, true),
+		Description: prompts.SetDashboardLockDescription,
+	}, "get_dashboard for id; its locked field shows the current state",
+		dashboards.NewSetDashboardLockHandler(client, cfg)))
+
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
 		Name:        "list_dashboard_snapshots",
 		Annotations: readOnlyTool("List Dashboard Snapshots"),

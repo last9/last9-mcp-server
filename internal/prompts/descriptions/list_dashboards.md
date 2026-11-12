@@ -1,1 +1,3 @@
-List custom dashboards in the Last9 organization. Returns JSON array of dashboard summaries (id, name, metadata).
+List custom dashboards in the Last9 organization, most recently updated first. When you know part of the dashboard's name, pass `name` (case-insensitive substring) to narrow the list instead of paging through every dashboard.
+
+Returns `{"dashboards": [{"id", "name", "updated_at", "locked"}], "total", "next_cursor"}`. `locked` is present when the API reports lock state. `total` counts every dashboard matching `name`. A page holds up to `limit` dashboards (1-200, default 100) and ends early to stay under 32 KB. When `next_cursor` is present, more dashboards remain: pass it as `cursor` with the same `name` to get the next page. Use `get_dashboard` with an `id` for panels and queries.
