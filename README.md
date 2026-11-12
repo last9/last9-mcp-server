@@ -375,7 +375,7 @@ Rules, channels and attachments these tools create are marked `created_via: last
 
 ### Custom Dashboards
 
-- **`list_dashboards`** — All custom dashboards in your org: IDs, names, and metadata
+- **`list_dashboards`** — Custom dashboards in your org, filtered by name and paged: IDs, names, and last-updated times
 - **`get_dashboard`** — Full dashboard definition by ID, including panels and queries
 - **`preview_dashboard`** — Read-only preview of an unsaved dashboard or patch: resolved queries, bounded per-panel results and a net panel diff; never saves
 - **`validate_dashboard`** — Read-only lint + execute + classify for a saved dashboard id or an inline `dashboard_definition` over a ≤24h window. Never creates or updates dashboards
@@ -1113,7 +1113,11 @@ Call it before any service-scoped investigation so tool selection matches the se
 
 ### list_dashboards
 
-No parameters. Returns all custom dashboards in the org as a JSON array with `id`, `name`, and metadata; rows that report `readonly` also carry `locked`.
+- `name` (string, optional): Case-insensitive substring of the dashboard name. Narrows the list and `total`.
+- `limit` (integer, optional): Dashboards per page, 1–200. Default: 100.
+- `cursor` (string, optional): `next_cursor` from the previous page; pass the same `name` with it.
+
+Returns `{"dashboards": [{"id", "name", "updated_at", "locked"}], "total", "next_cursor"}`, most recently updated first. `locked` is present when the API reports lock state. A page ends early to stay under 32 KB; `next_cursor` is absent on the last page.
 
 ### get_dashboard
 
