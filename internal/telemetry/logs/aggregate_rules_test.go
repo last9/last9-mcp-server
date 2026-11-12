@@ -271,6 +271,28 @@ func TestPrepareLogJSONQueryRejectsInvalidAggregateFunctions(t *testing.T) {
 	}
 }
 
+func TestPrepareLogJSONQueryRejectsMissingAggregateFieldOperands(t *testing.T) {
+	functions := []string{"$sum", "$min", "$max", "$avg", "$median", "$stddev", "$stddev_pop", "$variance", "$variance_pop"}
+	for _, function := range functions {
+		for _, suffix := range []string{"", "_over_time"} {
+			name := function + suffix
+			for kind, stage := range map[string]map[string]interface{}{
+				"aggregate": aggregateStage(fn1(name), "v"),
+				"window":    windowStage(fn1(name), "v"),
+			} {
+				t.Run(kind+"/"+name, func(t *testing.T) {
+					_, err := prepareLogJSONQuery([]map[string]interface{}{stage}, "logjson_query")
+					path := "logjson_query[0].function." + name
+					if kind == "aggregate" {
+						path = "logjson_query[0].aggregates[0].function." + name
+					}
+					requireInvalidField(t, err, path, "wrong arguments")
+				})
+			}
+		}
+	}
+}
+
 func TestPrepareLogJSONQueryRejectsInvalidAggregateAlias(t *testing.T) {
 	for _, as := range []string{"p99 latency", "123", "a;b", "p99-latency"} {
 		_, err := prepareLogJSONQuery([]map[string]interface{}{aggregateStage(fn1("$count"), as)}, "logjson_query")

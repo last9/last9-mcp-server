@@ -127,6 +127,28 @@ func TestSanitizeTraceJSONQuery_RejectsInvalidAggregateFunctions(t *testing.T) {
 	}
 }
 
+func TestSanitizeTraceJSONQuery_RejectsMissingAggregateFieldOperands(t *testing.T) {
+	functions := []string{"$sum", "$min", "$max", "$avg", "$median", "$stddev", "$stddev_pop", "$variance", "$variance_pop"}
+	for _, function := range functions {
+		for _, suffix := range []string{"", "_over_time"} {
+			name := function + suffix
+			for kind, stage := range map[string]map[string]interface{}{
+				"aggregate": aggStage(fn1(name), "v"),
+				"window":    winStage(fn1(name), "v"),
+			} {
+				t.Run(kind+"/"+name, func(t *testing.T) {
+					err := SanitizeTraceJSONQuery([]map[string]interface{}{stage})
+					path := "tracejson_query[0].function." + name
+					if kind == "aggregate" {
+						path = "tracejson_query[0].aggregates[0].function." + name
+					}
+					requireTraceInvalidField(t, err, path, "wrong arguments")
+				})
+			}
+		}
+	}
+}
+
 func TestSanitizeTraceJSONQuery_AcceptsSupportedAggregateFieldSyntax(t *testing.T) {
 	for _, field := range []string{`attributes['label[0]']`, `resources['deployment[zone]']`, "Events.Name[1]"} {
 		for _, stage := range []map[string]interface{}{
