@@ -2,8 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -109,12 +112,49 @@ func TestStrictModeRefusesTokenlessDashboardWritesBeforeArgumentChecks(t *testin
 
 func TestDashboardArgumentCheckRunsAfterIntegerCoercion(t *testing.T) {
 	session := newInMemoryClientSession(t)
-	args := `{"dashboard":{"name":"x","panels":[{"name":"p","version":"1","gridPos":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"section"}}]}}`
+	args := `{"dashboard":{"name":"x","panels":[{"name":"p","version":"1","gridPos":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"stat"},"queries":[]}]}}`
 	result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: "create_dashboard", Arguments: json.RawMessage(args)})
 	assertToolError(t, result, toolErrorExpectation{
 		contains: []string{"dashboard.panels[0].gridPos: unknown panel field; use layout"},
 		absent:   []string{"version"},
 	})
+}
+
+func TestRegisteredDashboardWritesAcceptRoundTripDefaults(t *testing.T) {
+	var requests atomic.Int32
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"dashboard":{"id":"dash-1","name":"Example"}}`))
+	}))
+	t.Cleanup(api.Close)
+	session := connectTestSession(t, writeToolTestConfig(api.URL), api.Client())
+
+	panels := map[string]string{
+		"null layout":      `[{"name":"Overview","layout":null,"visualization":{"type":"section"}}]`,
+		"null panels":      `null`,
+		"null queries":     `[{"name":"Overview","visualization":{"type":"section"},"queries":null}]`,
+		"empty legend":     `[{"name":"Chart","layout":{"x":0,"y":0,"w":12,"h":6},"visualization":{"type":"stat"},"queries":[{"name":"A","type":"range","query_type":"promql","telemetry":"metrics","expr":"up","legend":{"type":"","value":""}}]}]`,
+		"empty sort order": `[{"name":"Logs","layout":{"x":0,"y":0,"w":12,"h":6},"visualization":{"type":"logs","logs_config":{"columns":["body"],"sort_order":""}},"queries":[]}]`,
+	}
+	for name, panelJSON := range panels {
+		for _, tool := range []string{"create_dashboard", "update_dashboard"} {
+			t.Run(name+"/"+tool, func(t *testing.T) {
+				args := `{"dashboard":{"name":"Example","panels":` + panelJSON + `}}`
+				if tool == "update_dashboard" {
+					args = `{"id":"dash-1","dashboard":{"name":"Example","panels":` + panelJSON + `}}`
+				}
+				before := requests.Load()
+				result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: tool, Arguments: json.RawMessage(args)})
+				if result.IsError {
+					t.Fatalf("write rejected: %s", toolResultText(result))
+				}
+				if got := requests.Load(); got != before+1 {
+					t.Fatalf("upstream requests = %d, want %d", got, before+1)
+				}
+			})
+		}
+	}
 }
 
 // Query-free panels ignore targets, so it is flagged only where queries are required.

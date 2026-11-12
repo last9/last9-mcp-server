@@ -46,13 +46,22 @@ func TestDashboardExamplesMatchCreateSchema(t *testing.T) {
 		panels := dashboard["panels"].([]any)
 		for i, item := range panels {
 			panel := item.(map[string]any)
-			layout := panel["layout"].(map[string]any)
+			layout, hasLayout := panel["layout"].(map[string]any)
+			if !hasLayout {
+				if panel["visualization"].(map[string]any)["type"] != "section" {
+					t.Errorf("panel %v has no layout", panel["name"])
+				}
+				continue
+			}
 			x, y, w, h := layout["x"].(float64), layout["y"].(float64), layout["w"].(float64), layout["h"].(float64)
 			if x < 0 || y < 0 || w <= 0 || h <= 0 || x+w > 12 {
 				t.Errorf("panel %v exceeds grid", panel["name"])
 			}
 			for _, previous := range panels[:i] {
-				p := previous.(map[string]any)["layout"].(map[string]any)
+				p, ok := previous.(map[string]any)["layout"].(map[string]any)
+				if !ok {
+					continue
+				}
 				if x < p["x"].(float64)+p["w"].(float64) && x+w > p["x"].(float64) && y < p["y"].(float64)+p["h"].(float64) && y+h > p["y"].(float64) {
 					t.Errorf("panel %v overlaps an earlier panel", panel["name"])
 				}
