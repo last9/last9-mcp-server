@@ -232,35 +232,6 @@ The NPM route is easier on Windows — no path management.
 | `OTEL_EXPORTER_OTLP_ENDPOINT`| —                    | OTLP collector endpoint (only when telemetry is enabled) |
 | `OTEL_EXPORTER_OTLP_HEADERS` | —                    | OTLP auth headers (only when telemetry is enabled) |
 
-### Tool phase timing
-
-With internal telemetry enabled, tool spans carry `last9.phase.<phase>.duration_ms`
-(real elapsed milliseconds) and `last9.phase.<phase>.failed` (whether that phase
-returned an error). The same fields are emitted as `tool phase completed` debug
-logs, with `tool` and `phase`, when the configured logger accepts debug records.
-Inputs, query text, credentials and error bodies are not added by these timings.
-
-| Tool | Phases |
-| --- | --- |
-| `get_log_patterns` | `sample`: fetch and decode the sample; `mine`: pattern mining; `deep_link`: resolve the optional index and build the link |
-| `get_logs` | `fetch`: fetch, decode and merge results, including retries and optional count sanity checks; `count_sanity`: the nested optional check; `post_process`: guidance, summary and JSON formatting; `deep_link`: index resolution and link construction |
-| `get_service_profile` | `request`: prepare and send the request through the shared API client and read its complete response, before brief formatting |
-
-Only executed phases are recorded, including failed fetches. Optional helpers
-that suppress errors retain that behavior; `failed: false` does not certify that
-an optional link or count check was available. The nested `count_sanity` duration
-is already included in `fetch`; do not add it twice. Fetch time includes client
-work, so it is not a measurement of backend execution alone. Compare these phases
-on equivalent windows and search paths before tuning sampling or caching.
-
-For a latency investigation, replay the same service, datasource, index, window,
-and limits on the baseline and candidate builds. Record the build SHA, tool total,
-phase durations, `last9.logs.search_path`, retry attributes when present, and
-coverage flags. Compare slow calls as well as typical calls. A slow fetch or
-profile request identifies a network/API phase to investigate; backend execution
-needs its own correlated evidence before assigning the tail to the backend.
-These diagnostics alone do not establish a latency improvement.
-
 ### Read-only mode
 
 `--read-only` (or `LAST9_MCP_READ_ONLY=true`) serves only tools annotated `readOnlyHint: true`, so no tool can create, change or delete alert rules, notification channels, dashboards or drop rules, acknowledge or reassign alerts, or mute groups. A tool without annotations counts as a write tool and is hidden.
@@ -326,8 +297,6 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`get_log_attributes_for_pipeline`** — Log fields actually present for an in-progress pipeline (scoped discovery), each with its exact `filter_field`
 - **`get_drop_rules`** — Log drop rules from [Last9 Control Plane](https://last9.io/control-plane)
 - **`add_drop_rule`** — Create a new drop rule to cut log volume at the source
-- **`get_remapping_rules`** — Remapping rules (`logs_extract`, `logs_map`, `traces_map`) from [Last9 Control Plane](https://last9.io/control-plane)
-- **`add_remapping_rule`** — Create a remapping rule that extracts or maps log and trace attributes at ingestion
 
 ### Traces
 
@@ -344,14 +313,11 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`get_change_events`** — Deployments, config changes, rollbacks. Correlate incidents with what changed
 - **`analyze_change_impact`** — Did a change break anything? Compares a service and its direct callers before and after a change: golden signals, APM and trace-attribute deviations, new firing alerts, and a verdict (`regression likely` / `no significant change` / `insufficient data`)
 - **`get_alert_groups`** — Configured Compass alert groups with metadata labels, team, tier, and rule counts — including groups with zero rules and groups that are not firing
-- **`get_alert_operations_summary`** — On-call health over a window: alerts raised vs acknowledged, backlog, deliveries and, with `include_rules`, the noisiest, flapping and unrouted rules. Every count carries its `status` (`available` / `partial` / `unavailable`)
-- **`get_alert_coverage`** — What you are not alerting on: uncovered golden signals, fully disabled or unrouted alert groups, and rules muted too long, each with a suggested fix tool. Read-only.
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
 - **`get_entity_kpis`** — Every KPI (id, name, PromQL, unit) on one alert group, including KPIs no rule uses yet — the ids `create_alert` and `validate_alert_expression` need
 - **`create_kpi`** — Create a KPI (PromQL + unit) on an alert group when no existing KPI fits. Create once and keep the returned id
 - **`get_alerts`** — Currently firing alerts within a time window
 - **`get_alert_rule_state`** — Historical firing state (1/0) per alert rule over a time range, grouped by `rule_id`. Filterable by alert group, rule name, label filters, and state.
-- **`get_alert_hygiene`** — Noisy, flapping, stale and unrouted alert rules over 7 or 30 days, ranked, each with the numbers behind the verdict and a suggested fix. Read-only.
 - **`get_notification_channels`** — Configured notification channels (Slack, PagerDuty, email, etc.). `scope=channels` lists the channels themselves (ids for attaching); the default `attached` lists per-alert-group attachments
 - **`recommend_alert_config`** — Read-only design guidance (lifecycle, validation gates, responder context) before creating an alert rule
 - **`validate_alert_expression`** — Dry-run an alert expression against an alert group's KPIs without saving anything
@@ -375,7 +341,7 @@ Rules, channels and attachments these tools create are marked `created_via: last
 
 ### Custom Dashboards
 
-- **`list_dashboards`** — All custom dashboards in your org: IDs, names, and metadata
+- **`list_dashboards`** — Custom dashboards in your org, filtered by name and paged: IDs, names, and last-updated times
 - **`get_dashboard`** — Full dashboard definition by ID, including panels and queries
 - **`preview_dashboard`** — Read-only preview of an unsaved dashboard or patch: resolved queries, bounded per-panel results and a net panel diff; never saves
 - **`validate_dashboard`** — Read-only lint + execute + classify for a saved dashboard id or an inline `dashboard_definition` over a ≤24h window. Never creates or updates dashboards
@@ -383,7 +349,6 @@ Rules, channels and attachments these tools create are marked `created_via: last
 - **`update_dashboard`** — Restructure most of an existing dashboard by ID (full replacement; readonly system dashboards return an error). For individual panel edits use `patch_dashboard`
 - **`patch_dashboard`** — Targeted edits to an existing dashboard by ID (add/update/remove/move panel, set title, set variable); returns a compact diff, not the full dashboard
 - **`delete_dashboard`** — Delete a custom dashboard by ID
-- **`set_dashboard_lock`** — Lock or unlock a custom dashboard by ID (author or org admin only); a locked dashboard refuses update, patch and delete
 - **`list_dashboard_snapshots`** — Frozen point-in-time snapshots for a dashboard (metadata only)
 - **`get_dashboard_snapshot`** — Full frozen snapshot including panel data for RCA / shareable views
 - **`delete_dashboard_snapshot`** — Delete a frozen snapshot by ID
@@ -739,27 +704,6 @@ No parameters. Lists drop rules via `GET /otel_settings/drop?region=...`.
 - Filter keys must use `attributes["key_name"]` or `resource.attributes["key_name"]` (required by the Last9 API).
 - Creates the rule via `POST /otel_settings/drop?region=...&cluster_id=...`.
 
-### get_remapping_rules
-
-- `rule_type` (string, required): `logs_extract`, `logs_map` or `traces_map`.
-- `region` (string, optional): Default: the configured datasource region.
-- Lists rules via `GET /otel_settings/remapping/{rule_type}?region=...`.
-
-### add_remapping_rule
-
-Creates one rule per call; map rules need one call per `target_attribute`.
-
-- `rule_type` (string, required): `logs_extract`, `logs_map` or `traces_map`.
-- `name` (string, required)
-- `remap_keys` (array, required): Source fields. `logs_extract` with `json`: body field names; with `pattern`: exactly one regex with a named capture group. Map rules: attribute paths, first non-empty wins.
-- `target_attribute` (string, required): `logs_extract`: `log_attributes` or `resource_attributes`. `logs_map`: `service`, `severity` or `resource_deployment.environment`. `traces_map`: `service`.
-- `extract_type` (string, `logs_extract` only, required there): `json` or `pattern`.
-- `action` (string, `logs_extract` only): `upsert` (default) or `insert`.
-- `prefix` (string, `logs_extract` only)
-- `preconditions` (array, `logs_extract` only): At most one `{key, value, operator}`; `operator` is `equals` (default), `not_equals` or `like` (regex).
-- `region` (string, optional): Default: the configured datasource region.
-- Creates the rule via `POST /otel_settings/remapping/{rule_type}?region=...`. Never retried; after a timeout, check with `get_remapping_rules`.
-
 ### get_traces
 
 Use for broad searches and aggregations. For exact trace ID lookup, use `get_service_traces`.
@@ -863,28 +807,6 @@ Configured Compass alert-group inventory for changeboard / label-coverage audits
 
 Returns compact JSON `{"count":N,"groups":[...]}` with `id`, `name`, `type`, `entity_class`, `team`, `tier`, `metadata.labels`, and rule counts. Empty `team` / `labels` means unset.
 
-### get_alert_operations_summary
-
-- `start_time_iso` / `end_time_iso` (string, required): RFC3339 window, at most 31 days.
-- `timezone` (string, optional): IANA name for day boundaries. Default: `UTC`.
-- `severities` / `services` (array, optional): Narrow the summary.
-- `include_rules` (boolean, optional): Also return per-rule hygiene (top 20 by `fire_count`, flapping and unrouted rules, with `truncated` when the API capped its rule list). Default: `false`.
-
-Returns JSON with `alerts_raised`, `acknowledged`, `unacknowledged`, `current_backlog`, `delivered`, `notification_outcomes`, `top_rules`, `needs_attention` and `coverage`. Each metric is `{status, count?, reason?}`; a `partial` count covers only part of the window and is not a lower bound.
-
-### get_alert_coverage
-
-Answers "what am I not alerting on?" for a service, an environment, one alert group, or the whole organization when no scope is given. Read-only: it never creates, changes, or unmutes anything. Also served in the `investigate` toolset.
-
-- `service` (string, optional): Service name.
-- `environment` (string, optional): Deployment environment (for example `prod`).
-- `entity_id` (string, optional): Alert group (entity) UUID, as returned by `get_alert_groups`.
-- `muted_days` (integer, optional): Whole days, 1 to 3650. Default: 7; 0 means the default. A rule muted longer than this is a `muted_too_long` gap.
-
-Values are trimmed; blank strings are ignored. Gap kinds: **uncovered_signal** (no enabled rule on latency, error_rate, throughput, or saturation; names a disabled rule that would cover it), **all_rules_disabled** (an alert group whose rules are all disabled), **no_notification_channel** (a rule whose severity no channel on its alert group routes), **muted_too_long** (muted indefinitely or for more than `muted_days`; `muted_since` is the rule's last update and `mute_until` is omitted for an indefinite mute).
-
-Returns compact JSON `{scope, generated_at, complete, summary, counts, groups}`. `groups` holds one `{kind, count, gaps, omitted}` entry per kind present, listing at most 10 gaps per kind (`omitted` counts the rest; narrow the scope to see them); each gap carries `suggested_tool` (`create_alert`, `create_alert_from_chart`, `attach_notification_channel`, or `patch_alert`) and `suggested_args`, holding only inputs that tool accepts (`patch_alert`: `entity_id`, `id` and `is_disabled=false` or `mute_until=0`; `attach_notification_channel`: `alert_group_id` and a `breach`/`threat` `severity`; `create_alert`: `entity_id`; `create_alert_from_chart`: `service_name`); the gap's own `entity_id`, `rule_id` and `signal` are listed beside them. Call the suggested tool only if it is available in the session and the user confirms. `complete` is true only when the API lists no gaps, every count is 0, and at least one alert group matches the scope (exact `service_name` / `env` labels, checked against `get_alert_groups`' list); a scope matching none, a failed lookup, or counts with no listed gaps are not complete, and `summary` says why.
-
 ### get_alert_config
 
 - `search_term` (string, optional): Free-text search across name, group, data source, tags.
@@ -935,17 +857,6 @@ No MCP tool deletes or edits a KPI (use the Last9 UI), so confirm name, query an
 - `state` (string, optional): Filter by state (e.g. `firing`).
 
 Returns a JSON map of `rule_id -> [{timestamp, is_firing}]`. A timestamp at which a rule is absent from the upstream response is reported as `is_firing=0` — this means "not observed as firing", not a confirmed normal state.
-
-### get_alert_hygiene
-
-Read-only audit of enabled alert rules. It never changes anything: each suggested fix is a proposal, applied only once the user explicitly confirms it, through `update_alert` (tuning), `patch_alert` (`is_disabled`), `delete_alert` or `attach_notification_channel` when those are served.
-
-- `window` (string, optional): `7d` or `30d`. Default: `7d`.
-- `limit` (integer, optional): Maximum flagged rules to return, worst first. Default: 20. Range: 1–100.
-
-The window ends now. Categories (a rule may have several): **noisy** (≥ 5 fires/day with < 20% acked; with an unavailable `ack_rate` it is judged on fire rate alone and the reason says so; mute time is not reported), **flapping** (> 4 flaps/day), **stale** (last fired before the window with no firing time in it, or an enabled configured rule with no episode in the window while lifecycle `coverage` is complete and the API's list is not truncated), **unrouted** (no firing in the window reached a channel and the alert group has no channel attached now; when attachments cannot be read the rule counts under `unavailable.routed` instead). Each stat is `{status, count|value, reason}` or null: an unavailable value is never read as zero and skips only the check that needs it, and `unavailable` counts enabled rules per missing value (`fire_count`, `flap_count`, `ack_rate`, `routed`, `rule_config` for rules missing from the alert rules list, whose fixes then carry no current value, and `activity` for configured rules with no episode whose silence the history cannot prove, which are not assessed). `coverage` says how much of the window alert history covered; rates use the covered span, at least one day. `upstream_truncated` is true when the API returned only its loudest 200 rules, so quieter rules were not evaluated. Fixes, built from each rule's configuration in the alert rules list: raise `bad_minutes` (the N in `count_true(result) >= N`) or lengthen `eval_window` (at most 60 minutes); for noisy static thresholds, move the threshold in `condition` (`expr > 100`) or switch the expression to `adaptive_std_cmp(metric, sensitivity, window)`; attach a notification channel; disable or delete stale rules.
-
-Returns compact JSON `{window, from, to, coverage, upstream_truncated, rules_evaluated, flagged_rules, truncated, omitted_for_size, unavailable, rules}`, sized to a 32 KB target: `truncated` is true when flagged rules exceed `limit` or that target, and `omitted_for_size` counts the rules within `limit` cut for size (the worst rule is always kept, so a single rule larger than 32 KB returns alone and exceeds the target); each rule has `findings` (`category`, `reason`, `suggested_fix`, optional `alternative_fix`) and the raw `stats`.
 
 ### get_notification_channels
 
@@ -1113,14 +1024,16 @@ Call it before any service-scoped investigation so tool selection matches the se
 
 ### list_dashboards
 
-No parameters. Returns all custom dashboards in the org as a JSON array with `id`, `name`, and metadata; rows that report `readonly` also carry `locked`.
+- `name` (string, optional): Case-insensitive substring of the dashboard name. Narrows the list and `total`.
+- `limit` (integer, optional): Dashboards per page, 1–200. Default: 100.
+- `cursor` (string, optional): `next_cursor` from the previous page; pass the same `name` with it.
+
+Returns `{"dashboards": [{"id", "name", "updated_at", "created_by", "locked"}], "total", "next_cursor"}`, most recently updated first. `created_by` is omitted when empty; `locked` is omitted when the API does not report `readonly`. `updated_at` is Unix epoch seconds as a string. A page ends early to stay under 32 KB; `next_cursor` is absent on the last page.
 
 ### get_dashboard
 
 - `id` (string, required): Dashboard UUID.
 - `region` (string, optional): Region for panel query population. Defaults to configured datasource region.
-
-The result adds top-level `locked` (`false` when the API omits it) and `created_by` (the author's user id).
 
 To alert on a panel, see `last9://reference/alerting`.
 
@@ -1129,11 +1042,11 @@ To alert on a panel, see `last9://reference/alerting`.
 Read-only. Never creates or updates dashboards. Accept exactly one of `dashboard_id` or `dashboard_definition`.
 
 - `dashboard_id` (string, optional): Saved dashboard UUID to validate.
-- `dashboard_definition` (object, optional): Inline unsaved dashboard body (true dry run). A `{dashboard, metadata}` create envelope is unwrapped to its `dashboard` object.
+- `dashboard_definition` (object, optional): Inline unsaved dashboard body (true dry run).
 - `start_time_iso` / `end_time_iso` (string, optional): Validation window (RFC3339). Must be ≤ 24h.
 - `region` (string, optional): Region for panel query execution.
 
-Returns `dashboard_validation/v1`: per-panel lint + execute classification (`data` / `no_data` / `invalid` / `error`). Day-1 empty results classify as `valid_no_data` without diagnose probes. A dashboard with no panels returns `success: false` with `error: "no_panels"`. Panel fields from other formats (Grafana `gridPos`, `title`, `type`, and `targets` on panels that need queries) and mistyped fields are listed per panel in `shape_problems`, counted in `summary.panels_invalid_shape`, and make `overall` `fail`.
+Returns `dashboard_validation/v1`: per-panel lint + execute classification (`data` / `no_data` / `invalid` / `error`). Day-1 empty results classify as `valid_no_data` without diagnose probes.
 
 ### preview_dashboard
 
@@ -1167,7 +1080,7 @@ Use only to restructure most of a dashboard; for adding, editing, removing or mo
 
 - `id` (string, required): Dashboard UUID to update.
 - `dashboard` (object, required): Full replacement dashboard body (same shape as create).
-- `metadata` (object, optional): Replacement metadata. Readonly system dashboards return a recoverable tool error.
+- `metadata` (object, optional): Replacement metadata. Readonly system dashboards return a 403 error.
 
 ### patch_dashboard
 
@@ -1185,13 +1098,6 @@ Prefer this over `update_dashboard` for small refinements: unchanged panels are 
 ### delete_dashboard
 
 - `id` (string, required): Dashboard UUID to delete. Readonly system dashboards cannot be deleted.
-
-### set_dashboard_lock
-
-- `id` (string, required): Dashboard UUID.
-- `locked` (boolean, required): `true` locks the dashboard, `false` unlocks it.
-
-Write tool; call it only when the user explicitly asks. Only the dashboard's author or an org admin can lock or unlock it, and built-in dashboards are always read-only. Returns `{"id", "locked"}` with the resulting state. While locked, `update_dashboard`, `patch_dashboard` and `delete_dashboard` send no write and return a recoverable tool error starting `dashboard is locked` that names the author and suggests unlocking or copying the dashboard with `create_dashboard`.
 
 ### list_dashboard_snapshots
 
