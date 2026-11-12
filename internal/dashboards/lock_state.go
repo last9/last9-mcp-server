@@ -23,18 +23,30 @@ type dashboardLockFields struct {
 // withDashboardLockState adds top-level locked and created_by to a get-dashboard
 // body. A body that is not a {dashboard} object is served unchanged.
 func withDashboardLockState(body []byte) []byte {
-	var resp map[string]any
-	if err := decodeJSON(body, &resp); err != nil || resp == nil {
+	body = normalizeEscapedHTML(body)
+	var resp map[string]json.RawMessage
+	if err := json.Unmarshal(body, &resp); err != nil || resp == nil {
 		return body
 	}
-	dashboard, ok := resp["dashboard"].(map[string]any)
-	if !ok {
+	var fields dashboardLockFields
+	if err := json.Unmarshal(resp["dashboard"], &fields); err != nil {
 		return body
 	}
-	readonly, _ := dashboard["readonly"].(bool)
-	resp["locked"] = readonly
-	resp["created_by"] = dashboard["created_by"]
+	resp["locked"] = encodeJSON(fields.Readonly != nil && *fields.Readonly)
+	resp["created_by"] = encodeJSON(fields.CreatedBy)
 	return encodeJSON(resp)
+}
+
+func normalizeEscapedHTML(body []byte) []byte {
+	lower := bytes.ToLower(body)
+	if !bytes.Contains(lower, []byte(`\u003c`)) && !bytes.Contains(lower, []byte(`\u003e`)) && !bytes.Contains(lower, []byte(`\u0026`)) {
+		return body
+	}
+	var value any
+	if err := decodeJSON(body, &value); err != nil {
+		return body
+	}
+	return encodeJSON(value)
 }
 
 func withDashboardRowsLocked(body []byte) []byte {

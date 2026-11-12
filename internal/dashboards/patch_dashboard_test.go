@@ -828,7 +828,7 @@ func TestPatchDashboard_NotFound(t *testing.T) {
 	}
 }
 
-func TestPatchDashboard_ForbiddenWriteIsReadonly(t *testing.T) {
+func TestPatchDashboard_ForbiddenWriteIsPermissionError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
 			w.WriteHeader(http.StatusForbidden)
@@ -840,7 +840,7 @@ func TestPatchDashboard_ForbiddenWriteIsReadonly(t *testing.T) {
 	_, _, err := NewPatchDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))(context.Background(), &mcp.CallToolRequest{}, PatchDashboardArgs{
 		ID: "dash-1", Ops: []PatchDashboardOp{{Op: "set_title", Title: "x"}},
 	})
-	if err == nil || !strings.Contains(err.Error(), "dashboard is readonly") {
+	if err == nil || !strings.Contains(err.Error(), "not permitted") || strings.Contains(err.Error(), "readonly") {
 		t.Fatalf("err = %v", err)
 	}
 }
