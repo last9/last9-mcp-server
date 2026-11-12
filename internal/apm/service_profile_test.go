@@ -3,24 +3,145 @@ package apm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"last9-mcp/internal/auth"
-	"last9-mcp/internal/constants"
+	apiservices "last9-mcp/internal/last9api/services"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+func TestGetServiceProfileHandler_CachesRepeatedProfile(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		_, _ = w.Write([]byte(`{"service":"checkout","telemetry":{"logs":"present"}}`))
+	}))
+	t.Cleanup(server.Close)
+	cfg := models.Config{APIBaseURL: server.URL}
+	cfg.TokenManager = &auth.TokenManager{AccessToken: "tok", ExpiresAt: time.Now().Add(time.Hour)}
+	handler := NewGetServiceProfileHandler(server.Client(), cfg)
+
+	first, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceProfileArgs{ServiceName: "checkout"})
+	if err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	second, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceProfileArgs{ServiceName: "checkout"})
+	if err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("upstream requests = %d, want one within the cache TTL", got)
+	}
+	if utils.GetTextContent(t, second) != utils.GetTextContent(t, first) {
+		t.Fatal("cached response differs from the original response")
+	}
+}
+
+func TestGetServiceProfileHandler_CoalescesConcurrentProfileFetches(t *testing.T) {
+	var requests atomic.Int32
+	requestStarted := make(chan struct{})
+	releaseRequest := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if requests.Add(1) == 1 {
+			close(requestStarted)
+		}
+		<-releaseRequest
+		_, _ = w.Write([]byte(`{"service":"checkout"}`))
+	}))
+	t.Cleanup(server.Close)
+	cfg := models.Config{APIBaseURL: server.URL}
+	cfg.TokenManager = &auth.TokenManager{AccessToken: "tok", ExpiresAt: time.Now().Add(time.Hour)}
+	handler := NewGetServiceProfileHandler(server.Client(), cfg)
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var callers sync.WaitGroup
+	callers.Add(2)
+	for range 2 {
+		go func() {
+			defer callers.Done()
+			<-start
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceProfileArgs{ServiceName: "checkout"})
+			errs <- err
+		}()
+	}
+	close(start)
+	<-requestStarted
+	close(releaseRequest)
+	callers.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Errorf("handler: %v", err)
+		}
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("upstream requests = %d, want one coalesced request", got)
+	}
+}
+
+func TestGetServiceProfileHandler_CancelledCallerDoesNotCancelSharedFetch(t *testing.T) {
+	var requests atomic.Int32
+	requestStarted := make(chan struct{})
+	releaseRequest := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if requests.Add(1) == 1 {
+			close(requestStarted)
+		}
+		<-releaseRequest
+		_, _ = w.Write([]byte(`{"service":"checkout"}`))
+	}))
+	t.Cleanup(server.Close)
+	cfg := models.Config{APIBaseURL: server.URL}
+	cfg.TokenManager = &auth.TokenManager{AccessToken: "tok", ExpiresAt: time.Now().Add(time.Hour)}
+	handler := NewGetServiceProfileHandler(server.Client(), cfg)
+
+	firstCtx, cancelFirst := context.WithCancel(context.Background())
+	firstErr := make(chan error, 1)
+	go func() {
+		_, _, err := handler(firstCtx, &mcp.CallToolRequest{}, GetServiceProfileArgs{ServiceName: "checkout"})
+		firstErr <- err
+	}()
+	<-requestStarted
+	cancelFirst()
+	if err := <-firstErr; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled caller error = %v, want context cancellation", err)
+	}
+
+	secondResult := make(chan *mcp.CallToolResult, 1)
+	secondErr := make(chan error, 1)
+	go func() {
+		result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceProfileArgs{ServiceName: "checkout"})
+		secondResult <- result
+		secondErr <- err
+	}()
+	close(releaseRequest)
+
+	if err := <-secondErr; err != nil {
+		t.Fatalf("second caller: %v", err)
+	}
+	if result := <-secondResult; !strings.Contains(utils.GetTextContent(t, result), `"service":"checkout"`) {
+		t.Fatal("second caller did not receive the shared profile")
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("upstream requests = %d, want the detached fetch shared across callers", got)
+	}
+}
+
 func TestGetServiceProfileHandler_ForwardsRegionAndService(t *testing.T) {
-	var captured serviceProfileRequest
+	var captured apiservices.GetServiceProfileInput
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != constants.EndpointServiceProfile {
+		if r.URL.Path != "/service_profile" {
 			t.Errorf("path %s", r.URL.Path)
 		}
 		if r.Method != http.MethodPost {
@@ -197,7 +318,7 @@ func TestGetServiceProfileHandler_EmptyServiceName(t *testing.T) {
 
 func TestGetServiceProfileHandler_APIError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != constants.EndpointServiceProfile {
+		if r.URL.Path != "/service_profile" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -223,5 +344,45 @@ func TestGetServiceProfileHandler_APIError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "500") {
 		t.Errorf("expected HTTP status in error message, got: %v", err)
+	}
+}
+
+func TestGetServiceProfilePhaseTiming(t *testing.T) {
+	for _, outcome := range []string{"success", "upstream failure", "incomplete body"} {
+		t.Run(outcome, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if outcome == "upstream failure" {
+					time.Sleep(5 * time.Millisecond)
+					http.Error(w, "private upstream diagnostic", http.StatusInternalServerError)
+					return
+				}
+				if outcome == "incomplete body" {
+					w.Header().Set("Content-Length", "10000")
+				}
+				w.WriteHeader(http.StatusOK)
+				w.(http.Flusher).Flush()
+				time.Sleep(5 * time.Millisecond)
+				_, _ = w.Write([]byte(`{"service":"api","future_field":true}`))
+			}))
+			defer server.Close()
+			cfg := models.Config{APIBaseURL: server.URL, TokenManager: &auth.TokenManager{AccessToken: "tok", ExpiresAt: time.Now().Add(time.Hour)}}
+			ctx, finish := utils.RecordedSpanContext(t)
+			result, _, err := NewGetServiceProfileHandler(server.Client(), cfg)(ctx, nil, GetServiceProfileArgs{ServiceName: "api"})
+			failed := outcome != "success"
+			if (err != nil) != failed {
+				t.Fatalf("err=%v, want failure %v", err, failed)
+			}
+			attrs := finish()
+			value, ok := attrs["last9.phase.request.duration_ms"]
+			if !ok || value.AsFloat64() < 5 {
+				t.Errorf("request duration=%v, must include body read", value)
+			}
+			if got := attrs["last9.phase.request.failed"].AsBool(); got != failed {
+				t.Errorf("request failed=%v, want %v", got, failed)
+			}
+			if !failed && !strings.Contains(utils.GetTextContent(t, result), `{"service":"api","future_field":true}`) {
+				t.Fatal("raw response changed")
+			}
+		})
 	}
 }

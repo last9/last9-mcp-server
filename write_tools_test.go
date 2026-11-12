@@ -32,9 +32,10 @@ const testAlertRule = `{"primary_indicator":"latency","expression_args":{"latenc
 var ruleOwnedByEntity = map[string]string{"/entities/entity-1/alert-rules/rule-1": `{"id":"rule-1","entity_id":"entity-1"}`}
 
 var writeToolFixtures = map[string]writeToolFixture{
-	"add_drop_rule":    {args: `{"name":"drop debug","filters":[{"key":"attributes[\"level\"]","value":"debug","operator":"equals","conjunction":"and"}]}`},
-	"create_dashboard": {args: `{"dashboard":` + testDashboard + `,"metadata":{"_category":"custom","_type":"metrics"}}`},
-	"update_dashboard": {args: `{"id":"dash-1","dashboard":` + testDashboard + `}`},
+	"add_drop_rule":      {args: `{"name":"drop debug","filters":[{"key":"attributes[\"level\"]","value":"debug","operator":"equals","conjunction":"and"}]}`},
+	"add_remapping_rule": {args: `{"rule_type":"logs_map","name":"map service","remap_keys":["attributes[\"app\"]"],"target_attribute":"service"}`},
+	"create_dashboard":   {args: `{"dashboard":` + testDashboard + `,"metadata":{"_category":"custom","_type":"metrics"}}`},
+	"update_dashboard":   {args: `{"id":"dash-1","dashboard":` + testDashboard + `}`},
 	"patch_dashboard": {
 		args:  `{"id":"dash-1","ops":[{"op":"set_title","title":"Checkout v2"}]}`,
 		reads: map[string]string{"/dashboards/dash-1": `{"dashboard":` + testDashboard + `}`},

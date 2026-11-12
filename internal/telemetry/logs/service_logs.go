@@ -32,6 +32,7 @@ type ServiceLogsResponse struct {
 	TotalMatchingLines *int           `json:"total_matching_lines,omitempty"`
 	LogsTruncated      *bool          `json:"logs_truncated,omitempty"`
 	SearchStats        map[string]any `json:"search_stats,omitempty"`
+	RawLimit           map[string]any `json:"l9_raw_limit,omitempty"`
 	Hint               string         `json:"hint,omitempty"`
 	coverageStatus     string
 }
@@ -165,14 +166,38 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			meta["last9/coverage"] = coverage
 		}
 
-		return &mcp.CallToolResult{
+		full := &mcp.CallToolResult{
 			Meta: meta,
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(responseJSON),
 				},
 			},
-		}, nil, nil
+		}
+		if response != logs {
+			return full, nil, nil
+		}
+		count := len(logs.Logs)
+		bounded, err := boundRawResult(full, count, cfg.MCPServerInfo, func(n int) (*mcp.CallToolResult, error) {
+			limited := *logs
+			limited.Logs = logs.Logs[:n]
+			limited.Count = n
+			truncated := true
+			limited.LogsTruncated = &truncated
+			limited.RawLimit = map[string]any{"returned_entries": n, "fetched_entries": count, "max_bytes": maxRawResultBytes}
+			limited.Hint = rawLimitHint(n, count, limit)
+			limited.coverageStatus = "partial"
+			encoded, err := json.MarshalIndent(&limited, "", "  ")
+			if err != nil {
+				return nil, err
+			}
+			limitedMeta := mapsClone(meta)
+			if coverage := serviceLogsCoverage(&limited, logjsonQuery, bounds); coverage != nil {
+				limitedMeta["last9/coverage"] = coverage
+			}
+			return &mcp.CallToolResult{Meta: limitedMeta, Content: []mcp.Content{&mcp.TextContent{Text: string(encoded)}}}, nil
+		})
+		return bounded, nil, err
 	}
 }
 

@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
-	"strings"
 	"time"
 
 	"last9-mcp/internal/constants"
@@ -68,11 +67,40 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse time range: %v", err)
 	}
-
-	result, err := fetchLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args)
+	normalizedIndex, err := utils.NormalizeLogIndex(args.Index)
 	if err != nil {
 		return nil, err
 	}
+	args.Index = normalizedIndex
+
+	hasExplicitIndex := normalizedIndex != ""
+	var cancelLink context.CancelFunc
+	var resolvedIndexCh chan string
+	if hasExplicitIndex {
+		var linkCtx context.Context
+		linkCtx, cancelLink = context.WithCancel(ctx)
+		defer cancelLink()
+		resolvedIndexCh = make(chan string, 1)
+		go func() {
+			resolvedIndex, _ := utils.ResolveLogIndexDashboardParam(linkCtx, client, cfg, normalizedIndex)
+			resolvedIndexCh <- resolvedIndex
+		}()
+	}
+
+	endFetch := utils.StartToolPhase(ctx, "get_logs", "fetch")
+	result, err := fetchLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args)
+	endFetch(err)
+	if err != nil {
+		if cancelLink != nil {
+			cancelLink()
+			<-resolvedIndexCh
+		}
+		if scanResult := scanErrorResult(err, getLogsScanSteps); scanResult != nil {
+			return scanResult, nil
+		}
+		return nil, err
+	}
+	endProcess := utils.StartToolPhase(ctx, "get_logs", "post_process")
 	truncated := addGetLogsGuidance(result, args, getLogsGuidanceContext{
 		startMs:        startTime,
 		endMs:          endTime,
@@ -83,15 +111,15 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		result = summarizeLogResult(result, startTime, endTime, truncated)
 	}
 
+	text := formatJSON(result)
+	endProcess(nil)
+
 	// Build deep link URL
+	endLink := utils.StartToolPhase(ctx, "get_logs", "deep_link")
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 	dashboardIndex := ""
-	hasExplicitIndex := strings.TrimSpace(args.Index) != ""
 	if hasExplicitIndex {
-		resolvedIndex, err := utils.ResolveLogIndexDashboardParam(ctx, client, cfg, args.Index)
-		if err == nil {
-			dashboardIndex = resolvedIndex
-		}
+		dashboardIndex = <-resolvedIndexCh
 	}
 	dashboardURL := dlBuilder.BuildLogsLink(startTime, endTime, logjsonQuery, dashboardIndex)
 	var meta mcp.Meta
@@ -99,15 +127,32 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		meta = deeplink.ToMeta(dashboardURL)
 	}
 
+	endLink(nil)
+
 	// Return the result in MCP format with deep link
-	return &mcp.CallToolResult{
+	full := &mcp.CallToolResult{
 		Meta: meta,
 		Content: []mcp.Content{
 			&mcp.TextContent{
-				Text: formatJSON(result),
+				Text: text,
 			},
 		},
-	}, nil
+	}
+	kind, items, err := extractResultItems(result)
+	if err != nil || kind != "streams" {
+		return full, nil
+	}
+	count := countLogEntriesInResultItems(items)
+	return boundRawResult(full, count, cfg.MCPServerInfo, func(n int) (*mcp.CallToolResult, error) {
+		limited := mapsClone(result)
+		data := mapsClone(result["data"].(map[string]interface{}))
+		data["result"] = truncateResultItemsByEntryLimit(items, n)
+		limited["data"] = data
+		limited["logs_truncated"] = true
+		limited["l9_raw_limit"] = map[string]any{"returned_entries": n, "fetched_entries": count, "max_bytes": maxRawResultBytes}
+		limited["l9_guidance"] = map[string]any{"message": rawLimitHint(n, count, effectiveGetLogsResultLimit(cfg, args.Limit))}
+		return &mcp.CallToolResult{Meta: meta, Content: []mcp.Content{&mcp.TextContent{Text: formatJSON(limited)}}}, nil
+	})
 }
 
 func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, startTime, endTime int64, args GetLogsArgs) (map[string]interface{}, error) {
@@ -150,7 +195,9 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 			}
 		}
 		if stages, ok := logjsonQuery.([]map[string]interface{}); ok && !partial {
+			endSanity := utils.StartToolPhase(ctx, "get_logs", "count_sanity")
 			result = utils.AppendCountSanity(ctx, client, cfg, stages, startTime, endTime, result)
+			endSanity(nil)
 		}
 		return result, nil
 	}
@@ -388,7 +435,9 @@ func fetchViaLogSearchAPI(
 		}
 	}
 	if hasStages && !partial {
+		endSanity := utils.StartToolPhase(ctx, "get_logs", "count_sanity")
 		result = utils.AppendCountSanity(ctx, client, cfg, stages, startTime, endTime, result)
+		endSanity(nil)
 	}
 	return result, nil
 }
