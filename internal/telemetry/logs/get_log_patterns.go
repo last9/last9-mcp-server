@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
@@ -67,7 +68,13 @@ func NewGetLogPatternsHandler(client *http.Client, cfg models.Config) func(conte
 		}()
 
 		endSample := utils.StartToolPhase(ctx, "get_log_patterns", "sample")
-		lines, window, err := scope.sample(ctx, client, cfg, start, end)
+		var lines []LogEntry
+		var window LogPatternWindow
+		if end.Sub(start) > time.Hour {
+			lines, window, err = scope.sampleChunks(ctx, client, cfg, start, end)
+		} else {
+			lines, window, err = scope.sample(ctx, client, cfg, start, end)
+		}
 		endSample(err)
 		if err != nil {
 			cancelLink()
