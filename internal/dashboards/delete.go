@@ -26,6 +26,9 @@ func NewDeleteDashboardHandler(client *http.Client, cfg models.Config) func(cont
 		if upstreamLockedRefusal(err) {
 			return nil, nil, dashboardLockedError(lockedDashboardAuthor(ctx, api, args.ID))
 		}
+		if upstreamBuiltInRefusal(err) {
+			return nil, nil, fmt.Errorf("dashboard is readonly and cannot be modified: %w", err)
+		}
 		if err != nil {
 			return nil, nil, mapDashboardAPIError(err)
 		}

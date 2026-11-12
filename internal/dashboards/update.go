@@ -2,6 +2,7 @@ package dashboards
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"last9-mcp/internal/deeplink"
@@ -34,6 +35,9 @@ func NewUpdateDashboardHandler(client *http.Client, cfg models.Config) func(cont
 		body, err := apidashboards.UpdateDashboard(ctx, api, args.ID, payload)
 		if upstreamLockedRefusal(err) {
 			return nil, nil, dashboardLockedError(lockedDashboardAuthor(ctx, api, args.ID))
+		}
+		if upstreamBuiltInRefusal(err) {
+			return nil, nil, fmt.Errorf("dashboard is readonly and cannot be modified: %w", err)
 		}
 		if err != nil {
 			return nil, nil, mapDashboardAPIError(err)

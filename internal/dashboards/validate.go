@@ -107,7 +107,7 @@ func mapStatusAPIError(err error, forbiddenMsg, notFoundMsg string) error {
 }
 
 func mapDashboardAPIError(err error) error {
-	return mapStatusAPIError(err, "dashboard is readonly and cannot be modified", "dashboard not found")
+	return mapStatusAPIError(err, "not permitted to access or modify dashboard", "dashboard not found")
 }
 
 // mapDashboardFetchError names the id on 404 because the shared upstream

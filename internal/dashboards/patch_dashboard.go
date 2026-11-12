@@ -121,6 +121,9 @@ func NewPatchDashboardHandler(client *http.Client, cfg models.Config) func(conte
 				createdBy, _ := current.Dashboard["created_by"].(string)
 				return nil, nil, dashboardLockedError(createdBy)
 			}
+			if upstreamBuiltInRefusal(err) {
+				return nil, nil, fmt.Errorf("dashboard is readonly and cannot be modified: %w", err)
+			}
 			return nil, nil, mapDashboardAPIError(err)
 		}
 

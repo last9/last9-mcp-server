@@ -70,3 +70,14 @@ func TestDashboardWrites_BuiltInRefusalIsNotLocked(t *testing.T) {
 		})
 	}
 }
+
+func TestDashboardWrites_GenericForbiddenIsPermissionError(t *testing.T) {
+	for _, tool := range dashboardWriteTools {
+		t.Run(tool, func(t *testing.T) {
+			err := callDashboardWrite(t, tool, lockingServer(t, "user-7", `{"message":"forbidden"}`))
+			if err == nil || strings.Contains(err.Error(), "readonly") || !strings.Contains(err.Error(), "not permitted") {
+				t.Fatalf("err = %v", err)
+			}
+		})
+	}
+}
