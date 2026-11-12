@@ -105,7 +105,7 @@ func (s logPatternScope) sample(ctx context.Context, client *http.Client, cfg mo
 	return s.finishSample(logs, start, end)
 }
 
-func (s logPatternScope) sampleSearchChunks(ctx context.Context, client *http.Client, cfg models.Config, start, end time.Time) ([]LogEntry, LogPatternWindow, error) {
+func (s logPatternScope) sampleChunks(ctx context.Context, client *http.Client, cfg models.Config, start, end time.Time) ([]LogEntry, LogPatternWindow, error) {
 	lines := make([]LogEntry, 0, s.sampleSize)
 	currentEnd := end
 	partial := false

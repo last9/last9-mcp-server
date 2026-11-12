@@ -62,8 +62,8 @@ func NewGetLogPatternsHandler(client *http.Client, cfg models.Config) func(conte
 		endSample := utils.StartToolPhase(ctx, "get_log_patterns", "sample")
 		var lines []LogEntry
 		var window LogPatternWindow
-		if cfg.UseLogSearchAPI && end.Sub(start) > time.Hour {
-			lines, window, err = scope.sampleSearchChunks(ctx, client, cfg, start, end)
+		if end.Sub(start) > time.Hour {
+			lines, window, err = scope.sampleChunks(ctx, client, cfg, start, end)
 		} else {
 			lines, window, err = scope.sample(ctx, client, cfg, start, end)
 		}
