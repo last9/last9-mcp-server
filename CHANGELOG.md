@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `create_dashboard` and `validate_dashboard` now reject unknown top-level arguments before running; their hand-built input schema roots previously accepted keys that inferred tool schemas reject (#555).
+- `get_traces` now documents that filter-only queries return span rows, so trace-level questions deduplicate by `TraceId` before using `get_service_traces` with an exact ID to fetch the complete trace (#544).
 - A tool call waiting on an access-token refresh now returns once that refresh finishes, even if it failed and another call immediately started the next one; previously, during an auth-endpoint outage, waiters stayed blocked through every later refresh until their own deadline. Failed refreshes are now logged as warnings with their cause (#535).
 - `get_log_patterns` now samples windows over one hour newest-first in one-hour searches, stopping when `sample_size` fills or after 24 searches. If a later search times out, it returns patterns from completed searches with `sample_limit_reached: true`; previously one search scanned the full window and a multi-day request could reach the client timeout without returning a sample (#551).
 - `get_logs` `l9_sanity` no longer reports a matched count above `service_log_volume` as e.g. "102.43% of ALL log lines": when `ratio` exceeds 1 the note says the volume baseline is a separate ingestion metric that can trail the log store, so the ratio is approximate (#527).

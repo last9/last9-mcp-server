@@ -13,7 +13,7 @@
 
 **Fields:** OTel enums: `SPAN_KIND_SERVER`, `STATUS_CODE_ERROR`; Duration is ns. Use `attributes['key']`/`resources['key']`, not `SpanAttributes.foo`.
 
-**Aggregate:** use `aggregates`+`groupby`. Average/mean→`{"function":{"$avg":["Duration"]}}`, not `$quantile`. By span: `{"type":"aggregate","aggregates":[{"function":{"$avg":["Duration"]},"as":"avg"}],"groupby":{"SpanName":"span"}}`. `$quantile` is the general/default percentile operator. Compute from raw spans; never average percentile samples. `Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first.
+**Aggregate:** use `aggregates`+`groupby`. Average/mean→`{"function":{"$avg":["Duration"]}}`, not `$quantile`. `$quantile` is the general/default percentile operator. Compute from raw spans; never average percentile samples. `Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first.
 
 **Transform:** `as` is an array: `{"type":"transform","transforms":[{"function":{"$split":["SpanName","/",1]},"as":["endpoint"]}]}` (read it as `attributes['endpoint']`).
 
@@ -46,4 +46,4 @@ Span filters, counts, averages or percentiles across services with a tracejson p
 Span rows for filter-only pipelines; aggregate rows when the pipeline aggregates.
 
 ## Known traps
-Field values in filters are strings, enums included (`STATUS_CODE_ERROR`).
+Filter values are strings (`STATUS_CODE_ERROR`). For trace-level questions, filter-only results contain one row per span: deduplicate by `TraceId`; fetch the complete trace with `get_service_traces`.
