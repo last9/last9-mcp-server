@@ -49,6 +49,6 @@ func NewGetDashboardHandler(client *http.Client, cfg models.Config) func(context
 			return nil, nil, mapDashboardAPIError(err)
 		}
 
-		return textResultWithDashboardLink(dlBuilder, body, args.ID), nil, nil
+		return textResultWithDashboardLink(dlBuilder, withDashboardLockState(body), args.ID), nil, nil
 	}
 }

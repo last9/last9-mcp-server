@@ -93,6 +93,7 @@ var promptDescriptionFiles = map[string]string{
 	"prometheus_labels.md":                 prompts.PromqlLabelsQueryDetails,
 	"prometheus_range_query_base.md":       prompts.PromqlRangeQueryDetails,
 	"recommend_alert_config.md":            prompts.RecommendAlertConfigDescription,
+	"set_dashboard_lock.md":                prompts.SetDashboardLockDescription,
 	"update_alert.md":                      prompts.UpdateAlertDescription,
 	"update_dashboard.md":                  prompts.UpdateDashboardDescription,
 	"validate_alert_expression.md":         prompts.ValidateAlertExpressionDescription,
@@ -373,6 +374,24 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 	}
 	if !strings.Contains(desc, `[{"type":"filter","query":{"$and":[{"$eq":["StatusCode","STATUS_CODE_ERROR"]}]}}]`) {
 		t.Error("GetTracesDescription must include its canonical JSON stage-array example")
+	}
+}
+
+func TestTraceQueryGuidanceDistinguishesSpansFromTraces(t *testing.T) {
+	checks := map[string]string{
+		"description": prompts.GetTracesDescription,
+		"reference":   prompts.TracejsonReference,
+	}
+	for name, body := range checks {
+		for _, phrase := range []string{
+			"filter-only results contain one row per span",
+			"deduplicate by `TraceId`",
+			"fetch the complete trace with `get_service_traces`",
+		} {
+			if !strings.Contains(body, phrase) {
+				t.Errorf("%s missing %q", name, phrase)
+			}
+		}
 	}
 }
 
@@ -1063,6 +1082,14 @@ func TestGetAlertsRoutingStatesDefaultWindow(t *testing.T) {
 	for _, phrase := range []string{"default 15 minutes", "at most 1 hour"} {
 		if !strings.Contains(routing, phrase) {
 			t.Errorf("get_alerts When to use section missing %q:\n%s", phrase, routing)
+		}
+	}
+}
+
+func TestPreviewDashboardDescriptionExplainsLockState(t *testing.T) {
+	for _, phrase := range []string{"locked:false", "dashboard is locked"} {
+		if !strings.Contains(prompts.PreviewDashboardDescription, phrase) {
+			t.Errorf("preview_dashboard description missing %q", phrase)
 		}
 	}
 }

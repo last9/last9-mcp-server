@@ -133,7 +133,8 @@ func GetCreateDashboardInputSchema() map[string]interface{} {
 // GetUpdateDashboardInputSchema returns the MCP-facing schema for update_dashboard.
 func GetUpdateDashboardInputSchema() map[string]interface{} {
 	return map[string]interface{}{
-		"type": "object",
+		"type":                 "object",
+		"additionalProperties": false,
 		"properties": map[string]interface{}{
 			"id": map[string]interface{}{
 				"type":        "string",

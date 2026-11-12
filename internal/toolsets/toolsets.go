@@ -100,6 +100,7 @@ var named = map[string][]string{
 		"update_dashboard",
 		"patch_dashboard",
 		"delete_dashboard",
+		"set_dashboard_lock",
 		"list_dashboard_snapshots",
 		"get_dashboard_snapshot",
 		"delete_dashboard_snapshot",
