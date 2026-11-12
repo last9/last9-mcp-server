@@ -827,4 +827,3 @@ func TestPatchDashboard_NotFound(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
-
