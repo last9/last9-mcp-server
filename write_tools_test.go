@@ -36,13 +36,20 @@ var writeToolFixtures = map[string]writeToolFixture{
 	"add_drop_rule":      {args: `{"name":"drop debug","filters":[{"key":"attributes[\"level\"]","value":"debug","operator":"equals","conjunction":"and"}]}`},
 	"add_remapping_rule": {args: `{"rule_type":"logs_map","name":"map service","remap_keys":["attributes[\"app\"]"],"target_attribute":"service"}`},
 	"create_dashboard":   {args: `{"dashboard":` + testDashboard + `,"metadata":{"_category":"custom","_type":"metrics"}}`},
-	"update_dashboard":   {args: `{"id":"dash-1","dashboard":` + testDashboard + `}`},
+	"update_dashboard": {
+		args:  `{"id":"dash-1","dashboard":` + testDashboard + `}`,
+		reads: map[string]string{"/dashboards/dash-1": `{"dashboard":` + testDashboard + `}`},
+	},
 	"patch_dashboard": {
 		args:  `{"id":"dash-1","ops":[{"op":"set_title","title":"Checkout v2"}]}`,
 		reads: map[string]string{"/dashboards/dash-1": `{"dashboard":` + testDashboard + `}`},
 	},
-	"delete_dashboard":          {args: `{"id":"dash-1"}`},
+	"delete_dashboard": {
+		args:  `{"id":"dash-1"}`,
+		reads: map[string]string{"/dashboards/dash-1": `{"dashboard":` + testDashboard + `}`},
+	},
 	"delete_dashboard_snapshot": {args: `{"id":"snap-1"}`},
+	"set_dashboard_lock":        {args: `{"id":"dash-1","locked":true}`},
 	"create_alert": {
 		args:  `{"entity_id":"entity-1","alert_rule":` + testAlertRule + `}`,
 		reads: map[string]string{"/entities/entity-1/alert-rules": `{"rules":[]}`},
