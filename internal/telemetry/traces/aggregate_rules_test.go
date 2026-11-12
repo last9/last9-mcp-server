@@ -282,6 +282,26 @@ func TestSanitizeTraceJSONQuery_AggregatesEarlierDigitLeadingAlias(t *testing.T)
 	}
 }
 
+func TestSanitizeTraceJSONQueryRejectsShadowedAggregateAlias(t *testing.T) {
+	for name, consumer := range map[string]map[string]interface{}{
+		"filter":    {"type": "filter", "query": map[string]interface{}{"$gt": []interface{}{"n", 0}}},
+		"aggregate": aggStage(fn1("$sum", "n"), "total"),
+		"window":    winStage(fn1("$sum", "n"), "total"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			stages := []map[string]interface{}{
+				aggStage(fn1("$count"), "n"),
+				aggStage(fn1("$count"), "m"),
+				consumer,
+			}
+			err := SanitizeTraceJSONQuery(stages)
+			if err == nil || !strings.Contains(err.Error(), `aggregate output "n" is not available`) {
+				t.Fatalf("error = %v, want shadowed aggregate output rejection", err)
+			}
+		})
+	}
+}
+
 func TestSanitizeTraceJSONQuery_RejectsInvalidAggregateAlias(t *testing.T) {
 	for _, as := range []string{"p99 latency", "123", "a;b", "p99-latency"} {
 		err := SanitizeTraceJSONQuery([]map[string]interface{}{aggStage(fn1("$count"), as)})
