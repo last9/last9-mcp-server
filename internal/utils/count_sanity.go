@@ -410,7 +410,10 @@ func AppendCountSanity(ctx context.Context, client *http.Client, cfg models.Conf
 	ratio := math.Round((matchedCount/volume)*10000) / 10000
 
 	note := ""
-	if ratio > 0.05 {
+	switch {
+	case ratio > 1:
+		note = "matched count exceeds service_log_volume — the volume baseline is a separate per-service ingestion metric that can lag or miss lines the log store already holds, so ratio is approximate; the filter matches roughly every line this service emitted — if this was meant to count errors, re-narrow and re-count."
+	case ratio > 0.05:
 		note = fmt.Sprintf(
 			"matched count is %.2f%% of ALL log lines this service emitted in the window — if this was meant to count errors, the filter is likely too broad (e.g. matching a component/logger name without an ERROR gate); re-narrow and re-count.",
 			ratio*100,

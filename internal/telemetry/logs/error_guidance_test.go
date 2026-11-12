@@ -54,6 +54,37 @@ func TestGetLogsHandler_EmptyResultIncludesRetryGuidance(t *testing.T) {
 	}
 }
 
+func TestGetLogsHandler_EmptyGuidanceMatchesResultType(t *testing.T) {
+	for _, tc := range []struct {
+		name, resultType, result string
+		aggregate, wantEmpty     bool
+	}{
+		{"aggregate rows", "matrix", `[{"metric":{"level":"error","count":4},"values":[]}]`, true, false},
+		{"dataframe rows", "dataframe", `[{"metric":{"level":"error","count":4},"values":[]}]`, true, false},
+		{"empty aggregate", "matrix", `[]`, true, true},
+		{"empty stream values", "streams", `[{"stream":{},"values":[]}]`, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &http.Client{Transport: logsRoundTripperFunc(func(*http.Request) (*http.Response, error) {
+				return jsonResponse(http.StatusOK, `{"status":"success","data":{"resultType":"`+tc.resultType+`","result":`+tc.result+`}}`), nil
+			})}
+			query := []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "api"}}}}
+			if tc.aggregate {
+				query = append(query, map[string]interface{}{"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{"function": map[string]interface{}{"$count": []interface{}{}}, "as": "count"}}})
+			}
+			result, _, err := NewGetLogsHandler(client, testLogsConfig("https://last9.example"))(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{LogjsonQuery: query})
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload := parseToolJSONResult(t, result)
+			guidance, _ := payload["l9_guidance"].(map[string]interface{})
+			if got := strings.Contains(guidanceText(guidance), "No logs found"); got != tc.wantEmpty {
+				t.Errorf("empty guidance = %v, want %v", got, tc.wantEmpty)
+			}
+		})
+	}
+}
+
 func TestGetServiceLogsHandler_EmptyResultIncludesRetryGuidance(t *testing.T) {
 	client := &http.Client{Transport: logsRoundTripperFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path != constants.EndpointLogsQueryRange {
@@ -253,6 +284,89 @@ func TestGetLogsHandler_LogSearchAggregateNullResultIncludesEmptyGuidance(t *tes
 			t.Fatalf("guidance %q missing %q", text, want)
 		}
 	}
+}
+
+func TestAddGetLogsGuidance_EmptyGuidanceOnlyWhenNoRows(t *testing.T) {
+	aggregateRow := map[string]interface{}{
+		"metric": map[string]interface{}{"c": float64(42)},
+		"values": []interface{}{},
+	}
+	tests := []struct {
+		name       string
+		resultType string
+		rows       []interface{}
+		omitResult bool
+		wantEmpty  bool
+	}{
+		{name: "dataframe with rows", resultType: "dataframe", rows: []interface{}{aggregateRow}},
+		{name: "matrix with rows", resultType: "matrix", rows: []interface{}{aggregateRow}},
+		{name: "empty dataframe", resultType: "dataframe", rows: []interface{}{}, wantEmpty: true},
+		{name: "empty matrix", resultType: "matrix", rows: []interface{}{}, wantEmpty: true},
+		{name: "null dataframe", resultType: "dataframe", rows: nil, wantEmpty: true},
+		{name: "null matrix", resultType: "matrix", rows: nil, wantEmpty: true},
+		{name: "dataframe without result", resultType: "dataframe", omitResult: true, wantEmpty: true},
+		{name: "matrix without result", resultType: "matrix", omitResult: true, wantEmpty: true},
+		{
+			name:       "streams with lines",
+			resultType: "streams",
+			rows: []interface{}{map[string]interface{}{
+				"stream": map[string]interface{}{"ServiceName": "checkout"},
+				"values": []interface{}{[]interface{}{"1700000000000000000", "line"}},
+			}},
+		},
+		{
+			name:       "streams with no lines",
+			resultType: "streams",
+			rows: []interface{}{map[string]interface{}{
+				"stream": map[string]interface{}{"ServiceName": "checkout"},
+				"values": []interface{}{},
+			}},
+			wantEmpty: true,
+		},
+		{name: "empty streams", resultType: "streams", rows: []interface{}{}, wantEmpty: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := map[string]interface{}{"resultType": tt.resultType}
+			if !tt.omitResult {
+				data["result"] = tt.rows
+			}
+			result := decodeJSONRoundTrip(t, map[string]interface{}{"status": "success", "data": data})
+
+			addGetLogsGuidance(result, GetLogsArgs{LogjsonQuery: countAggregatePipeline()}, getLogsGuidanceContext{
+				startMs:        0,
+				endMs:          60 * 60 * 1000,
+				effectiveLimit: 100,
+				maxLimit:       5000,
+			})
+
+			guidance, hasGuidance := result["l9_guidance"].(map[string]interface{})
+			if !tt.wantEmpty {
+				if hasGuidance {
+					t.Fatalf("result with rows must not carry l9_guidance, got %#v", guidance)
+				}
+				return
+			}
+			if !hasGuidance || !strings.Contains(guidanceText(guidance), "No logs found") {
+				t.Fatalf("empty result must carry empty-result l9_guidance, got %#v", result["l9_guidance"])
+			}
+		})
+	}
+}
+
+// decodeJSONRoundTrip gives a fixture the shape of a decoded response, so a nil
+// slice becomes JSON null rather than a typed nil.
+func decodeJSONRoundTrip(t *testing.T, value map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal fixture: %v", err)
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal fixture: %v", err)
+	}
+	return decoded
 }
 
 func guidanceText(guidance map[string]interface{}) string {

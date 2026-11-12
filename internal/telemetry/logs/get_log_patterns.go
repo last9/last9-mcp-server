@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -57,11 +59,34 @@ func NewGetLogPatternsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, err
 		}
 
-		lines, window, err := scope.sample(ctx, client, cfg, start, end)
+		linkCtx, cancelLink := context.WithCancel(ctx)
+		defer cancelLink()
+		endLink := utils.StartToolPhase(linkCtx, "get_log_patterns", "deep_link")
+		metaCh := make(chan mcp.Meta, 1)
+		go func() {
+			metaCh <- serviceLogsDeepLink(linkCtx, client, cfg, scope.search(start, end))
+		}()
+
+		endSample := utils.StartToolPhase(ctx, "get_log_patterns", "sample")
+		var lines []LogEntry
+		var window LogPatternWindow
+		if end.Sub(start) > time.Hour {
+			lines, window, err = scope.sampleChunks(ctx, client, cfg, start, end)
+		} else {
+			lines, window, err = scope.sample(ctx, client, cfg, start, end)
+		}
+		endSample(err)
 		if err != nil {
+			cancelLink()
+			<-metaCh
+			if scanResult := scanErrorResult(err, logPatternsScanSteps); scanResult != nil {
+				return scanResult, nil, nil
+			}
 			return nil, nil, err
 		}
+		endMine := utils.StartToolPhase(ctx, "get_log_patterns", "mine")
 		patterns, err := mineLogPatterns(lines)
+		endMine(err)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -74,8 +99,10 @@ func NewGetLogPatternsHandler(client *http.Client, cfg models.Config) func(conte
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to format response: %w", err)
 		}
+		meta := <-metaCh
+		endLink(nil)
 		return &mcp.CallToolResult{
-			Meta:    serviceLogsDeepLink(ctx, client, cfg, scope.search(start, end)),
+			Meta:    meta,
 			Content: []mcp.Content{&mcp.TextContent{Text: string(text)}},
 		}, nil, nil
 	}
