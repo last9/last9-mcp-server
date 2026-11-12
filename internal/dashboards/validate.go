@@ -136,6 +136,21 @@ func mapSnapshotAPIError(err error) error {
 	)
 }
 
+// requireDashboardInResponse refuses a write's 2xx body that carries no dashboard object:
+// the write may have landed, so the agent must check it before retrying.
+func requireDashboardInResponse(body []byte) error {
+	var resp struct {
+		Dashboard json.RawMessage `json:"dashboard"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return utils.MarkUnusableWriteResponse(fmt.Errorf("invalid dashboard API response: %w", err))
+	}
+	if !strings.HasPrefix(string(resp.Dashboard), "{") {
+		return utils.MarkUnusableWriteResponse(errors.New("dashboard API response has no dashboard"))
+	}
+	return nil
+}
+
 func dashboardIDFromResponse(body []byte) string {
 	var resp struct {
 		Dashboard struct {

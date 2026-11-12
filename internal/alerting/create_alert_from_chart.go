@@ -137,10 +137,10 @@ func NewCreateAlertFromChartHandler(client *http.Client, cfg models.Config) func
 
 		var resp alerts.IntelligenceResponse
 		if err := json.Unmarshal(body, &resp); err != nil {
-			return nil, nil, fmt.Errorf("failed to parse alert intelligence response: %w", err)
+			return nil, nil, utils.MarkUnusableWriteResponse(fmt.Errorf("failed to parse alert intelligence response: %w", err))
 		}
 		if strings.TrimSpace(resp.ID) == "" {
-			return utils.ToolErrorResult("alert intelligence create returned success but no rule id; do not assume the rule was created - verify via get_alert_config before retrying"), nil, nil
+			return nil, nil, utils.MarkUnusableWriteResponse(errors.New("alert intelligence create returned success but no rule id"))
 		}
 		if resp.GroupID == "" {
 			resp.GroupID = req.GroupID
