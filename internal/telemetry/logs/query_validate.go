@@ -168,6 +168,7 @@ func wrapTopLevelLogFilterQuery(query interface{}) interface{} {
 // Stage ordering (filter → parse → aggregate/window_aggregate) is documented in
 // the whale description and logjson reference but is not enforced here (MVP).
 func validateLogJSONQuery(stages []map[string]interface{}, pathPrefix string) error {
+	hasResult := false
 	for i, stage := range stages {
 		stagePath := fmt.Sprintf("%s[%d]", pathPrefix, i)
 
@@ -218,14 +219,14 @@ func validateLogJSONQuery(stages []map[string]interface{}, pathPrefix string) er
 				return err
 			}
 		case "window_aggregate":
-			if err := validateWindowAggregateStage(stage, stagePath); err != nil {
+			if err := validateWindowAggregateStage(stage, stagePath, hasResult); err != nil {
 				return err
 			}
 			if err := validateGroupByForTraceFields(stage, stagePath); err != nil {
 				return err
 			}
 		case "aggregate":
-			if err := validateAggregateStage(stage, stagePath); err != nil {
+			if err := validateAggregateStage(stage, stagePath, hasResult); err != nil {
 				return err
 			}
 		case "filter":
@@ -233,8 +234,41 @@ func validateLogJSONQuery(stages []map[string]interface{}, pathPrefix string) er
 				return err
 			}
 		}
+		hasResult = hasResult || logStageEmitsResult(stage, stageType)
 	}
 	return nil
+}
+
+func logStageEmitsResult(stage map[string]interface{}, stageType string) bool {
+	if stageType == "window_aggregate" {
+		if stage["as"] == "__result__" {
+			return true
+		}
+		groupBy, _ := stage["groupby"].(map[string]interface{})
+		for _, alias := range groupBy {
+			if alias == "__result__" {
+				return true
+			}
+		}
+		return false
+	}
+	if stageType != "aggregate" {
+		return false
+	}
+	aggregates, _ := stage["aggregates"].([]interface{})
+	for _, raw := range aggregates {
+		entry, _ := raw.(map[string]interface{})
+		if entry["as"] == "__result__" {
+			return true
+		}
+	}
+	groupBy, _ := stage["groupby"].(map[string]interface{})
+	for _, alias := range groupBy {
+		if alias == "__result__" {
+			return true
+		}
+	}
+	return false
 }
 
 // validateQuantileNumericDataflow makes one ordered pass over the sanitized
@@ -243,6 +277,8 @@ func validateLogJSONQuery(stages []map[string]interface{}, pathPrefix string) er
 // produce, so the regex must follow the last relevant parse.
 func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix string) error {
 	numericSafeFields := make(map[string]struct{})
+	stringBackedAliases := make(map[string]struct{})
+	builtInStringAliases := make(map[string]struct{})
 
 	for stageIndex, stage := range stages {
 		stagePath := fmt.Sprintf("%s[%d]", pathPrefix, stageIndex)
@@ -262,25 +298,41 @@ func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix
 		}
 
 		checkFunction := func(function map[string]interface{}, functionPath string) error {
-			rawArgs, ok := function["$quantile"].([]interface{})
-			if !ok || len(rawArgs) != 2 {
-				return nil
+			for name, raw := range function {
+				baseName := strings.TrimSuffix(name, "_over_time")
+				if baseName != "$quantile" && baseName != "$quantile_exact" {
+					continue
+				}
+				rawArgs, ok := raw.([]interface{})
+				if !ok || len(rawArgs) != 2 {
+					continue
+				}
+				field, _ := rawArgs[1].(string)
+				_, isStringBackedAlias := stringBackedAliases[field]
+				if !isStringBackedLogField(field) && !isStringBackedAlias {
+					continue
+				}
+				_, isBuiltInStringAlias := builtInStringAliases[field]
+				if isBuiltInStringLogField(field) || isBuiltInStringAlias {
+					return newLogValidationError(
+						LogValidationInvalidField,
+						functionPath+"."+name+"[1]",
+						fmt.Sprintf("%s field %q at %s is a built-in string field and cannot be aggregated as a quantile; use a numeric attribute or parsed numeric field instead", name, field, functionPath+"."+name+"[1]"),
+					)
+				}
+				if _, ok := numericSafeFields[field]; ok {
+					continue
+				}
+				return newLogValidationError(
+					LogValidationInvalidField,
+					functionPath+"."+name+"[1]",
+					fmt.Sprintf(
+						"%s field %q at %s requires a preceding numeric $regex after the last parse that can produce it; use the canonical anchored numeric $regex shown: {\"$regex\":[%q,\"^[0-9]+(?:\\\\.[0-9]+)?$\"]}",
+						name, field, functionPath+"."+name+"[1]", field,
+					),
+				)
 			}
-			field, _ := rawArgs[1].(string)
-			if !isStringBackedLogField(field) {
-				return nil
-			}
-			if _, ok := numericSafeFields[field]; ok {
-				return nil
-			}
-			return newLogValidationError(
-				LogValidationInvalidField,
-				functionPath+".$quantile[1]",
-				fmt.Sprintf(
-					"$quantile field %q at %s requires a preceding numeric $regex after the last parse that can produce it; use the canonical anchored numeric $regex shown: {\"$regex\":[%q,\"^[0-9]+(?:\\\\.[0-9]+)?$\"]}",
-					field, functionPath+".$quantile[1]", field,
-				),
-			)
+			return nil
 		}
 
 		switch stageType {
@@ -307,13 +359,42 @@ func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix
 				}
 			}
 		}
+
+		nextStringBackedAliases := make(map[string]struct{})
+		nextBuiltInStringAliases := make(map[string]struct{})
+		nextNumericSafeFields := make(map[string]struct{})
+		groupBy, _ := stage["groupby"].(map[string]interface{})
+		for field, rawAlias := range groupBy {
+			alias, _ := rawAlias.(string)
+			if alias == "__result__" {
+				continue
+			}
+			_, isStringBackedAlias := stringBackedAliases[field]
+			if isStringBackedLogField(field) || isStringBackedAlias {
+				nextStringBackedAliases[alias] = struct{}{}
+				_, isBuiltInStringAlias := builtInStringAliases[field]
+				if isBuiltInStringLogField(field) || isBuiltInStringAlias {
+					nextBuiltInStringAliases[alias] = struct{}{}
+				}
+				if _, safe := numericSafeFields[field]; safe {
+					nextNumericSafeFields[alias] = struct{}{}
+				}
+			}
+		}
+		stringBackedAliases = nextStringBackedAliases
+		builtInStringAliases = nextBuiltInStringAliases
+		numericSafeFields = nextNumericSafeFields
 	}
 
 	return nil
 }
 
 func isStringBackedLogField(field string) bool {
-	return strings.HasPrefix(field, "attributes['") || strings.HasPrefix(field, "resources['")
+	return isBuiltInStringLogField(field) || strings.HasPrefix(field, "attributes['") || strings.HasPrefix(field, "resources['")
+}
+
+func isBuiltInStringLogField(field string) bool {
+	return field == "Body" || field == "ServiceName" || field == "SeverityText"
 }
 
 func invalidateParsedNumericFields(stage map[string]interface{}, numericSafeFields map[string]struct{}) {
@@ -502,7 +583,7 @@ func validateGroupByForTraceFields(stage map[string]interface{}, stagePath strin
 	return nil
 }
 
-func validateWindowAggregateStage(stage map[string]interface{}, stagePath string) error {
+func validateWindowAggregateStage(stage map[string]interface{}, stagePath string, hasResult bool) error {
 	fn := stage["function"]
 	if fn == nil {
 		return newLogValidationError(
@@ -519,7 +600,7 @@ func validateWindowAggregateStage(stage map[string]interface{}, stagePath string
 			fmt.Sprintf("window_aggregate at %s: \"function\" must be an object like {\"$count\":[]}, not a string — got %T", stagePath, fn),
 		)
 	}
-	if err := validateQuantileFunction(fnMap, stagePath+".function"); err != nil {
+	if err := validateAggregateFunction(fnMap, stagePath+".function", hasResult); err != nil {
 		return err
 	}
 
@@ -530,6 +611,9 @@ func validateWindowAggregateStage(stage map[string]interface{}, stagePath string
 			stagePath+".as",
 			fmt.Sprintf("window_aggregate at %s missing required \"as\" key (output field name) — example: \"as\":\"errors\"", stagePath),
 		)
+	}
+	if e := telemetry.ValidateAggregateAlias(as, stagePath+".as"); e != nil {
+		return newLogValidationError(LogValidationInvalidField, e.Path, e.Message)
 	}
 
 	rawWindow := stage["window"]
@@ -644,7 +728,7 @@ var allowedAggregateItemKeys = map[string]struct{}{
 
 // validateAggregateStage checks that "aggregates" is a non-empty array of valid
 // items (each with "function" and "as"), then delegates groupby checks.
-func validateAggregateStage(stage map[string]interface{}, stagePath string) error {
+func validateAggregateStage(stage map[string]interface{}, stagePath string, hasResult bool) error {
 	rawAggs := stage["aggregates"]
 	if rawAggs == nil {
 		return newLogValidationError(
@@ -719,7 +803,7 @@ func validateAggregateStage(stage map[string]interface{}, stagePath string) erro
 				),
 			)
 		}
-		if err := validateQuantileFunction(fnMap, itemPath+".function"); err != nil {
+		if err := validateAggregateFunction(fnMap, itemPath+".function", hasResult); err != nil {
 			return err
 		}
 
@@ -735,21 +819,35 @@ func validateAggregateStage(stage map[string]interface{}, stagePath string) erro
 				),
 			)
 		}
+		if e := telemetry.ValidateAggregateAlias(as, itemPath+".as"); e != nil {
+			return newLogValidationError(LogValidationInvalidField, e.Path, e.Message)
+		}
 	}
 
 	return validateGroupByForTraceFields(stage, stagePath)
 }
 
-func validateQuantileFunction(function map[string]interface{}, path string) error {
-	err := telemetry.ValidateQuantileFunction(function, path)
-	if err == nil {
-		return nil
+func validateAggregateFunction(function map[string]interface{}, path string, hasResult bool) error {
+	validationFunction := function
+	if hasResult {
+		for name, rawArgs := range function {
+			if strings.TrimSuffix(name, "_over_time") != "$quantile_exact" {
+				continue
+			}
+			if args, ok := rawArgs.([]interface{}); ok {
+				validationFunction = make(map[string]interface{}, len(function))
+				for key, value := range function {
+					validationFunction[key] = value
+				}
+				validationFunction[name] = telemetry.DefaultQuantileExactField(args, true)
+			}
+			break
+		}
 	}
-	return newLogValidationError(
-		LogValidationInvalidField,
-		err.Path,
-		err.Error(),
-	)
+	if e := telemetry.ValidateAggregateFunction(validationFunction, path); e != nil {
+		return newLogValidationError(LogValidationInvalidField, e.Path, e.Message)
+	}
+	return nil
 }
 
 func stageKeyList(allowed map[string]struct{}) string {

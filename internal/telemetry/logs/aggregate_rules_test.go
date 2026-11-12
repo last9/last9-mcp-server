@@ -1,0 +1,374 @@
+package logs
+
+import (
+	"errors"
+	"strings"
+	"testing"
+)
+
+type aggregateRuleCase struct {
+	name   string
+	fn     map[string]interface{}
+	suffix string
+	substr string
+}
+
+func fnCase(name string, suffix, substr string, fn map[string]interface{}) aggregateRuleCase {
+	return aggregateRuleCase{name: name, fn: fn, suffix: suffix, substr: substr}
+}
+
+func fn1(op string, args ...interface{}) map[string]interface{} {
+	return map[string]interface{}{op: append([]interface{}{}, args...)}
+}
+
+func aggregateStage(fn map[string]interface{}, as string) map[string]interface{} {
+	return map[string]interface{}{
+		"type": "aggregate",
+		"aggregates": []interface{}{
+			map[string]interface{}{"function": fn, "as": as},
+		},
+	}
+}
+
+func windowStage(fn map[string]interface{}, as string) map[string]interface{} {
+	return map[string]interface{}{
+		"type":     "window_aggregate",
+		"function": fn,
+		"as":       as,
+		"window":   []interface{}{"5", "minutes"},
+	}
+}
+
+func requireInvalidField(t *testing.T, err error, path, substr string) {
+	t.Helper()
+	var verr *LogPipelineValidationError
+	if !errors.As(err, &verr) {
+		t.Fatalf("expected *LogPipelineValidationError, got %T (%v)", err, err)
+	}
+	if verr.Category != LogValidationInvalidField {
+		t.Fatalf("category = %q, want %q (%v)", verr.Category, LogValidationInvalidField, err)
+	}
+	if verr.Path != path {
+		t.Fatalf("path = %q, want %q (%v)", verr.Path, path, err)
+	}
+	if !strings.Contains(err.Error(), substr) {
+		t.Fatalf("error %q does not contain %q", err.Error(), substr)
+	}
+}
+
+const aggF = "attributes['latency_ms']"
+
+func TestPrepareLogJSONQueryAcceptsEveryAggregateFunction(t *testing.T) {
+	fns := []map[string]interface{}{
+		fn1("$count"), fn1("$count", "*"), fn1("$rate"),
+		fn1("$sum", aggF), fn1("$min", aggF), fn1("$max", aggF), fn1("$avg", aggF),
+		fn1("$median", aggF), fn1("$stddev", aggF), fn1("$stddev_pop", aggF),
+		fn1("$variance", aggF), fn1("$variance_pop", aggF),
+		fn1("$uniq", "TraceId"),
+		fn1("$quantile", 0.99, aggF), fn1("$quantile_exact", 0.99, aggF),
+		fn1("$apdex_score", 0.5, aggF), fn1("$avg_over_time", aggF),
+	}
+	for _, fn := range fns {
+		for _, as := range []string{"v", "p99_latency", "_x1", "39b_1", "1x"} {
+			for kind, mk := range map[string]func(map[string]interface{}, string) map[string]interface{}{"aggregate": aggregateStage, "window": windowStage} {
+				stages := []map[string]interface{}{testCanonicalNumericFilter(aggF), mk(fn, as)}
+				if _, err := prepareLogJSONQuery(stages, "logjson_query"); err != nil {
+					t.Errorf("%s %v as=%q: unexpected error: %v", kind, fn, as, err)
+				}
+			}
+		}
+	}
+}
+
+func TestPrepareLogJSONQueryChainedAggregateAliases(t *testing.T) {
+	for kind, mk := range map[string]func(map[string]interface{}, string) map[string]interface{}{
+		"aggregate": aggregateStage,
+		"window":    windowStage,
+	} {
+		for _, field := range []string{"requests", "service", "unknown", "requests) OR (1=1"} {
+			t.Run(kind+"/"+field, func(t *testing.T) {
+				firstStage := mk(fn1("$count"), "requests")
+				firstStage["groupby"] = map[string]interface{}{"ServiceName": "service"}
+				stages := []map[string]interface{}{
+					firstStage,
+					aggregateStage(fn1("$uniq", field), "distinct_requests"),
+				}
+				result, err := prepareLogJSONQuery(stages, "logjson_query")
+				if field != "requests" && field != "service" {
+					requireInvalidField(t, err, "logjson_query[1].aggregates[0].function.$uniq[0]", "invalid log field reference")
+					return
+				}
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				aggregate := result[1]["aggregates"].([]interface{})[0].(map[string]interface{})
+				got := aggregate["function"].(map[string]interface{})["$uniq"].([]interface{})[0]
+				if got != field {
+					t.Fatalf("aggregate operand = %v, want %q", got, field)
+				}
+			})
+		}
+	}
+}
+
+func TestPrepareLogJSONQueryAcceptsSupportedAggregateMapKeys(t *testing.T) {
+	for _, field := range []string{
+		`attributes['label']`,
+		`resources['deployment.zone']`,
+		`attributes['label[0]']`,
+		`resources['deployment[zone]']`,
+	} {
+		for kind, stage := range map[string]map[string]interface{}{
+			"aggregate": aggregateStage(fn1("$uniq", field), "n"),
+			"window":    windowStage(fn1("$uniq", field), "n"),
+		} {
+			result, err := prepareLogJSONQuery([]map[string]interface{}{stage}, "logjson_query")
+			if err != nil {
+				t.Errorf("%s field %q: %v", kind, field, err)
+				continue
+			}
+			var got interface{}
+			if kind == "aggregate" {
+				entry := result[0]["aggregates"].([]interface{})[0].(map[string]interface{})
+				got = entry["function"].(map[string]interface{})["$uniq"].([]interface{})[0]
+			} else {
+				got = result[0]["function"].(map[string]interface{})["$uniq"].([]interface{})[0]
+			}
+			if got != field {
+				t.Errorf("%s field = %v, want %q", kind, got, field)
+			}
+		}
+	}
+}
+
+func TestPrepareLogJSONQueryRejectsMalformedAggregateMapKeys(t *testing.T) {
+	for _, field := range []string{`attributes["label"]`, `resources['deployment\zone']`} {
+		for kind, stage := range map[string]map[string]interface{}{
+			"aggregate": aggregateStage(fn1("$uniq", field), "n"),
+			"window":    windowStage(fn1("$uniq", field), "n"),
+		} {
+			_, err := prepareLogJSONQuery([]map[string]interface{}{stage}, "logjson_query")
+			if err == nil {
+				t.Errorf("%s field %q: expected an error", kind, field)
+			}
+		}
+	}
+}
+
+func TestPrepareLogJSONQueryDefaultsQuantileExactToPreviousResult(t *testing.T) {
+	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
+		t.Run(operator, func(t *testing.T) {
+			for kind, consumer := range map[string]func(map[string]interface{}, string) map[string]interface{}{
+				"aggregate": func(fn map[string]interface{}, as string) map[string]interface{} { return aggregateStage(fn, as) },
+				"window":    windowStage,
+			} {
+				stages := []map[string]interface{}{
+					windowStage(fn1("$count"), "__result__"),
+					consumer(fn1(operator, 0.99), "p99"),
+				}
+				result, err := prepareLogJSONQuery(stages, "logjson_query")
+				if err != nil {
+					t.Fatalf("%s consumer: %v", kind, err)
+				}
+				var args []interface{}
+				if kind == "aggregate" {
+					entry := result[1]["aggregates"].([]interface{})[0].(map[string]interface{})
+					args = entry["function"].(map[string]interface{})[operator].([]interface{})
+				} else {
+					args = result[1]["function"].(map[string]interface{})[operator].([]interface{})
+				}
+				if len(args) != 2 || args[1] != "__result__" {
+					t.Errorf("%s args = %#v, want an implicit __result__ field", kind, args)
+				}
+
+				invalid := []map[string]interface{}{windowStage(fn1("$count"), "__result__"), consumer(fn1(operator, 1.5), "p99")}
+				_, err = prepareLogJSONQuery(invalid, "logjson_query")
+				if err == nil || !strings.Contains(err.Error(), "numeric level in [0,1]") {
+					t.Errorf("%s out-of-range level error = %v", kind, err)
+				}
+			}
+		})
+	}
+}
+
+func TestPrepareLogJSONQueryRejectsQuantileOfBuiltInStringField(t *testing.T) {
+	for _, field := range []string{"Body", "ServiceName", "SeverityText"} {
+		for _, operator := range []string{"$quantile", "$quantile_over_time", "$quantile_exact", "$quantile_exact_over_time"} {
+			for kind, stage := range map[string]map[string]interface{}{
+				"aggregate": aggregateStage(fn1(operator, 0.95, field), "p95"),
+				"window":    windowStage(fn1(operator, 0.95, field), "p95"),
+			} {
+				t.Run(field+"/"+operator+"/"+kind, func(t *testing.T) {
+					stages := []map[string]interface{}{testCanonicalNumericFilter(field), stage}
+					_, err := prepareLogJSONQuery(stages, "logjson_query")
+					requireInvalidField(t, err, "logjson_query[1]."+map[string]string{
+						"aggregate": "aggregates[0].function.",
+						"window":    "function.",
+					}[kind]+operator+"[1]", "built-in string field")
+					if strings.Contains(err.Error(), "$regex") {
+						t.Fatalf("error suggests an ineffective regex guard: %v", err)
+					}
+				})
+			}
+		}
+	}
+
+	grouped := countBy("n", map[string]interface{}{"ServiceName": "service"})
+	quantile := aggregateStage(fn1("$quantile_exact", 0.95, "service"), "p95")
+	_, err := prepareLogJSONQuery([]map[string]interface{}{testCanonicalNumericFilter("ServiceName"), grouped, quantile}, "logjson_query")
+	requireInvalidField(t, err, "logjson_query[2].aggregates[0].function.$quantile_exact[1]", "built-in string field")
+}
+
+func TestPrepareLogJSONQueryDefaultsQuantileExactToWindowGroupByResult(t *testing.T) {
+	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
+		for kind, consumer := range map[string]func(map[string]interface{}, string) map[string]interface{}{
+			"aggregate": func(fn map[string]interface{}, as string) map[string]interface{} { return aggregateStage(fn, as) },
+			"window":    windowStage,
+		} {
+			producer := windowStage(fn1("$count"), "n")
+			producer["groupby"] = map[string]interface{}{aggF: "__result__"}
+			stages := []map[string]interface{}{producer, consumer(fn1(operator, 0.99), "p99")}
+			if _, err := prepareLogJSONQuery(stages, "logjson_query"); err != nil {
+				t.Errorf("%s consumed %s groupby result: %v", kind, operator, err)
+			}
+		}
+	}
+}
+
+func TestPrepareLogJSONQueryRejectsInvalidAggregateFunctions(t *testing.T) {
+	const p = "logjson_query[0].aggregates[0].function"
+	cases := []aggregateRuleCase{
+		fnCase("p99", ".$p99", "$quantile", fn1("$p99", aggF)),
+		fnCase("percentile", ".$percentile", "$quantile", fn1("$percentile", 99.0, aggF)),
+		fnCase("count_distinct", ".$count_distinct", "$uniq", fn1("$count_distinct", aggF)),
+		fnCase("foo", ".$foo", "$apdex_score", fn1("$foo")),
+
+		fnCase("two keys", "", "exactly one key", map[string]interface{}{"$count": []interface{}{}, "$avg": []interface{}{aggF}}),
+		fnCase("empty", "", "exactly one key", map[string]interface{}{}),
+		fnCase("uniq none", ".$uniq", `{"$uniq":["TraceId"]}`, fn1("$uniq")),
+		fnCase("uniq two", ".$uniq", `{"$uniq":["TraceId"]}`, fn1("$uniq", aggF, "TraceId")),
+		fnCase("avg two", ".$avg", "wrong arguments", fn1("$avg", aggF, aggF)),
+		fnCase("count string", ".$count", "wrong arguments", map[string]interface{}{"$count": "x"}),
+		fnCase("avg number", ".$avg[0]", "wrong arguments", fn1("$avg", 42.0)),
+		fnCase("qe one", ".$quantile_exact", "[level, field]", fn1("$quantile_exact", 0.99)),
+		fnCase("qe swapped", ".$quantile_exact[0]", "[level, field]", fn1("$quantile_exact", aggF, 0.99)),
+		fnCase("qe range", ".$quantile_exact[0]", "[level, field]", fn1("$quantile_exact", 1.5, aggF)),
+		fnCase("apdex one", ".$apdex_score", "[threshold, field]", fn1("$apdex_score", aggF)),
+		fnCase("apdex string", ".$apdex_score[0]", "[threshold, field]", fn1("$apdex_score", "0.5", aggF)),
+
+		fnCase("uniq ref", ".$uniq[0]", "invalid log field reference", fn1("$uniq", "Duration) OR (1=1")),
+		fnCase("count ref", ".$count[0]", "invalid log field reference", fn1("$count", "Body) OR (1=1")),
+		fnCase("median ref", ".$median[0]", "invalid log field reference", fn1("$median", "attributes['a') OR ('1'='1']")),
+		fnCase("qe ref", ".$quantile_exact[1]", "invalid log field reference", fn1("$quantile_exact", 0.99, "Duration) OR (1=1")),
+		fnCase("apdex ref", ".$apdex_score[1]", "invalid log field reference", fn1("$apdex_score", 0.5, "x) OR (1=1")),
+		fnCase("backslash", ".$avg[0]", "invalid log field reference", fn1("$avg", `attributes['a\']`)),
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := prepareLogJSONQuery([]map[string]interface{}{aggregateStage(c.fn, "v")}, "logjson_query")
+			requireInvalidField(t, err, p+c.suffix, c.substr)
+		})
+	}
+}
+
+func TestPrepareLogJSONQueryRejectsMissingAggregateFieldOperands(t *testing.T) {
+	functions := []string{"$sum", "$min", "$max", "$avg", "$median", "$stddev", "$stddev_pop", "$variance", "$variance_pop"}
+	for _, function := range functions {
+		for _, suffix := range []string{"", "_over_time"} {
+			name := function + suffix
+			for kind, stage := range map[string]map[string]interface{}{
+				"aggregate": aggregateStage(fn1(name), "v"),
+				"window":    windowStage(fn1(name), "v"),
+			} {
+				t.Run(kind+"/"+name, func(t *testing.T) {
+					_, err := prepareLogJSONQuery([]map[string]interface{}{stage}, "logjson_query")
+					path := "logjson_query[0].function." + name
+					if kind == "aggregate" {
+						path = "logjson_query[0].aggregates[0].function." + name
+					}
+					requireInvalidField(t, err, path, "wrong arguments")
+				})
+			}
+		}
+	}
+}
+
+func TestPrepareLogJSONQueryRejectsInvalidAggregateAlias(t *testing.T) {
+	for _, as := range []string{"p99 latency", "123", "a;b", "p99-latency"} {
+		_, err := prepareLogJSONQuery([]map[string]interface{}{aggregateStage(fn1("$count"), as)}, "logjson_query")
+		requireInvalidField(t, err, "logjson_query[0].aggregates[0].as", "p99_latency")
+		_, err = prepareLogJSONQuery([]map[string]interface{}{windowStage(fn1("$count"), as)}, "logjson_query")
+		requireInvalidField(t, err, "logjson_query[0].as", "p99_latency")
+	}
+	_, err := prepareLogJSONQuery([]map[string]interface{}{windowStage(fn1("$p99", aggF), "v")}, "logjson_query")
+	requireInvalidField(t, err, "logjson_query[0].function.$p99", "$quantile")
+	two := map[string]interface{}{"$count": []interface{}{}, "$avg": []interface{}{aggF}}
+	_, err = prepareLogJSONQuery([]map[string]interface{}{windowStage(two, "v")}, "logjson_query")
+	requireInvalidField(t, err, "logjson_query[0].function", "exactly one key")
+}
+
+func TestPrepareLogJSONQueryQuantileExactNeedsNumericGuard(t *testing.T) {
+	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
+		for kind, consumer := range map[string]func(map[string]interface{}, string) map[string]interface{}{
+			"aggregate": func(fn map[string]interface{}, as string) map[string]interface{} { return aggregateStage(fn, as) },
+			"window":    windowStage,
+		} {
+			t.Run(operator+"/"+kind, func(t *testing.T) {
+				stage := consumer(fn1(operator, 0.99, aggF), "v")
+				_, err := prepareLogJSONQuery([]map[string]interface{}{stage}, "logjson_query")
+				path := "logjson_query[0].function." + operator + "[1]"
+				if kind == "aggregate" {
+					path = "logjson_query[0].aggregates[0].function." + operator + "[1]"
+				}
+				requireInvalidField(t, err, path, "canonical anchored numeric $regex")
+				_, err = prepareLogJSONQuery([]map[string]interface{}{testCanonicalNumericFilter(aggF), stage}, "logjson_query")
+				if err != nil {
+					t.Fatalf("unexpected error with guard: %v", err)
+				}
+				parse := map[string]interface{}{
+					"type": "parse", "parser": "json", "field": "Body",
+					"labels": map[string]interface{}{"latency_ms": "latency_ms"},
+				}
+				_, err = prepareLogJSONQuery([]map[string]interface{}{testCanonicalNumericFilter(aggF), parse, stage}, "logjson_query")
+				requireInvalidField(t, err, "logjson_query[2]"+strings.TrimPrefix(path, "logjson_query[0]"), "canonical anchored numeric $regex")
+			})
+		}
+	}
+}
+
+func cmpFilter(op string, args ...interface{}) map[string]interface{} {
+	return map[string]interface{}{"type": "filter", "query": map[string]interface{}{op: args}}
+}
+
+func TestPrepareLogJSONQueryRequiresNumericComparisonValues(t *testing.T) {
+	const f = "attributes['http.status_code']"
+	bad := []struct {
+		op     string
+		args   []interface{}
+		substr string
+	}{
+		{"$gt", []interface{}{f, "abc"}, ""},
+		{"$lt", []interface{}{f, "5 OR 1=1"}, ""},
+		{"$lte", []interface{}{f, true}, ""},
+		{"$gt", []interface{}{f, ""}, ""},
+		{"$gte", []interface{}{"Timestamp", "2026-06-04T00:00:00Z"}, "start_time_iso"},
+	}
+	for _, c := range bad {
+		_, err := prepareLogJSONQuery([]map[string]interface{}{cmpFilter(c.op, c.args...)}, "logjson_query")
+		requireInvalidField(t, err, "logjson_query[0].query."+c.op+"[1]", "must be a number")
+		if c.substr != "" && !strings.Contains(err.Error(), c.substr) {
+			t.Errorf("%v missing %q", err, c.substr)
+		}
+	}
+	nested := map[string]interface{}{"type": "filter", "query": map[string]interface{}{
+		"$and": []interface{}{map[string]interface{}{"$gt": []interface{}{f, "abc"}}},
+	}}
+	_, err := prepareLogJSONQuery([]map[string]interface{}{nested}, "logjson_query")
+	requireInvalidField(t, err, "logjson_query[0].query.$and[0].$gt[1]", "must be a number")
+
+	for _, v := range []interface{}{"500", 500.0, "1.5", "-2", "1e3"} {
+		if _, err := prepareLogJSONQuery([]map[string]interface{}{cmpFilter("$gt", f, v)}, "logjson_query"); err != nil {
+			t.Errorf("value %v: unexpected error %v", v, err)
+		}
+	}
+}

@@ -1,0 +1,250 @@
+package logs
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func countBy(as string, groupby map[string]interface{}) map[string]interface{} {
+	s := aggregateStage(fn1("$count"), as)
+	if groupby != nil {
+		s["groupby"] = groupby
+	}
+	return s
+}
+
+func windowCountBy(as string, groupby map[string]interface{}) map[string]interface{} {
+	s := windowStage(fn1("$count"), as)
+	s["window"] = []interface{}{"1", "minutes"}
+	if groupby != nil {
+		s["groupby"] = groupby
+	}
+	return s
+}
+
+func lastQueryJSON(t *testing.T, stages []map[string]interface{}) string {
+	t.Helper()
+	b, err := json.Marshal(stages[len(stages)-1]["query"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func TestPrepareLogJSONQueryAcceptsStageAliases(t *testing.T) {
+	scope := cmpFilter("$eq", "ServiceName", "example-service")
+	gb := func(k, v string) map[string]interface{} { return map[string]interface{}{k: v} }
+	cases := []struct {
+		name   string
+		stages []map[string]interface{}
+		want   string // empty: only assert no error
+	}{
+		{"having count", []map[string]interface{}{scope, countBy("n", gb("ServiceName", "svc")), cmpFilter("$gt", "n", "100")}, `{"$and":[{"$gt":["n","100"]}]}`},
+		{"groupby alias", []map[string]interface{}{scope, countBy("n", gb("SeverityText", "sev")), cmpFilter("$eq", "sev", "ERROR")}, `{"$and":[{"$eq":["sev","ERROR"]}]}`},
+		{"window", []map[string]interface{}{scope, windowCountBy("per_min", gb("ServiceName", "svc")), cmpFilter("$gte", "per_min", 5.0)}, `{"$and":[{"$gte":["per_min","5"]}]}`},
+		{"chained", []map[string]interface{}{scope, countBy("n", gb("SeverityText", "sev")), cmpFilter("$gt", "n", "0"),
+			{"type": "aggregate", "aggregates": []interface{}{
+				map[string]interface{}{"function": fn1("$count"), "as": "levels"},
+				map[string]interface{}{"function": fn1("$sum", "n"), "as": "total"},
+			}}}, ""},
+		{"nested", []map[string]interface{}{scope, countBy("n", gb("ServiceName", "svc")), {"type": "filter", "query": map[string]interface{}{
+			"$or": []interface{}{
+				map[string]interface{}{"$gt": []interface{}{"n", "1"}},
+				map[string]interface{}{"$eq": []interface{}{"svc", "x"}},
+			}}}}, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out, err := prepareLogJSONQuery(c.stages, "logjson_query")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if c.want != "" {
+				if got := lastQueryJSON(t, out); got != c.want {
+					t.Fatalf("query = %s, want %s", got, c.want)
+				}
+			}
+		})
+	}
+}
+
+func TestPrepareLogJSONQueryRejectsOutOfScopeAliases(t *testing.T) {
+	scope := cmpFilter("$eq", "ServiceName", "example-service")
+	sev := map[string]interface{}{"SeverityText": "sev"}
+	cases := []struct {
+		name   string
+		stages []map[string]interface{}
+		path   string
+		substr string
+	}{
+		{"before aggregate", []map[string]interface{}{scope, cmpFilter("$gt", "n", "100"), countBy("n", sev)}, "logjson_query[1].query.$gt[0]", `invalid log field reference "n"`},
+		{"later alias", []map[string]interface{}{scope, countBy("n", sev), cmpFilter("$gt", "m", "1"), countBy("m", nil)}, "logjson_query[2].query.$gt[0]", `"m"`},
+		{"unknown name", []map[string]interface{}{scope, countBy("n", sev), cmpFilter("$gt", "count", "1")}, "logjson_query[2].query.$gt[0]", `"count"`},
+		{"reset", []map[string]interface{}{scope, countBy("n", sev), countBy("m", nil), cmpFilter("$gt", "n", "1")}, "logjson_query[3].query.$gt[0]", `"n"`},
+		{"non numeric", []map[string]interface{}{scope, countBy("n", sev), cmpFilter("$gt", "n", "many")}, "logjson_query[2].query.$gt[1]", "must be a number"},
+		{"bad groupby alias", []map[string]interface{}{scope, countBy("n", map[string]interface{}{"ServiceName": "svc name"}), cmpFilter("$eq", "svc name", "x")}, "logjson_query[2].query.$eq[0]", "invalid log field reference"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := prepareLogJSONQuery(c.stages, "logjson_query")
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			requireInvalidField(t, err, c.path, c.substr)
+		})
+	}
+}
+
+func TestPrepareLogJSONQueryNotNull(t *testing.T) {
+	pass := []struct{ field, want string }{
+		{"attributes['user_id']", `{"$and":[{"$notnull":["attributes['user_id']"]}]}`},
+		{"service.name", `{"$and":[{"$notnull":["ServiceName"]}]}`},
+	}
+	for _, c := range pass {
+		out, err := prepareLogJSONQuery([]map[string]interface{}{cmpFilter("$notnull", c.field)}, "logjson_query")
+		if err != nil {
+			t.Fatalf("%s: %v", c.field, err)
+		}
+		if got := lastQueryJSON(t, out); got != c.want {
+			t.Errorf("query = %s, want %s", got, c.want)
+		}
+	}
+	_, err := prepareLogJSONQuery([]map[string]interface{}{cmpFilter("$notnull", "user_id")}, "logjson_query")
+	requireInvalidField(t, err, "logjson_query[0].query.$notnull[0]", `invalid log field reference "user_id"`)
+	_, err = prepareLogJSONQuery([]map[string]interface{}{cmpFilter("$exists", "Body")}, "logjson_query")
+	if err == nil || !strings.Contains(err.Error(), "invalid filter condition key") {
+		t.Fatalf("$exists: got %v", err)
+	}
+}
+
+func TestPrepareLogJSONQueryRejectsNotNullOnAggregateOutput(t *testing.T) {
+	stages := []map[string]interface{}{
+		cmpFilter("$eq", "ServiceName", "example-service"),
+		countBy("n", map[string]interface{}{"SeverityText": "severity"}),
+		cmpFilter("$notnull", "n"),
+	}
+
+	_, err := prepareLogJSONQuery(stages, "logjson_query")
+	requireInvalidField(t, err, "logjson_query[2].query.$notnull[0]", `aggregate output "n" is never null`)
+}
+
+func TestGetLogsHandlerRejectsNotNullOnCanonicalizedAggregateOutput(t *testing.T) {
+	for _, searchAPI := range []bool{false, true} {
+		t.Run(map[bool]string{false: "query range", true: "search API"}[searchAPI], func(t *testing.T) {
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				requests++
+				http.Error(w, "should not be called", http.StatusBadRequest)
+			}))
+			defer server.Close()
+
+			cfg := testLogsConfig(server.URL)
+			cfg.UseLogSearchAPI = searchAPI
+			_, _, err := NewGetLogsHandler(server.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+				LogjsonQuery: []map[string]interface{}{
+					cmpFilter("$eq", "ServiceName", "example"),
+					countBy("ServiceName", nil),
+					cmpFilter("$notnull", "service.name"),
+				},
+				LookbackMinutes: 5,
+			})
+			requireInvalidField(t, err, "logjson_query[2].query.$notnull[0]", `aggregate output "ServiceName" is never null`)
+			if requests != 0 {
+				t.Fatalf("API requests = %d, want 0", requests)
+			}
+		})
+	}
+}
+
+func TestPrepareLogJSONQueryAcceptsAliasesInGroupByAndAggregateFunctions(t *testing.T) {
+	groupBy := func(field, alias string) map[string]interface{} {
+		return map[string]interface{}{field: alias}
+	}
+	scope := cmpFilter("$eq", "ServiceName", "example")
+
+	t.Run("aggregate function and groupby", func(t *testing.T) {
+		stages := []map[string]interface{}{
+			scope,
+			countBy("n", groupBy("ServiceName", "svc")),
+			{
+				"type": "aggregate",
+				"aggregates": []interface{}{map[string]interface{}{
+					"function": fn1("$sum", "n"), "as": "total",
+				}},
+				"groupby": groupBy("svc", "service"),
+			},
+		}
+
+		out, err := prepareLogJSONQuery(stages, "logjson_query")
+		if err != nil {
+			t.Fatalf("prepare query: %v", err)
+		}
+		aggregate := out[2]["aggregates"].([]interface{})[0].(map[string]interface{})
+		function := aggregate["function"].(map[string]interface{})
+		if got := function["$sum"].([]interface{})[0]; got != "n" {
+			t.Errorf("sum field = %v, want n", got)
+		}
+		if got := out[2]["groupby"].(map[string]interface{})["svc"]; got != "service" {
+			t.Errorf("groupby alias = %v, want service", got)
+		}
+	})
+
+	for _, stageType := range []string{"aggregate", "window_aggregate"} {
+		t.Run(stageType+" trims function field", func(t *testing.T) {
+			stage := map[string]interface{}{
+				"type": stageType,
+			}
+			if stageType == "aggregate" {
+				stage["aggregates"] = []interface{}{map[string]interface{}{
+					"function": fn1("$sum", " n "), "as": "total",
+				}}
+			} else {
+				stage["function"] = fn1("$sum", " n ")
+				stage["as"] = "total"
+				stage["window"] = []interface{}{"1", "minutes"}
+			}
+
+			out, err := prepareLogJSONQuery([]map[string]interface{}{scope, countBy("n", nil), stage}, "logjson_query")
+			if err != nil {
+				t.Fatalf("prepare query: %v", err)
+			}
+			if stageType == "aggregate" {
+				stage = out[2]["aggregates"].([]interface{})[0].(map[string]interface{})
+			} else {
+				stage = out[2]
+			}
+			function := stage["function"].(map[string]interface{})
+			if got := function["$sum"].([]interface{})[0]; got != "n" {
+				t.Errorf("sum field = %v, want n", got)
+			}
+		})
+	}
+
+	t.Run("window function", func(t *testing.T) {
+		stages := []map[string]interface{}{
+			scope,
+			countBy("n", groupBy("ServiceName", "svc")),
+			{
+				"type":     "window_aggregate",
+				"function": fn1("$sum", "n"),
+				"as":       "total",
+				"window":   []interface{}{"1", "minutes"},
+			},
+		}
+
+		out, err := prepareLogJSONQuery(stages, "logjson_query")
+		if err != nil {
+			t.Fatalf("prepare query: %v", err)
+		}
+		function := out[2]["function"].(map[string]interface{})
+		if got := function["$sum"].([]interface{})[0]; got != "n" {
+			t.Errorf("sum field = %v, want n", got)
+		}
+	})
+}
