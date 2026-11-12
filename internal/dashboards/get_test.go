@@ -136,3 +136,20 @@ func TestGetDashboardHandler_AuthorOmittedIsNull(t *testing.T) {
 		t.Fatalf("text %s", text)
 	}
 }
+
+func TestGetDashboardHandler_NormalizesEscapedHTMLCharacters(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"dashboard":{"id":"uuid-1","name":"QA \u003c\u003e\u0026"}}`))
+	}))
+	defer srv.Close()
+
+	handler := NewGetDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDashboardArgs{ID: "uuid-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(text, `"name":"QA <>&"`) {
+		t.Fatalf("HTML characters were not preserved literally: %s", text)
+	}
+}

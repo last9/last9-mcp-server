@@ -23,16 +23,17 @@ type dashboardLockFields struct {
 // withDashboardLockState adds top-level locked and created_by to a get-dashboard
 // body. A body that is not a {dashboard} object is served unchanged.
 func withDashboardLockState(body []byte) []byte {
-	var resp map[string]json.RawMessage
-	if err := json.Unmarshal(body, &resp); err != nil || resp == nil {
+	var resp map[string]any
+	if err := decodeJSON(body, &resp); err != nil || resp == nil {
 		return body
 	}
-	var fields dashboardLockFields
-	if err := json.Unmarshal(resp["dashboard"], &fields); err != nil {
+	dashboard, ok := resp["dashboard"].(map[string]any)
+	if !ok {
 		return body
 	}
-	resp["locked"] = encodeJSON(fields.Readonly != nil && *fields.Readonly)
-	resp["created_by"] = encodeJSON(fields.CreatedBy)
+	readonly, _ := dashboard["readonly"].(bool)
+	resp["locked"] = readonly
+	resp["created_by"] = dashboard["created_by"]
 	return encodeJSON(resp)
 }
 
@@ -57,6 +58,12 @@ func encodeJSON(v any) []byte {
 	return bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
 }
 
+func decodeJSON(body []byte, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	return dec.Decode(v)
+}
+
 // isDashboardLockedRefusal tells the API's lock refusal from the 403 a built-in dashboard gets.
 func isDashboardLockedRefusal(status int, body string) bool {
 	return status == http.StatusForbidden && strings.Contains(strings.ToLower(body), "dashboard is locked")
@@ -65,6 +72,18 @@ func isDashboardLockedRefusal(status int, body string) bool {
 func upstreamLockedRefusal(err error) bool {
 	var upstream *utils.UpstreamHTTPError
 	return errors.As(err, &upstream) && isDashboardLockedRefusal(upstream.StatusCode, upstream.Body)
+}
+
+func upstreamBuiltInRefusal(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := err.Error()
+	var upstream *utils.UpstreamHTTPError
+	if errors.As(err, &upstream) {
+		text += " " + upstream.Body
+	}
+	return strings.Contains(strings.ToLower(text), "built-in dashboards are read-only")
 }
 
 // dashboardLockedError keeps the "dashboard is locked" prefix stable: clients match on it.
