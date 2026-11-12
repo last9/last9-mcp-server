@@ -278,6 +278,7 @@ func logStageEmitsResult(stage map[string]interface{}, stageType string) bool {
 func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix string) error {
 	numericSafeFields := make(map[string]struct{})
 	stringBackedAliases := make(map[string]struct{})
+	builtInStringAliases := make(map[string]struct{})
 
 	for stageIndex, stage := range stages {
 		stagePath := fmt.Sprintf("%s[%d]", pathPrefix, stageIndex)
@@ -310,6 +311,14 @@ func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix
 				_, isStringBackedAlias := stringBackedAliases[field]
 				if !isStringBackedLogField(field) && !isStringBackedAlias {
 					continue
+				}
+				_, isBuiltInStringAlias := builtInStringAliases[field]
+				if isBuiltInStringLogField(field) || isBuiltInStringAlias {
+					return newLogValidationError(
+						LogValidationInvalidField,
+						functionPath+"."+name+"[1]",
+						fmt.Sprintf("%s field %q at %s is a built-in string field and cannot be aggregated as a quantile; use a numeric attribute or parsed numeric field instead", name, field, functionPath+"."+name+"[1]"),
+					)
 				}
 				if _, ok := numericSafeFields[field]; ok {
 					continue
@@ -352,6 +361,7 @@ func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix
 		}
 
 		nextStringBackedAliases := make(map[string]struct{})
+		nextBuiltInStringAliases := make(map[string]struct{})
 		nextNumericSafeFields := make(map[string]struct{})
 		groupBy, _ := stage["groupby"].(map[string]interface{})
 		for field, rawAlias := range groupBy {
@@ -362,12 +372,17 @@ func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix
 			_, isStringBackedAlias := stringBackedAliases[field]
 			if isStringBackedLogField(field) || isStringBackedAlias {
 				nextStringBackedAliases[alias] = struct{}{}
+				_, isBuiltInStringAlias := builtInStringAliases[field]
+				if isBuiltInStringLogField(field) || isBuiltInStringAlias {
+					nextBuiltInStringAliases[alias] = struct{}{}
+				}
 				if _, safe := numericSafeFields[field]; safe {
 					nextNumericSafeFields[alias] = struct{}{}
 				}
 			}
 		}
 		stringBackedAliases = nextStringBackedAliases
+		builtInStringAliases = nextBuiltInStringAliases
 		numericSafeFields = nextNumericSafeFields
 	}
 
@@ -375,12 +390,11 @@ func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix
 }
 
 func isStringBackedLogField(field string) bool {
-	switch field {
-	case "Body", "ServiceName", "SeverityText":
-		return true
-	default:
-		return strings.HasPrefix(field, "attributes['") || strings.HasPrefix(field, "resources['")
-	}
+	return isBuiltInStringLogField(field) || strings.HasPrefix(field, "attributes['") || strings.HasPrefix(field, "resources['")
+}
+
+func isBuiltInStringLogField(field string) bool {
+	return field == "Body" || field == "ServiceName" || field == "SeverityText"
 }
 
 func invalidateParsedNumericFields(stage map[string]interface{}, numericSafeFields map[string]struct{}) {

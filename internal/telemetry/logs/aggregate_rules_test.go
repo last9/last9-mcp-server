@@ -191,17 +191,32 @@ func TestPrepareLogJSONQueryDefaultsQuantileExactToPreviousResult(t *testing.T) 
 	}
 }
 
-func TestPrepareLogJSONQueryRejectsExactQuantileOfKnownStringField(t *testing.T) {
-	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
-		for kind, stage := range map[string]map[string]interface{}{
-			"aggregate": aggregateStage(fn1(operator, 0.95, "Body"), "p95"),
-			"window":    windowStage(fn1(operator, 0.95, "Body"), "p95"),
-		} {
-			if _, err := prepareLogJSONQuery([]map[string]interface{}{stage}, "logjson_query"); err == nil {
-				t.Errorf("%s %s: expected a numeric-field error", kind, operator)
+func TestPrepareLogJSONQueryRejectsQuantileOfBuiltInStringField(t *testing.T) {
+	for _, field := range []string{"Body", "ServiceName", "SeverityText"} {
+		for _, operator := range []string{"$quantile", "$quantile_over_time", "$quantile_exact", "$quantile_exact_over_time"} {
+			for kind, stage := range map[string]map[string]interface{}{
+				"aggregate": aggregateStage(fn1(operator, 0.95, field), "p95"),
+				"window":    windowStage(fn1(operator, 0.95, field), "p95"),
+			} {
+				t.Run(field+"/"+operator+"/"+kind, func(t *testing.T) {
+					stages := []map[string]interface{}{testCanonicalNumericFilter(field), stage}
+					_, err := prepareLogJSONQuery(stages, "logjson_query")
+					requireInvalidField(t, err, "logjson_query[1]."+map[string]string{
+						"aggregate": "aggregates[0].function.",
+						"window":    "function.",
+					}[kind]+operator+"[1]", "built-in string field")
+					if strings.Contains(err.Error(), "$regex") {
+						t.Fatalf("error suggests an ineffective regex guard: %v", err)
+					}
+				})
 			}
 		}
 	}
+
+	grouped := countBy("n", map[string]interface{}{"ServiceName": "service"})
+	quantile := aggregateStage(fn1("$quantile_exact", 0.95, "service"), "p95")
+	_, err := prepareLogJSONQuery([]map[string]interface{}{testCanonicalNumericFilter("ServiceName"), grouped, quantile}, "logjson_query")
+	requireInvalidField(t, err, "logjson_query[2].aggregates[0].function.$quantile_exact[1]", "built-in string field")
 }
 
 func TestPrepareLogJSONQueryDefaultsQuantileExactToWindowGroupByResult(t *testing.T) {
