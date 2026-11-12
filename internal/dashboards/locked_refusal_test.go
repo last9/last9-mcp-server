@@ -27,6 +27,7 @@ const (
 // unknownLockFixture omits readonly, as a dashboard read before the lock was
 // taken or from an API that does not report it.
 var unknownLockFixture = strings.Replace(lockedFixture, `"readonly":true,`, "", 1)
+var unlockedFixture = strings.Replace(lockedFixture, `"readonly":true`, `"readonly":false`, 1)
 
 // lockingServer answers GET with get and every write with status and refusal, counting writes.
 type lockingServer struct {
@@ -193,10 +194,11 @@ func TestPreviewDashboard_ReportsLockedDashboard(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
 		fixture string
-		locked  bool
+		want    any
 	}{
-		{"locked", lockedFixture, true},
-		{"unknown", unknownLockFixture, false},
+		{"locked", lockedFixture, "note"},
+		{"unlocked", unlockedFixture, false},
+		{"unknown", unknownLockFixture, nil},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			args := previewTestArgs()
@@ -214,11 +216,15 @@ func TestPreviewDashboard_ReportsLockedDashboard(t *testing.T) {
 			if err := json.Unmarshal([]byte(utils.GetTextContent(t, res)), &report); err != nil {
 				t.Fatal(err)
 			}
-			note, _ := report["locked"].(string)
-			if tt.locked != (note != "") {
-				t.Fatalf("locked = %v, report = %v", report["locked"], report)
+			got, present := report["locked"]
+			if tt.want == nil && present {
+				t.Fatalf("unknown lock state reported as %v", got)
 			}
-			if tt.locked && (!strings.Contains(note, "user-7") || !strings.Contains(note, "create_dashboard")) {
+			if tt.want == false && (!present || got != false) {
+				t.Fatalf("locked = %v, want false", got)
+			}
+			note, _ := got.(string)
+			if tt.want == "note" && (!strings.Contains(note, "user-7") || !strings.Contains(note, "create_dashboard")) {
 				t.Fatalf("locked note = %q", note)
 			}
 		})

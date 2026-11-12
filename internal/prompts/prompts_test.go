@@ -1067,3 +1067,11 @@ func TestGetAlertsRoutingStatesDefaultWindow(t *testing.T) {
 		}
 	}
 }
+
+func TestPreviewDashboardDescriptionExplainsLockState(t *testing.T) {
+	for _, phrase := range []string{"locked:false", "dashboard is locked"} {
+		if !strings.Contains(prompts.PreviewDashboardDescription, phrase) {
+			t.Errorf("preview_dashboard description missing %q", phrase)
+		}
+	}
+}
