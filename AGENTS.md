@@ -241,6 +241,12 @@ one.
 - `dump-tools` honors the same flags and env, and loads `.env` first. The canonical snapshot
   is unset/`all`; use `--toolsets=investigate` to measure the automation surface.
 
+### HTTP middleware
+
+**Register token middleware after per-tool middleware.** The SDK executes the last receiver
+first, so this keeps authentication outermost. Test that an invalid token is refused before
+malformed arguments are reported on both the default and per-request toolset servers.
+
 ## Calling the Last9 API
 
 All HTTP calls to the Last9 API go through `internal/last9api`. Tool packages do not build
@@ -339,6 +345,12 @@ interface for it.
 OK:  srv := httptest.NewServer(handler); NewClient(srv.Client(), cfg)
 NO:  type Doer interface{ Do(*http.Request) (*http.Response, error) }
 ```
+HTTP fixture handlers report failures with `Errorf` and still write an error response;
+`Fatal` is only for the test goroutine. Protect recorders shared with handlers, wait for
+handlers to finish before asserting on them, and race-test cancellation paths.
+
+An integration test that claims successful upstream behavior fails on every handler error
+after credentials are available. Only unavailable credentials justify skipping it.
 
 **8. Exception: the OAuth access-token call stays in `internal/auth`.** It uses a different
 host, sends no auth header, and mints the token `last9api` depends on.
@@ -418,6 +430,10 @@ struct, unless a struct genuinely makes it less readable.
 **Validate arguments before taking a concurrency slot or calling the API.** An invalid
 call must fail with its own diagnostic, not wait on a semaphore or reach the upstream. Test
 it with every slot held, asserting the original error and zero upstream requests.
+
+**Track scope, completeness, metric status, and failures independently.** Missing
+attestations make a result partial, never complete. Test failed and partial retries and
+non-finite metric samples.
 
 **A shared predicate that reconciles a newer explicit field with a legacy fallback lets the
 explicit field win whenever it is set.** Normalize the legacy value once, inside the
