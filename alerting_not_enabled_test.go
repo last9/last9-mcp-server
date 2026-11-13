@@ -71,6 +71,8 @@ func TestAlertToolOtherUpstreamErrorsAreUnchanged(t *testing.T) {
 		status int
 		body   string
 	}{
+		{name: "unauthorized", status: http.StatusUnauthorized, body: `{"error_details":{"code":"alerting_not_enabled"}}`},
+		{name: "forbidden", status: http.StatusForbidden, body: `{"error_details":{"code":"alerting_not_enabled"}}`},
 		{name: "untyped 4xx", status: http.StatusFailedDependency, body: `{"error":{"code":"some_other_code"}}`},
 		{name: "server error", status: http.StatusInternalServerError, body: `{"error":{"code":"alerting_not_enabled"}}`},
 	}
@@ -100,5 +102,30 @@ func TestAlertToolOtherUpstreamErrorsAreUnchanged(t *testing.T) {
 				t.Fatalf("original status missing from %q", text)
 			}
 		})
+	}
+}
+
+func TestNonAlertToolDoesNotConvertAlertingNotEnabled(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = io.WriteString(w, `{"error_details":{"code":"alerting_not_enabled"}}`)
+	}))
+	t.Cleanup(upstream.Close)
+	cfg := writeToolTestConfig(upstream.URL)
+	handler := func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+		err := last9api.NewClient(upstream.Client(), cfg).Do(ctx, "logs", last9api.Request{Method: http.MethodGet, Path: "/logs"}, nil)
+		return nil, nil, err
+	}
+	session := connectToolFixture(t, registeredToolFixture{
+		tool:    &mcp.Tool{Name: "get_logs", Annotations: readOnlyTool("Get Logs")},
+		timeout: time.Second,
+	}, handler)
+
+	result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: "get_logs", Arguments: map[string]any{}})
+	if !result.IsError {
+		t.Fatalf("non-alert tool returned a successful result: %q", toolResultText(result))
+	}
+	if text := toolResultText(result); !strings.Contains(text, "HTTP 422") {
+		t.Fatalf("original status missing from %q", text)
 	}
 }

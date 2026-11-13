@@ -64,9 +64,11 @@ type UpstreamHTTPError struct {
 
 type expectedEmptyStateError struct {
 	message string
+	cause   error
 }
 
-func (e *expectedEmptyStateError) Error() string { return e.message }
+func (e *expectedEmptyStateError) Error() string { return e.cause.Error() }
+func (e *expectedEmptyStateError) Unwrap() error { return e.cause }
 
 func ExpectedEmptyStateMessage(err error) (string, bool) {
 	var state *expectedEmptyStateError
@@ -86,11 +88,10 @@ func NewUpstreamHTTPError(resp *http.Response, op string, hint ...string) error 
 		return fmt.Errorf("%s failed: empty upstream response", op)
 	}
 	status := resp.StatusCode
-	if status >= http.StatusBadRequest && status < http.StatusInternalServerError {
+	expectedEmptyState := false
+	if status == http.StatusUnprocessableEntity {
 		body := ReadLimitedResponseBody(resp.Body, 4<<10)
-		if upstreamErrorCode(body) == "alerting_not_enabled" {
-			return &expectedEmptyStateError{message: AlertingNotEnabledMessage}
-		}
+		expectedEmptyState = upstreamErrorCode(body) == "alerting_not_enabled"
 		resp.Body = io.NopCloser(strings.NewReader(body))
 	}
 	if status == http.StatusBadRequest || status == http.StatusUnprocessableEntity {
@@ -107,7 +108,11 @@ func NewUpstreamHTTPError(resp *http.Response, op string, hint ...string) error 
 		if len(hint) > 0 && strings.TrimSpace(hint[0]) != "" {
 			msg += "\n\n" + hint[0]
 		}
-		return &UpstreamHTTPError{StatusCode: status, Body: body, message: msg}
+		upstreamErr := &UpstreamHTTPError{StatusCode: status, Body: body, message: msg}
+		if expectedEmptyState {
+			return &expectedEmptyStateError{message: AlertingNotEnabledMessage, cause: upstreamErr}
+		}
+		return upstreamErr
 	}
 	var body string
 	if status >= http.StatusBadRequest && status < http.StatusInternalServerError {
