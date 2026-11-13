@@ -143,12 +143,20 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		return nil, err
 	}
 	endProcess := utils.StartToolPhase(ctx, "get_logs", "post_process")
+	defaultWindow := args.StartTimeISO == "" && args.LookbackMinutes == 0
+	if defaultWindow {
+		result["window_source"] = "default"
+		result["window_minutes"] = defaultGetLogsLookbackMinutes
+	}
 	truncated := addGetLogsGuidance(result, args, getLogsGuidanceContext{
 		startMs:        startTime,
 		endMs:          endTime,
 		effectiveLimit: effectiveGetLogsResultLimit(cfg, args.Limit),
 		maxLimit:       effectiveGetLogsResultLimit(cfg, 0),
 	})
+	if defaultWindow {
+		setDefaultWindowEmptyGuidance(result, "logs", defaultGetLogsLookbackMinutes)
+	}
 	if args.ResponseMode != logResponseModeRaw {
 		result = summarizeLogResult(result, startTime, endTime, truncated)
 	}

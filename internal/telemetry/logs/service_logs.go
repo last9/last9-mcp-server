@@ -34,6 +34,8 @@ type ServiceLogsResponse struct {
 	SearchStats        map[string]any `json:"search_stats,omitempty"`
 	RawLimit           map[string]any `json:"l9_raw_limit,omitempty"`
 	Hint               string         `json:"hint,omitempty"`
+	WindowSource       string         `json:"window_source,omitempty"`
+	WindowMinutes      int            `json:"window_minutes,omitempty"`
 	coverageStatus     string
 }
 
@@ -145,6 +147,10 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
 		}
 		logs.HTTPStatusField = statusField
+		if args.StartTimeISO == "" && args.LookbackMinutes == 0 {
+			logs.WindowSource = "default"
+			logs.WindowMinutes = 60
+		}
 		addServiceLogsGuidance(logs, args, limit)
 
 		bounds := serviceLogsScope{startTime, endTime, normalizedIndex}

@@ -135,6 +135,7 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 		effectiveLimit: effectiveLimit,
 		maxLimit:       maxLimit,
 	})
+	addDefaultTraceWindowMetadata(result, args)
 
 	// Build deep link URL
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
@@ -149,6 +150,13 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 			},
 		},
 	}, nil
+}
+
+func addDefaultTraceWindowMetadata(result map[string]interface{}, args GetTracesArgs) {
+	if args.StartTimeISO == "" && args.LookbackMinutes == 0 {
+		result["window_source"] = "default"
+		result["window_minutes"] = utils.DefaultLookbackMinutes
+	}
 }
 
 // fetchTraceJSONQuery executes the trace query by resolving an

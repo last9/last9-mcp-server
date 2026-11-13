@@ -48,3 +48,11 @@ func TestTraceIDFilterWindowValidationScope(t *testing.T) {
 		})
 	}
 }
+
+func TestGetTracesDefaultWindowMetadata(t *testing.T) {
+	result := emptyTracesResponse()
+	addDefaultTraceWindowMetadata(result, GetTracesArgs{})
+	if result["window_source"] != "default" || result["window_minutes"] != 60 {
+		t.Fatalf("window metadata = %#v", result)
+	}
+}
