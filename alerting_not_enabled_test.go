@@ -1,0 +1,104 @@
+package main
+
+import (
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"last9-mcp/internal/last9api"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+const alertingNotEnabledMessage = "Alerting is not enabled for this org, so there is no alert data. Enable alerting in the Last9 app to use alert tools."
+
+func TestAlertToolsReturnAlertingNotEnabledAsValidEmptyState(t *testing.T) {
+	tests := []struct {
+		tool string
+		path string
+	}{
+		{tool: "get_alerts", path: "/alerts/monitor"},
+		{tool: "get_alert_config", path: "/alert-rules"},
+		{tool: "get_alert_groups", path: "/entities"},
+		{tool: "get_alert_rule_state", path: "/alerts/monitor"},
+		{tool: "get_entity_alert_rules", path: "/entities/group-1/alert-rules"},
+		{tool: "get_alert_coverage", path: "/alerts/coverage"},
+		{tool: "get_alert_hygiene", path: "/alerts/hygiene"},
+		{tool: "get_alert_operations_summary", path: "/alerts/health_summary"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.tool, func(t *testing.T) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != tt.path {
+					t.Fatalf("path = %q, want %q", r.URL.Path, tt.path)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				_, _ = io.WriteString(w, `{"error":"Alerting is not enabled for this organization.","error_details":{"code":"alerting_not_enabled"},"status":422}`)
+			}))
+			t.Cleanup(upstream.Close)
+
+			cfg := writeToolTestConfig(upstream.URL)
+			handler := func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+				err := last9api.NewClient(upstream.Client(), cfg).Do(ctx, tt.tool, last9api.Request{Method: http.MethodGet, Path: tt.path}, nil)
+				return nil, nil, err
+			}
+			session := connectToolFixture(t, registeredToolFixture{
+				tool:    &mcp.Tool{Name: tt.tool, Annotations: readOnlyTool(tt.tool)},
+				timeout: time.Second,
+			}, handler)
+
+			result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: tt.tool, Arguments: map[string]any{}})
+			if result.IsError {
+				t.Fatalf("typed disabled response returned an error: %q", toolResultText(result))
+			}
+			if got := toolResultText(result); got != alertingNotEnabledMessage {
+				t.Fatalf("text = %q, want %q", got, alertingNotEnabledMessage)
+			}
+		})
+	}
+}
+
+func TestAlertToolOtherUpstreamErrorsAreUnchanged(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{name: "untyped 4xx", status: http.StatusFailedDependency, body: `{"error":{"code":"some_other_code"}}`},
+		{name: "server error", status: http.StatusInternalServerError, body: `{"error":{"code":"alerting_not_enabled"}}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = io.WriteString(w, tt.body)
+			}))
+			t.Cleanup(upstream.Close)
+			cfg := writeToolTestConfig(upstream.URL)
+			handler := func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+				err := last9api.NewClient(upstream.Client(), cfg).Do(ctx, "alerts", last9api.Request{Method: http.MethodGet, Path: "/alerts/monitor"}, nil)
+				return nil, nil, err
+			}
+			session := connectToolFixture(t, registeredToolFixture{
+				tool:    &mcp.Tool{Name: "get_alerts", Annotations: readOnlyTool("Get Alerts")},
+				timeout: time.Second,
+			}, handler)
+
+			result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: "get_alerts", Arguments: map[string]any{}})
+			if !result.IsError {
+				t.Fatalf("HTTP %d returned a successful result: %q", tt.status, toolResultText(result))
+			}
+			if text := toolResultText(result); !strings.Contains(text, "HTTP "+strconv.Itoa(tt.status)) {
+				t.Fatalf("original status missing from %q", text)
+			}
+		})
+	}
+}
