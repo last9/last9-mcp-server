@@ -47,6 +47,12 @@ func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Co
 		if err := SanitizeTraceJSONQuery(args.TracejsonQuery); err != nil {
 			return nil, nil, err
 		}
+		if args.LookbackMinutes < 0 {
+			return nil, nil, fmt.Errorf("lookback_minutes must be at least 1")
+		}
+		if pipelineHasTraceIDFilter(args.TracejsonQuery) && args.StartTimeISO == "" && args.LookbackMinutes == 0 {
+			return nil, nil, fmt.Errorf("TraceId filters require an explicit window: set lookback_minutes or start_time_iso")
+		}
 		boundFinalSelectLimit(args.TracejsonQuery, effectiveGetTracesLimit(cfg, args.Limit))
 		if _, _, err := parseTimeRangeFromArgs(args); err != nil {
 			return nil, nil, fmt.Errorf("failed to parse time range: %v", err)
@@ -72,6 +78,36 @@ func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Co
 		}
 		return result, nil, nil
 	}
+}
+
+func pipelineHasTraceIDFilter(stages []map[string]interface{}) bool {
+	for _, stage := range stages {
+		if stage["type"] == "filter" && conditionReferencesTraceID(stage["query"]) {
+			return true
+		}
+	}
+	return false
+}
+
+func conditionReferencesTraceID(value any) bool {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		for _, child := range typed {
+			if conditionReferencesTraceID(child) {
+				return true
+			}
+		}
+	case []interface{}:
+		if len(typed) > 0 && typed[0] == "TraceId" {
+			return true
+		}
+		for _, child := range typed {
+			if conditionReferencesTraceID(child) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, tracejsonQuery interface{}, args GetTracesArgs) (*mcp.CallToolResult, error) {
@@ -102,6 +138,7 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 		effectiveLimit: effectiveLimit,
 		maxLimit:       maxLimit,
 	})
+	addDefaultTraceWindowMetadata(result, args)
 
 	// Build deep link URL
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
@@ -116,6 +153,13 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 			},
 		},
 	}, nil
+}
+
+func addDefaultTraceWindowMetadata(result map[string]interface{}, args GetTracesArgs) {
+	if args.StartTimeISO == "" && args.LookbackMinutes == 0 {
+		result["window_source"] = "default"
+		result["window_minutes"] = utils.DefaultLookbackMinutes
+	}
 }
 
 // fetchTraceJSONQuery executes the trace query by resolving an

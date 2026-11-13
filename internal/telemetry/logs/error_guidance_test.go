@@ -78,7 +78,7 @@ func TestGetLogsHandler_EmptyGuidanceMatchesResultType(t *testing.T) {
 			}
 			payload := parseToolJSONResult(t, result)
 			guidance, _ := payload["l9_guidance"].(map[string]interface{})
-			if got := strings.Contains(guidanceText(guidance), "No logs found"); got != tc.wantEmpty {
+			if got := strings.Contains(guidanceText(guidance), "No matches in the last 5 minutes (default window)"); got != tc.wantEmpty {
 				t.Errorf("empty guidance = %v, want %v", got, tc.wantEmpty)
 			}
 		})
@@ -279,7 +279,7 @@ func TestGetLogsHandler_LogSearchAggregateNullResultIncludesEmptyGuidance(t *tes
 		t.Fatalf("expected l9_guidance for null aggregate result, got %#v", payload)
 	}
 	text := guidanceText(guidance)
-	for _, want := range []string{"No logs found", "widen", "6h", "did_you_mean"} {
+	for _, want := range []string{"No matches in the last 5 minutes (default window)", "widen", "6h", "did_you_mean"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("guidance %q missing %q", text, want)
 		}

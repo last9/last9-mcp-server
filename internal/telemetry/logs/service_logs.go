@@ -34,6 +34,8 @@ type ServiceLogsResponse struct {
 	SearchStats        map[string]any `json:"search_stats,omitempty"`
 	RawLimit           map[string]any `json:"l9_raw_limit,omitempty"`
 	Hint               string         `json:"hint,omitempty"`
+	WindowSource       string         `json:"window_source,omitempty"`
+	WindowMinutes      int            `json:"window_minutes,omitempty"`
 	coverageStatus     string
 }
 
@@ -50,6 +52,7 @@ type LogEntry struct {
 const (
 	defaultServiceLogsRawLimit     = 20
 	defaultServiceLogsSummaryLimit = 100
+	defaultServiceLogsLookback     = 60
 )
 
 // GetServiceLogsArgs represents the input arguments for the get_service_logs tool
@@ -86,6 +89,9 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		if err := validateLogResponseMode(args.ResponseMode); err != nil {
 			return nil, nil, err
 		}
+		if len(args.BodyFilters) > 0 && !hasExplicitLogWindow(args.StartTimeISO, args.LookbackMinutes) {
+			return nil, nil, fmt.Errorf("body_filters requires an explicit window: set lookback_minutes or start_time_iso")
+		}
 
 		// Set default values
 		limit := args.Limit
@@ -98,7 +104,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 
 		lookbackMinutes := args.LookbackMinutes
 		if lookbackMinutes == 0 {
-			lookbackMinutes = 60
+			lookbackMinutes = defaultServiceLogsLookback
 		}
 
 		// Convert args to map for GetTimeRange utility
@@ -142,6 +148,10 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
 		}
 		logs.HTTPStatusField = statusField
+		if args.StartTimeISO == "" && args.EndTimeISO == "" && args.LookbackMinutes == 0 {
+			logs.WindowSource = "default"
+			logs.WindowMinutes = defaultServiceLogsLookback
+		}
 		addServiceLogsGuidance(logs, args, limit)
 
 		bounds := serviceLogsScope{startTime, endTime, normalizedIndex}
