@@ -68,6 +68,23 @@ func TestGetLogsBodySearchRequiresExplicitWindow(t *testing.T) {
 	assertExplicitWindowError(t, err)
 }
 
+func TestGetLogsBodySearchRejectsNegativeLookback(t *testing.T) {
+	handler := NewGetLogsHandler(http.DefaultClient, models.Config{})
+	query := []map[string]interface{}{{
+		"type": "filter",
+		"query": map[string]interface{}{
+			"$contains": []interface{}{"Body", "correlation-id"},
+		},
+	}}
+
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+		LogjsonQuery: query, LookbackMinutes: -5,
+	})
+	if err == nil || !strings.Contains(err.Error(), "lookback_minutes must be at least 1") {
+		t.Fatalf("error = %v, want minimum lookback error", err)
+	}
+}
+
 func TestGetServiceLogsBodyFiltersRequireExplicitWindow(t *testing.T) {
 	handler := NewGetServiceLogsHandler(http.DefaultClient, models.Config{})
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceLogsArgs{
@@ -88,6 +105,10 @@ func TestBodySearchWindowValidationScope(t *testing.T) {
 	}{
 		{"nested contains words", []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{"$and": []interface{}{map[string]interface{}{"$containsWords": []interface{}{"Body", "request failed"}}}}}}, true},
 		{"case insensitive contains", []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{"$icontains": []interface{}{"Body", "request-id"}}}}, true},
+		{"negated contains", []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{"$notcontains": []interface{}{"Body", "healthcheck"}}}}, true},
+		{"case insensitive negated contains", []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{"$inotcontains": []interface{}{"Body", "healthcheck"}}}}, true},
+		{"negated contains words", []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{"$notcontainsWords": []interface{}{"Body", "request failed"}}}}, true},
+		{"case insensitive negated contains words", []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{"$inotcontainsWords": []interface{}{"Body", "request failed"}}}}, true},
 		{"body equality", []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"Body", "ready"}}}}, false},
 		{"attribute contains", []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{"$contains": []interface{}{"attributes['path']", "/health"}}}}, false},
 	} {

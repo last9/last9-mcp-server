@@ -31,6 +31,23 @@ func TestGetTracesIDFilterRequiresExplicitWindow(t *testing.T) {
 	}
 }
 
+func TestGetTracesIDFilterRejectsNegativeLookback(t *testing.T) {
+	handler := NewGetTracesHandler(http.DefaultClient, models.Config{})
+	query := []map[string]interface{}{{
+		"type": "filter",
+		"query": map[string]interface{}{
+			"$eq": []interface{}{"TraceId", "0123456789abcdef0123456789abcdef"},
+		},
+	}}
+
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
+		TracejsonQuery: query, LookbackMinutes: -5,
+	})
+	if err == nil || !strings.Contains(err.Error(), "lookback_minutes must be at least 1") {
+		t.Fatalf("error = %v, want minimum lookback error", err)
+	}
+}
+
 func TestTraceIDFilterWindowValidationScope(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
