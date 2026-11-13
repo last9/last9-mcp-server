@@ -2,6 +2,8 @@ package utils
 
 import (
 	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +15,7 @@ import (
 const (
 	UpstreamBodyLimit              = 512
 	MetricsTooManySamplesErrorCode = "METRICS_QUERY_TOO_MANY_SAMPLES"
+	AlertingNotEnabledMessage      = "Alerting is not enabled for this org, so there is no alert data. Enable alerting in the Last9 app to use alert tools."
 
 	timeoutNarrowingAdvice = "Try narrowing the time range, such as a smaller time window, or adding a service filter. Do not retry the same request unchanged."
 )
@@ -59,6 +62,20 @@ type UpstreamHTTPError struct {
 	message    string
 }
 
+type expectedEmptyStateError struct {
+	message string
+}
+
+func (e *expectedEmptyStateError) Error() string { return e.message }
+
+func ExpectedEmptyStateMessage(err error) (string, bool) {
+	var state *expectedEmptyStateError
+	if !errors.As(err, &state) {
+		return "", false
+	}
+	return state.message, true
+}
+
 func (e *UpstreamHTTPError) Error() string { return e.message }
 
 // NewUpstreamHTTPError maps a non-OK HTTP response to a tool-facing error.
@@ -69,6 +86,13 @@ func NewUpstreamHTTPError(resp *http.Response, op string, hint ...string) error 
 		return fmt.Errorf("%s failed: empty upstream response", op)
 	}
 	status := resp.StatusCode
+	if status >= http.StatusBadRequest && status < http.StatusInternalServerError {
+		body := ReadLimitedResponseBody(resp.Body, 4<<10)
+		if upstreamErrorCode(body) == "alerting_not_enabled" {
+			return &expectedEmptyStateError{message: AlertingNotEnabledMessage}
+		}
+		resp.Body = io.NopCloser(strings.NewReader(body))
+	}
 	if status == http.StatusBadRequest || status == http.StatusUnprocessableEntity {
 		body := ReadLimitedResponseBody(resp.Body, 4<<10)
 		if status == http.StatusUnprocessableEntity && strings.Contains(strings.ToLower(body), "too many samples") {
@@ -92,6 +116,25 @@ func NewUpstreamHTTPError(resp *http.Response, op string, hint ...string) error 
 		DrainResponseBody(resp.Body)
 	}
 	return &UpstreamHTTPError{StatusCode: status, Body: body, message: fmt.Sprintf("%s failed with HTTP %d. %s", op, status, upstreamStatusAdvice(status))}
+}
+
+func upstreamErrorCode(body string) string {
+	var envelope struct {
+		Code         string `json:"code"`
+		ErrorDetails *struct {
+			Code string `json:"code"`
+		} `json:"error_details"`
+	}
+	if json.Unmarshal([]byte(body), &envelope) != nil {
+		return ""
+	}
+	if envelope.Code != "" {
+		return envelope.Code
+	}
+	if envelope.ErrorDetails != nil {
+		return envelope.ErrorDetails.Code
+	}
+	return ""
 }
 
 func upstreamStatusAdvice(statusCode int) string {

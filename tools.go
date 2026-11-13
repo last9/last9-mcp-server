@@ -199,6 +199,9 @@ func registerTool[In, Out any](server *last9mcp.Last9MCPServer, tool *mcp.Tool, 
 func tagSystemErrors[In, Out any](handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 		result, out, err := handler(ctx, req, in)
+		if message, ok := utils.ExpectedEmptyStateMessage(err); ok {
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: message}}}, out, nil
+		}
 		if utils.IsSystemError(err) {
 			return utils.ErrorResult(err), out, nil
 		}
