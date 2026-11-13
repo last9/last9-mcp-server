@@ -36,7 +36,7 @@ These are instructions for constructing natural language trace analytics queries
 5. Translate the query to JSON pipeline format using the correct field references
 6. Call the `get_traces` tool with canonical time params:
    - Use `start_time_iso` + `end_time_iso` when the user gave explicit absolute dates/times
-   - Otherwise use `lookback_minutes` (default: 60 when no time is specified); TraceId filters must set it explicitly
+   - Otherwise use `lookback_minutes` (default: 60, minimum: 1); TraceId filters must set it explicitly
 7. Analyze the results and provide insights to the user
 
 **CRITICAL TIME PARAMETER RULES:**

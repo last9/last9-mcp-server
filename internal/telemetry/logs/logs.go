@@ -51,6 +51,9 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 			return nil, nil, err
 		}
 		args.LogjsonQuery = sanitizedQuery
+		if args.LookbackMinutes < 0 {
+			return nil, nil, fmt.Errorf("lookback_minutes must be at least 1")
+		}
 		if pipelineHasBodySearch(sanitizedQuery) && !hasExplicitLogWindow(args.StartTimeISO, args.LookbackMinutes) {
 			return nil, nil, fmt.Errorf("body searches require an explicit window: set lookback_minutes or start_time_iso")
 		}
@@ -72,6 +75,7 @@ func pipelineHasBodySearch(stages []map[string]interface{}) bool {
 	for _, stage := range stages {
 		if stage["type"] == "filter" && conditionHasFieldOperator(stage["query"], "Body", map[string]struct{}{
 			"$contains": {}, "$containsWords": {}, "$icontains": {}, "$icontainsWords": {},
+			"$notcontains": {}, "$notcontainsWords": {}, "$inotcontains": {}, "$inotcontainsWords": {},
 		}) {
 			return true
 		}

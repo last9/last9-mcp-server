@@ -22,7 +22,7 @@ Pass JSON stages in `logjson_query`, never `pipeline`; **NOT SQL**/`stage`/`cond
 
 **HTTP counts:** `get_logs`; status from Body, not SeverityText. `get_service_logs` for lines.
 
-**Time:** `lookback_minutes` default **5**; absolute→`start_time_iso`+`end_time_iso` (not Timestamp). Body `$contains`/`$containsWords` searches require an explicit `lookback_minutes` or `start_time_iso`.
+**Time:** `lookback_minutes` default **5**, min 1; absolute→`start_time_iso`+`end_time_iso` (not Timestamp). Body contains-family searches require explicit `lookback_minutes` or `start_time_iso`.
 
 **Lines:** omit `response_mode`; >20→summary; `raw` only for exact text, max 32000 bytes (truncates/errors).
 

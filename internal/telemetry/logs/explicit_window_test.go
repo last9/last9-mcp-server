@@ -3,6 +3,7 @@ package logs
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -44,10 +45,10 @@ func TestServiceLogsDefaultWindowEmptyResultIsExplicit(t *testing.T) {
 		EndTime:       "2026-11-13T14:00:00Z",
 		Logs:          []LogEntry{},
 		WindowSource:  "default",
-		WindowMinutes: 60,
+		WindowMinutes: defaultServiceLogsLookback,
 	}
 	addServiceLogsGuidance(response, GetServiceLogsArgs{ServiceName: "checkout"}, 100)
-	if !strings.Contains(response.Hint, "No matches in the last 60 minutes (default window)") {
+	if !strings.Contains(response.Hint, fmt.Sprintf("No matches in the last %d minutes (default window)", defaultServiceLogsLookback)) {
 		t.Fatalf("hint = %q", response.Hint)
 	}
 }

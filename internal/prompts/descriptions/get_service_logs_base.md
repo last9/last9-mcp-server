@@ -14,7 +14,7 @@ Fetch log lines for one service (`service_name`, optional `severity_filters`, `b
 
 **Lines:** omit `response_mode`; >20→summary; `raw` only for exact text, max 32000 bytes (truncates/errors).
 
-**Time/index:** `lookback_minutes` defaults to 60; `body_filters` requires explicit `lookback_minutes` or `start_time_iso`. Use `start_time_iso`+`end_time_iso` (RFC3339) for absolute windows. Use a user-named `index` (`physical_index:<name>` / `rehydration_index:<block>`) or one from `get_service_profile`. Match env via `log_index_envs`; query matching indexes separately. Omit `index` for `default` or unknown.
+**Time/index:** `lookback_minutes` default 60, min 1; `body_filters` requires explicit `lookback_minutes` or `start_time_iso`. Use `start_time_iso`+`end_time_iso` (RFC3339) for absolute windows. Use a named `index` (`physical_index:<name>` / `rehydration_index:<block>`) or one from `get_service_profile`. Match env via `log_index_envs`; query matching indexes separately. Omit `index` for `default` or unknown.
 
 Full service-logs reference: `last9://reference/service_logs`. Logjson: `last9://reference/logjson`
 

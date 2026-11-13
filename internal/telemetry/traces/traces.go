@@ -47,6 +47,9 @@ func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Co
 		if err := SanitizeTraceJSONQuery(args.TracejsonQuery); err != nil {
 			return nil, nil, err
 		}
+		if args.LookbackMinutes < 0 {
+			return nil, nil, fmt.Errorf("lookback_minutes must be at least 1")
+		}
 		if pipelineHasTraceIDFilter(args.TracejsonQuery) && args.StartTimeISO == "" && args.LookbackMinutes == 0 {
 			return nil, nil, fmt.Errorf("TraceId filters require an explicit window: set lookback_minutes or start_time_iso")
 		}

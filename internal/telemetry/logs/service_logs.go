@@ -52,6 +52,7 @@ type LogEntry struct {
 const (
 	defaultServiceLogsRawLimit     = 20
 	defaultServiceLogsSummaryLimit = 100
+	defaultServiceLogsLookback     = 60
 )
 
 // GetServiceLogsArgs represents the input arguments for the get_service_logs tool
@@ -103,7 +104,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 
 		lookbackMinutes := args.LookbackMinutes
 		if lookbackMinutes == 0 {
-			lookbackMinutes = 60
+			lookbackMinutes = defaultServiceLogsLookback
 		}
 
 		// Convert args to map for GetTimeRange utility
@@ -149,7 +150,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		logs.HTTPStatusField = statusField
 		if args.StartTimeISO == "" && args.LookbackMinutes == 0 {
 			logs.WindowSource = "default"
-			logs.WindowMinutes = 60
+			logs.WindowMinutes = defaultServiceLogsLookback
 		}
 		addServiceLogsGuidance(logs, args, limit)
 
