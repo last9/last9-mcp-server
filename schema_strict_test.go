@@ -75,6 +75,41 @@ func TestServedToolSchemasAreStrictProviderSafe(t *testing.T) {
 	}
 }
 
+// schemaRootStrictnessOptOuts documents tools that intentionally accept unknown
+// root arguments. Every entry must give the reason for the exception.
+var schemaRootStrictnessOptOuts = map[string]string{}
+
+func TestServedToolSchemaObjectRootsRejectUnknownProperties(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, toolsets.Filter{}); err != nil {
+		t.Fatalf("dumpTools: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name        string         `json:"name"`
+			InputSchema map[string]any `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Tools) == 0 {
+		t.Fatal("no tools served")
+	}
+
+	for _, tool := range out.Tools {
+		if tool.InputSchema["type"] != "object" {
+			continue
+		}
+		if reason := schemaRootStrictnessOptOuts[tool.Name]; reason != "" {
+			continue
+		}
+		if additional, ok := tool.InputSchema["additionalProperties"].(bool); !ok || additional {
+			t.Errorf("%s: object root must set additionalProperties to false", tool.Name)
+		}
+	}
+}
+
 func subsumes(orig, norm any) bool {
 	switch o := orig.(type) {
 	case map[string]any:
