@@ -35,7 +35,8 @@ type ValidateDashboardArgs struct {
 // dashboard_definition / variables are JSON objects (not byte arrays).
 func GetValidateDashboardInputSchema() map[string]any {
 	return map[string]any{
-		"type": "object",
+		"type":                 "object",
+		"additionalProperties": false,
 		"properties": map[string]any{
 			"dashboard_id": map[string]any{
 				"type":        "string",
