@@ -147,7 +147,7 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		return nil, err
 	}
 	endProcess := utils.StartToolPhase(ctx, "get_logs", "post_process")
-	defaultWindow := args.StartTimeISO == "" && args.LookbackMinutes == 0
+	defaultWindow := args.StartTimeISO == "" && args.EndTimeISO == "" && args.LookbackMinutes == 0
 	if defaultWindow {
 		result["window_source"] = "default"
 		result["window_minutes"] = defaultGetLogsLookbackMinutes

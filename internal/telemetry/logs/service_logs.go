@@ -148,7 +148,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
 		}
 		logs.HTTPStatusField = statusField
-		if args.StartTimeISO == "" && args.LookbackMinutes == 0 {
+		if args.StartTimeISO == "" && args.EndTimeISO == "" && args.LookbackMinutes == 0 {
 			logs.WindowSource = "default"
 			logs.WindowMinutes = defaultServiceLogsLookback
 		}

@@ -39,6 +39,27 @@ func TestGetLogsDefaultWindowIsExplicitInResult(t *testing.T) {
 	}
 }
 
+func TestGetLogsEndTimeOnlyDoesNotClaimDefaultWindow(t *testing.T) {
+	srv, _ := streamSearchServer(t, nil)
+	query := []map[string]interface{}{{
+		"type":  "filter",
+		"query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "checkout"}},
+	}}
+	result, _, err := NewGetLogsHandler(srv.Client(), apiModeCfg(srv.URL))(
+		context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+			LogjsonQuery: query,
+			EndTimeISO:   "2026-11-12T14:00:00Z",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	if strings.Contains(text, "default window") || strings.Contains(text, `"window_source"`) {
+		t.Fatalf("response claims a default window: %s", text)
+	}
+}
+
 func TestServiceLogsDefaultWindowEmptyResultIsExplicit(t *testing.T) {
 	response := &ServiceLogsResponse{
 		StartTime:     "2026-11-13T13:00:00Z",
@@ -50,6 +71,23 @@ func TestServiceLogsDefaultWindowEmptyResultIsExplicit(t *testing.T) {
 	addServiceLogsGuidance(response, GetServiceLogsArgs{ServiceName: "checkout"}, 100)
 	if !strings.Contains(response.Hint, fmt.Sprintf("No matches in the last %d minutes (default window)", defaultServiceLogsLookback)) {
 		t.Fatalf("hint = %q", response.Hint)
+	}
+}
+
+func TestServiceLogsEndTimeOnlyDoesNotClaimDefaultWindow(t *testing.T) {
+	srv, _ := streamSearchServer(t, nil)
+	result, _, err := NewGetServiceLogsHandler(srv.Client(), apiModeCfg(srv.URL))(
+		context.Background(), &mcp.CallToolRequest{}, GetServiceLogsArgs{
+			ServiceName: "checkout",
+			EndTimeISO:  "2026-11-12T14:00:00Z",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	if strings.Contains(text, "default window") || strings.Contains(text, `"window_source"`) {
+		t.Fatalf("response claims a default window: %s", text)
 	}
 }
 
