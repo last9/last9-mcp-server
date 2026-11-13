@@ -36,11 +36,11 @@ These are instructions for constructing natural language trace analytics queries
 5. Translate the query to JSON pipeline format using the correct field references
 6. Call the `get_traces` tool with canonical time params:
    - Use `start_time_iso` + `end_time_iso` when the user gave explicit absolute dates/times
-   - Otherwise use `lookback_minutes` (default: 60 when no time is specified)
+   - Otherwise use `lookback_minutes` (default: 60 when no time is specified); TraceId filters must set it explicitly
 7. Analyze the results and provide insights to the user
 
 **CRITICAL TIME PARAMETER RULES:**
-- **ALWAYS use lookback_minutes: 60 when no time range is specified**
+- **ALWAYS use lookback_minutes: 60 when no time range is specified; TraceId filters require this explicit value**
 - **`start_time_iso` and `end_time_iso` are top-level request parameters — NEVER put them inside the pipeline as `Timestamp` filter conditions**
 - When the user gives absolute dates/times → set `start_time_iso` + `end_time_iso` on the tool call, leave the pipeline for data filtering only
 - `{"$gte": ["Timestamp", "..."]}` in the pipeline is WRONG for time range queries — use the request-level params instead
