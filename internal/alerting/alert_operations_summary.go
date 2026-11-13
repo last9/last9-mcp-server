@@ -189,6 +189,9 @@ func nonEmptyTrimmed(values []string) []string {
 }
 
 func opsSummaryErrorResult(err error) (*mcp.CallToolResult, any, error) {
+	if _, ok := utils.ExpectedEmptyStateMessage(err); ok {
+		return nil, nil, err
+	}
 	var apiErr *utils.UpstreamHTTPError
 	if !errors.As(err, &apiErr) {
 		return nil, nil, err

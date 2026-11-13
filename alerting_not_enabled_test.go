@@ -21,22 +21,33 @@ func TestAlertToolsReturnAlertingNotEnabledAsValidEmptyState(t *testing.T) {
 	tests := []struct {
 		tool string
 		path string
+		args map[string]any
 	}{
 		{tool: "get_alerts", path: "/alerts/monitor"},
 		{tool: "get_alert_config", path: "/alert-rules"},
-		{tool: "get_alert_groups", path: "/entities"},
-		{tool: "get_alert_rule_state", path: "/alerts/monitor"},
-		{tool: "get_entity_alert_rules", path: "/entities/group-1/alert-rules"},
+		{tool: "get_alert_groups", path: "/entities/list"},
+		{tool: "get_alert_rule_state", path: "/alerts/monitor", args: map[string]any{
+			"start_time": "2026-11-13T10:00:00Z", "end_time": "2026-11-13T10:01:00Z", "step": 60,
+		}},
+		{tool: "get_entity_alert_rules", path: "/entities/group-1/alert-rules", args: map[string]any{"entity_id": "group-1"}},
 		{tool: "get_alert_coverage", path: "/alerts/coverage"},
 		{tool: "get_alert_hygiene", path: "/alerts/hygiene"},
-		{tool: "get_alert_operations_summary", path: "/alerts/health_summary"},
+		{tool: "get_alert_operations_summary", path: "/alerts/health_summary", args: map[string]any{
+			"start_time_iso": "2026-11-13T10:00:00Z", "end_time_iso": "2026-11-13T11:00:00Z",
+		}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.tool, func(t *testing.T) {
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tt.tool == "get_alert_config" && r.URL.Path == "/notification_settings" {
+					_, _ = io.WriteString(w, `[]`)
+					return
+				}
 				if r.URL.Path != tt.path {
-					t.Fatalf("path = %q, want %q", r.URL.Path, tt.path)
+					t.Errorf("path = %q, want %q", r.URL.Path, tt.path)
+					http.Error(w, "unexpected path", http.StatusNotFound)
+					return
 				}
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnprocessableEntity)
@@ -44,17 +55,9 @@ func TestAlertToolsReturnAlertingNotEnabledAsValidEmptyState(t *testing.T) {
 			}))
 			t.Cleanup(upstream.Close)
 
-			cfg := writeToolTestConfig(upstream.URL)
-			handler := func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
-				err := last9api.NewClient(upstream.Client(), cfg).Do(ctx, tt.tool, last9api.Request{Method: http.MethodGet, Path: tt.path}, nil)
-				return nil, nil, err
-			}
-			session := connectToolFixture(t, registeredToolFixture{
-				tool:    &mcp.Tool{Name: tt.tool, Annotations: readOnlyTool(tt.tool)},
-				timeout: time.Second,
-			}, handler)
+			session := connectTestSession(t, writeToolTestConfig(upstream.URL), upstream.Client())
 
-			result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: tt.tool, Arguments: map[string]any{}})
+			result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: tt.tool, Arguments: tt.args})
 			if result.IsError {
 				t.Fatalf("typed disabled response returned an error: %q", toolResultText(result))
 			}
