@@ -76,6 +76,7 @@ func TestAlertToolOtherUpstreamErrorsAreUnchanged(t *testing.T) {
 	}{
 		{name: "unauthorized", status: http.StatusUnauthorized, body: `{"error_details":{"code":"alerting_not_enabled"}}`},
 		{name: "forbidden", status: http.StatusForbidden, body: `{"error_details":{"code":"alerting_not_enabled"}}`},
+		{name: "top-level code", status: http.StatusUnprocessableEntity, body: `{"code":"alerting_not_enabled"}`},
 		{name: "untyped 4xx", status: http.StatusFailedDependency, body: `{"error":{"code":"some_other_code"}}`},
 		{name: "server error", status: http.StatusInternalServerError, body: `{"error":{"code":"alerting_not_enabled"}}`},
 	}

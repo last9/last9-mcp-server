@@ -125,16 +125,12 @@ func NewUpstreamHTTPError(resp *http.Response, op string, hint ...string) error 
 
 func upstreamErrorCode(body string) string {
 	var envelope struct {
-		Code         string `json:"code"`
 		ErrorDetails *struct {
 			Code string `json:"code"`
 		} `json:"error_details"`
 	}
 	if json.Unmarshal([]byte(body), &envelope) != nil {
 		return ""
-	}
-	if envelope.Code != "" {
-		return envelope.Code
 	}
 	if envelope.ErrorDetails != nil {
 		return envelope.ErrorDetails.Code
