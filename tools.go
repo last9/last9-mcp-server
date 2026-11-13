@@ -181,7 +181,7 @@ func registerTool[In, Out any](server *last9mcp.Last9MCPServer, tool *mcp.Tool, 
 	if normErr := normalizeToolInputSchema[In](tool); normErr != nil {
 		return fmt.Errorf("register %q: %w", tool.Name, normErr)
 	}
-	if regErr := last9mcp.RegisterInstrumentedTool(server, tool, tagSystemErrors(handler)); regErr != nil {
+	if regErr := last9mcp.RegisterInstrumentedTool(server, tool, tagSystemErrors(tool.Name, handler)); regErr != nil {
 		return fmt.Errorf("register %q: %w", tool.Name, regErr)
 	}
 	// Middleware added later runs first, so integer coercion precedes the check.
@@ -196,13 +196,27 @@ func registerTool[In, Out any](server *last9mcp.Last9MCPServer, tool *mcp.Tool, 
 
 // tagSystemErrors returns an upstream failure as a system_error-tagged result itself:
 // the SDK would wrap the error in an untagged result that telemetry counts as user_error.
-func tagSystemErrors[In, Out any](handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
+func tagSystemErrors[In, Out any](toolName string, handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 		result, out, err := handler(ctx, req, in)
+		if message, ok := utils.ExpectedEmptyStateMessage(err); ok && alertToolSupportsDisabledState(toolName) {
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: message}}}, out, nil
+		}
 		if utils.IsSystemError(err) {
 			return utils.ErrorResult(err), out, nil
 		}
 		return result, out, err
+	}
+}
+
+func alertToolSupportsDisabledState(toolName string) bool {
+	switch toolName {
+	case "get_alerts", "get_alert_config", "get_alert_groups", "get_alert_rule_state",
+		"get_entity_alert_rules", "get_alert_coverage", "get_alert_hygiene",
+		"get_alert_operations_summary":
+		return true
+	default:
+		return false
 	}
 }
 

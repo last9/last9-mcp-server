@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `--help` no longer prints `LAST9_REFRESH_TOKEN` as the default value of `--refresh_token`; the environment value is now applied by the configuration parser after flag registration (#559).
+- Alert tools now treat the API's typed `alerting_not_enabled` response as a valid empty state with guidance to enable alerting, while preserving other upstream failures (#557).
 - `validate_dashboard` now rejects unknown top-level arguments before running; its hand-built input schema root previously accepted keys that inferred tool schemas reject. A schema invariant now keeps all served object roots strict (#555).
 - `create_alert`, `update_alert`, `create_kpi` and `create_alert_from_chart` no longer report a 2xx response with an empty body or no rule/KPI id as a plain failure, and `create_dashboard`/`update_dashboard` no longer report a 2xx with an empty, oversized or dashboard-less body as a plain failure or as success. The write may have landed (for `create_alert_from_chart`, as a live rule), so they now answer "may or may not have been applied … Do not retry until you have checked: <verify call>" instead of an error an agent would retry into a duplicate. Dashboard writes also reject unknown top-level arguments before any API request (#536).
 - `get_traces` now documents that filter-only queries return span rows, so trace-level questions deduplicate by `TraceId` before using `get_service_traces` with an exact ID to fetch the complete trace (#544).
