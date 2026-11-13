@@ -86,6 +86,9 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		if err := validateLogResponseMode(args.ResponseMode); err != nil {
 			return nil, nil, err
 		}
+		if len(args.BodyFilters) > 0 && !hasExplicitLogWindow(args.StartTimeISO, args.LookbackMinutes) {
+			return nil, nil, fmt.Errorf("body_filters requires an explicit window: set lookback_minutes or start_time_iso")
+		}
 
 		// Set default values
 		limit := args.Limit

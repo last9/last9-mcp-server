@@ -51,6 +51,9 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 			return nil, nil, err
 		}
 		args.LogjsonQuery = sanitizedQuery
+		if pipelineHasBodySearch(sanitizedQuery) && !hasExplicitLogWindow(args.StartTimeISO, args.LookbackMinutes) {
+			return nil, nil, fmt.Errorf("body searches require an explicit window: set lookback_minutes or start_time_iso")
+		}
 
 		// Handle logjson_query directly
 		result, err := handleLogJSONQuery(ctx, client, cfg, sanitizedQuery, args)
@@ -59,6 +62,45 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 		}
 		return result, nil, nil
 	}
+}
+
+func hasExplicitLogWindow(startTimeISO string, lookbackMinutes int) bool {
+	return startTimeISO != "" || lookbackMinutes != 0
+}
+
+func pipelineHasBodySearch(stages []map[string]interface{}) bool {
+	for _, stage := range stages {
+		if stage["type"] == "filter" && conditionHasFieldOperator(stage["query"], "Body", map[string]struct{}{
+			"$contains": {}, "$containsWords": {}, "$icontains": {}, "$icontainsWords": {},
+		}) {
+			return true
+		}
+	}
+	return false
+}
+
+func conditionHasFieldOperator(value any, field string, operators map[string]struct{}) bool {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		for key, child := range typed {
+			if _, ok := operators[key]; ok {
+				args, ok := child.([]interface{})
+				if ok && len(args) > 0 && args[0] == field {
+					return true
+				}
+			}
+			if conditionHasFieldOperator(child, field, operators) {
+				return true
+			}
+		}
+	case []interface{}:
+		for _, child := range typed {
+			if conditionHasFieldOperator(child, field, operators) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, args GetLogsArgs) (*mcp.CallToolResult, error) {
