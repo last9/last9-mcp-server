@@ -183,6 +183,25 @@ func TestRoutingSectionsNameToolsServedAlongside(t *testing.T) {
 	}
 }
 
+// add_remapping_rule is served with the alerts toolset, which has no log or
+// trace discovery tools; its discovery steps must be routes TrimRoutes drops.
+func TestAddRemappingRuleDiscoveryFollowsToolset(t *testing.T) {
+	discovery := []string{"get_log_attributes", "get_trace_attributes", "get_logs"}
+	full := servedDescriptions(t, "")["add_remapping_rule"]
+	alerts := servedDescriptions(t, "alerts")["add_remapping_rule"]
+	if alerts == "" {
+		t.Fatal("--toolsets=alerts does not serve add_remapping_rule")
+	}
+	for _, tool := range discovery {
+		if !strings.Contains(full, "`"+tool+"`") {
+			t.Errorf("full toolset: add_remapping_rule does not route to %s", tool)
+		}
+		if strings.Contains(alerts, "`"+tool+"`") {
+			t.Errorf("--toolsets=alerts: add_remapping_rule names %s, which that set does not serve", tool)
+		}
+	}
+}
+
 func TestOmittedSectionsAreNotServed(t *testing.T) {
 	descriptions := servedDescriptions(t, "")
 	for tool, sections := range omittedSections {

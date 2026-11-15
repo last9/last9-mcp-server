@@ -53,6 +53,12 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 			return nil, nil, err
 		}
 		args.LogjsonQuery = sanitizedQuery
+		if args.LookbackMinutes < 0 {
+			return nil, nil, fmt.Errorf("lookback_minutes must be at least 1")
+		}
+		if pipelineHasBodySearch(sanitizedQuery) && !hasExplicitLogWindow(args.StartTimeISO, args.LookbackMinutes) {
+			return nil, nil, fmt.Errorf("body searches require an explicit window: set lookback_minutes or start_time_iso")
+		}
 
 		startTime, endTime, err := parseTimeRangeFromArgs(args)
 		if err != nil {
@@ -74,6 +80,46 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 	}
 }
 
+func hasExplicitLogWindow(startTimeISO string, lookbackMinutes int) bool {
+	return startTimeISO != "" || lookbackMinutes != 0
+}
+
+func pipelineHasBodySearch(stages []map[string]interface{}) bool {
+	for _, stage := range stages {
+		if stage["type"] == "filter" && conditionHasFieldOperator(stage["query"], "Body", map[string]struct{}{
+			"$contains": {}, "$containsWords": {}, "$icontains": {}, "$icontainsWords": {},
+			"$notcontains": {}, "$notcontainsWords": {}, "$inotcontains": {}, "$inotcontainsWords": {},
+		}) {
+			return true
+		}
+	}
+	return false
+}
+
+func conditionHasFieldOperator(value any, field string, operators map[string]struct{}) bool {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		for key, child := range typed {
+			if _, ok := operators[key]; ok {
+				args, ok := child.([]interface{})
+				if ok && len(args) > 0 && args[0] == field {
+					return true
+				}
+			}
+			if conditionHasFieldOperator(child, field, operators) {
+				return true
+			}
+		}
+	case []interface{}:
+		for _, child := range typed {
+			if conditionHasFieldOperator(child, field, operators) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // getLogsQuery is a validated get_logs call: sanitized args, resolved window
 // and the guardrail verdict whose hints the result carries.
 type getLogsQuery struct {
@@ -92,12 +138,20 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 	}
 	q.guardrailVerdict.AddHints(&env)
 	addGetLogsHints(cfg, args, result, &env)
+	defaultWindow := args.StartTimeISO == "" && args.EndTimeISO == "" && args.LookbackMinutes == 0
+	if defaultWindow {
+		result["window_source"] = "default"
+		result["window_minutes"] = defaultGetLogsLookbackMinutes
+	}
 	truncated := addGetLogsGuidance(result, args, getLogsGuidanceContext{
 		startMs:        startTime,
 		endMs:          endTime,
 		effectiveLimit: effectiveGetLogsResultLimit(cfg, args.Limit),
 		maxLimit:       effectiveGetLogsResultLimit(cfg, 0),
 	})
+	if defaultWindow {
+		setDefaultWindowEmptyGuidance(result, "logs", defaultGetLogsLookbackMinutes)
+	}
 	if args.ResponseMode != logResponseModeRaw {
 		result = summarizeLogResult(result, startTime, endTime, truncated)
 	}

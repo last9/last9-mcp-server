@@ -201,7 +201,6 @@ internal/telemetry/traces/schema_test.go	6	// TestGetTracesArgs_SchemaCompatibil
 internal/telemetry/traces/service_traces_test.go	4	// TestGetServiceTracesHandler_LegitEmptyResultIsNotError confirms a well-formed
 internal/telemetry/traces/service_traces_test.go	4	// TestGetServiceTracesHandler_MissingResultArraySetsIsErrorAndPreservesDiagnostic
 internal/telemetry/traces/traces.go	5	// fetchTraceJSONQuery executes the trace query by resolving an
-internal/telemetry/traces/traces.go	4	// Aggregate pipelines (group-by, avg/median/quantile/stddev, etc.) must
 internal/telemetry/traces/traces.go	10	// Trace pipelines never reference the Body field, so HasExpensiveBodyParsing
 internal/telemetry/traces/traces.go	4	// partialErr carries chunk context (e.g. "chunk 3/6 failed: ...") and
 internal/telemetry/traces/traces.go	6	// findExactTraceIDInCondition returns a trace ID fast-path when an exact

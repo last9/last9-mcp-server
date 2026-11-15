@@ -74,14 +74,38 @@ func TestToolCallEndsAtDeadlineWhenUpstreamStalls(t *testing.T) {
 	if !res.IsError {
 		t.Fatalf("want an error result once every chunk missed the deadline, got %q", toolResultText(res))
 	}
-	if text := toolResultText(res); !strings.Contains(text, "tool-call deadline") || !strings.Contains(text, "Narrow the time range") {
-		t.Fatalf("want the deadline named with next steps, got %q", text)
+	if text := toolResultText(res); !strings.Contains(text, `"cause":"timeout"`) || !strings.Contains(text, "$contains") {
+		t.Fatalf("want the scan's timeout guidance with get_logs next steps, got %q", text)
 	}
 	if res.Meta[utils.ErrorTypeMetaKey] != utils.SystemErrorType {
 		t.Fatalf("deadline error missing system_error tag: %v", res.Meta)
 	}
 	if requests.Load() == 0 {
 		t.Fatal("upstream was never called; the test did not exercise a stalled request")
+	}
+}
+
+// A seven-day pattern sample runs 168 hourly chunks and can reach the deadline;
+// its pattern-specific guidance must survive the deadline wrapper.
+func TestGetLogPatternsAtDeadlineKeepsTimeoutGuidance(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { stall(r) }))
+	t.Cleanup(upstream.Close)
+
+	session := connectToolFixture(t, registeredToolFixture{
+		tool:    &mcp.Tool{Name: "get_log_patterns", Annotations: readOnlyTool("Get Log Patterns")},
+		timeout: 100 * time.Millisecond,
+	}, logs.NewGetLogPatternsHandler(upstream.Client(), writeToolTestConfig(upstream.URL)))
+	result := callRegisteredTool(t, session, &mcp.CallToolParams{
+		Name:      "get_log_patterns",
+		Arguments: map[string]any{"service_name": "checkout", "lookback_minutes": 7 * 24 * 60, "sample_size": 5000},
+	})
+	assertToolError(t, result, toolErrorExpectation{
+		contains: []string{`"cause":"timeout"`, "body_filters", "sample_size", "do not retry the same request unchanged"},
+		absent:   []string{"tool-call deadline"},
+		system:   true,
+	})
+	if result.Meta[utils.GuidanceCauseMetaKey] != utils.GuidanceCauseTimeout {
+		t.Errorf("want _meta %s=%s, got %v", utils.GuidanceCauseMetaKey, utils.GuidanceCauseTimeout, result.Meta)
 	}
 }
 

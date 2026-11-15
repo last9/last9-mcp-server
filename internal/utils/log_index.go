@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -169,8 +168,7 @@ func fetchLogsSettings(ctx context.Context, client *http.Client, cfg models.Conf
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("logs settings request failed with status %d: %s", resp.StatusCode, string(body))
+		return NewUpstreamHTTPError(resp, "logs settings")
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {

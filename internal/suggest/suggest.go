@@ -11,13 +11,13 @@ import (
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const (
 	maxDidYouMeanSuggestions = 3
-	maxSuggestErrorBodyBytes = 2048
 )
 
 // DidYouMeanArgs are the input parameters for the did_you_mean tool.
@@ -90,12 +90,7 @@ func NewDidYouMeanHandler(client *http.Client, cfg models.Config) func(context.C
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, maxSuggestErrorBodyBytes))
-			msg := strings.TrimSpace(string(body))
-			if msg == "" {
-				msg = http.StatusText(resp.StatusCode)
-			}
-			return nil, nil, fmt.Errorf("suggest API returned status %d: %s", resp.StatusCode, msg)
+			return nil, nil, utils.NewUpstreamHTTPError(resp, "suggest API")
 		}
 
 		body, err := io.ReadAll(resp.Body)

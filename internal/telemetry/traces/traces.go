@@ -49,6 +49,13 @@ func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Co
 		if err := SanitizeTraceJSONQuery(args.TracejsonQuery); err != nil {
 			return nil, nil, err
 		}
+		if args.LookbackMinutes < 0 {
+			return nil, nil, fmt.Errorf("lookback_minutes must be at least 1")
+		}
+		if pipelineHasTraceIDFilter(args.TracejsonQuery) && args.StartTimeISO == "" && args.LookbackMinutes == 0 {
+			return nil, nil, fmt.Errorf("TraceId filters require an explicit window: set lookback_minutes or start_time_iso")
+		}
+		boundFinalSelectLimit(args.TracejsonQuery, effectiveGetTracesLimit(cfg, args.Limit))
 		startTime, endTime, err := parseTimeRangeFromArgs(args)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to parse time range: %v", err)
@@ -83,6 +90,36 @@ func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Co
 	}
 }
 
+func pipelineHasTraceIDFilter(stages []map[string]interface{}) bool {
+	for _, stage := range stages {
+		if stage["type"] == "filter" && conditionReferencesTraceID(stage["query"]) {
+			return true
+		}
+	}
+	return false
+}
+
+func conditionReferencesTraceID(value any) bool {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		for _, child := range typed {
+			if conditionReferencesTraceID(child) {
+				return true
+			}
+		}
+	case []interface{}:
+		if len(typed) > 0 && typed[0] == "TraceId" {
+			return true
+		}
+		for _, child := range typed {
+			if conditionReferencesTraceID(child) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // getTracesQuery is a validated get_traces call: args, resolved window and
 // the guardrail verdict whose hints the result carries.
 type getTracesQuery struct {
@@ -101,12 +138,24 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 	}
 	q.guardrailVerdict.AddHints(&env)
 	addGetTracesHints(cfg, args, result, &env)
+	effectiveLimit := effectiveGetTracesLimit(cfg, args.Limit)
+	maxLimit := configuredMaxGetTracesEntries(cfg)
+	if selectLimit, ok := finalSelectLimit(args.TracejsonQuery); ok {
+		effectiveLimit = min(effectiveLimit, selectLimit)
+		maxLimit = min(maxLimit, maxSelectLimit)
+	}
+	if utils.PipelineHasSelectStage(args.TracejsonQuery) {
+		if err := capTraceResultItems(result, effectiveLimit); err != nil {
+			return nil, err
+		}
+	}
 	addTraceJSONGuidance(result, args, traceGuidanceContext{
 		startMs:        startTime,
 		endMs:          endTime,
-		effectiveLimit: effectiveGetTracesLimit(cfg, args.Limit),
-		maxLimit:       configuredMaxGetTracesEntries(cfg),
+		effectiveLimit: effectiveLimit,
+		maxLimit:       maxLimit,
 	})
+	addDefaultTraceWindowMetadata(result, args)
 	text := utils.FormatQueryResponse(result, &env)
 
 	// Build deep link URL
@@ -118,12 +167,19 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 	return toolResult, nil
 }
 
+func addDefaultTraceWindowMetadata(result map[string]interface{}, args GetTracesArgs) {
+	if args.StartTimeISO == "" && args.LookbackMinutes == 0 {
+		result["window_source"] = "default"
+		result["window_minutes"] = utils.DefaultLookbackMinutes
+	}
+}
+
 func addGetTracesHints(cfg models.Config, args GetTracesArgs, result map[string]interface{}, env *utils.ResultEnvelope) {
 	if maxEntries := configuredMaxGetTracesEntries(cfg); args.Limit > maxEntries {
 		env.Hint(fmt.Sprintf("limit %d exceeds the configured maximum of %d rows; at most %d were requested.", args.Limit, maxEntries, maxEntries))
 	}
 	// An empty aggregate is the answer; only an empty span search suggests a wrong field or scope.
-	if utils.PipelineHasAggregateStage(args.TracejsonQuery) {
+	if utils.PipelineHasAggregateStage(args.TracejsonQuery) || utils.PipelineHasSelectStage(args.TracejsonQuery) {
 		return
 	}
 	if items, err := extractTraceResultItems(result); err == nil && len(items) == 0 {
@@ -418,6 +474,18 @@ func extractTraceResultItems(result map[string]interface{}) ([]json.RawMessage, 
 	default:
 		return nil, fmt.Errorf("traces API response result is not an array")
 	}
+}
+
+func capTraceResultItems(result map[string]interface{}, limit int) error {
+	items, err := extractTraceResultItems(result)
+	if err != nil {
+		return err
+	}
+	if len(items) <= limit {
+		return nil
+	}
+	result["data"].(map[string]interface{})["result"] = items[:limit]
+	return nil
 }
 
 // effectiveGetTracesLimit returns the capped limit to use across all chunks.

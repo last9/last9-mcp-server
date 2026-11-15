@@ -8,12 +8,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 )
@@ -75,10 +73,7 @@ func TestCreateAlertFromChartAllDefaultsOmitted(t *testing.T) { // AE1
 		}
 	}
 
-	wantMeta := mcp.Meta{"reference_url": "/v2/organizations/acme/alerting/groups?group_id=grp-2&rule=rule-9"}
-	if !reflect.DeepEqual(result.Meta, wantMeta) {
-		t.Errorf("meta = %+v, want %+v", result.Meta, wantMeta)
-	}
+	assertAlertLinkMeta(t, result, expectedAlertLink{URL: "/v2/organizations/acme/alerting/groups?group_id=grp-2&rule=rule-9", Label: "Open alert"})
 }
 
 func TestCreateAlertFromChartExplicitScoreUnitThreshold(t *testing.T) { // AE4
@@ -210,8 +205,10 @@ func TestCreateAlertFromChartDuplicateNameGuidance(t *testing.T) {
 func TestAlertIntelEntityAttrsCannotOverrideReservedKeys(t *testing.T) {
 	var gotBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotBody, _ = io.ReadAll(r.Body)
-		_, _ = w.Write([]byte(`{}`))
+		if r.Method == http.MethodPost {
+			gotBody, _ = io.ReadAll(r.Body)
+		}
+		_, _ = w.Write([]byte(`{"id":"rule-1","group_id":"group-1"}`))
 	}))
 	defer server.Close()
 
@@ -286,7 +283,8 @@ func TestCreateAlertFromChartGarbageBodyIsUnknownOutcome(t *testing.T) {
 	}
 }
 
-func TestCreateAlertFromChartSuccessWithoutRuleID(t *testing.T) {
+// A 2xx naming no rule id most likely created a live rule, so it is an unknown outcome too.
+func TestCreateAlertFromChartSuccessWithoutRuleIDIsUnknownOutcome(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{}`))
 	}))
@@ -300,20 +298,9 @@ func TestCreateAlertFromChartSuccessWithoutRuleID(t *testing.T) {
 		SignalKey:   "error_ratio",
 		Name:        "checkout-error-rate",
 	})
-	if err != nil {
-		t.Fatalf("no-rule-id must surface as tool error result, got Go error: %v", err)
-	}
-	if !result.IsError {
-		t.Fatalf("expected error result, got: %s", resultText(result))
-	}
-	if len(result.Meta) != 0 {
-		t.Errorf("missing rule ID must not produce links: %v", result.Meta)
-	}
-	text := resultText(result)
-	for _, want := range []string{"no rule id", "get_alert_config"} {
-		if !strings.Contains(text, want) {
-			t.Errorf("no-rule-id guidance missing %q:\n%s", want, text)
-		}
+	var unknown *utils.WriteOutcomeUnknownError
+	if !errors.As(err, &unknown) {
+		t.Fatalf("expected an unknown-outcome error, got result %v err %v", result, err)
 	}
 }
 
@@ -447,6 +434,7 @@ func TestCreateAlertFromChartDisablesInPassedGroupWhenResponseOmitsIt(t *testing
 	if err != nil || result.IsError {
 		t.Fatalf("result=%s err=%v", resultText(result), err)
 	}
+	assertAlertLinkMeta(t, result, expectedAlertLink{URL: "/v2/organizations/acme/alerting/groups?group_id=grp-7&rule=rule-9", Label: "Open alert"})
 	if reqs := requests(); len(reqs) != 2 || reqs[1].path != "/entities/grp-7/alert-rules/rule-9" {
 		t.Fatalf("requests = %+v, want the disable in grp-7", reqs)
 	}

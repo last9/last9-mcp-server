@@ -64,21 +64,25 @@ func TestAlertWritesReferencePersistedRule(t *testing.T) {
 				if link.IsAbs() || link.Host != "" || link.Path != "/v2/organizations/acme/alerting/groups" || link.Query().Get("rule") != wantID || link.Query().Get("group_id") != groupID || len(link.Query()) != 2 {
 					t.Errorf("reference_url = %q, want persisted rule %q in group %q", link, wantID, groupID)
 				}
+				wantLinks := 1
+				if groupName != "" {
+					wantLinks++
+				}
+				if len(wire.Meta.Links) != wantLinks {
+					t.Fatalf("want %d links: %s", wantLinks, raw)
+				}
+				if wire.Meta.Links[0].Label != "Open alert" || wire.Meta.Links[0].URL != wire.Meta.ReferenceURL {
+					t.Errorf("incorrect alert link: %+v", wire.Meta.Links[0])
+				}
 				if groupName == "" {
-					if _, exists := result.Meta["links"]; exists {
-						t.Errorf("unknown group name must omit links: %s", raw)
-					}
 					return
 				}
-				if len(wire.Meta.Links) != 1 {
-					t.Fatalf("want one group link: %s", raw)
-				}
-				groupLink, err := url.Parse(wire.Meta.Links[0].URL)
+				groupLink, err := url.Parse(wire.Meta.Links[1].URL)
 				if err != nil {
 					t.Fatal(err)
 				}
-				if wire.Meta.Links[0].Label != "Open group" || groupLink.IsAbs() || groupLink.Host != "" || groupLink.Path != link.Path || groupLink.Query().Get("alertGroupNames") != groupName || len(groupLink.Query()) != 1 {
-					t.Errorf("incorrect group link: %+v", wire.Meta.Links[0])
+				if wire.Meta.Links[1].Label != "Open group" || groupLink.IsAbs() || groupLink.Host != "" || groupLink.Path != link.Path || groupLink.Query().Get("alertGroupNames") != groupName || len(groupLink.Query()) != 1 {
+					t.Errorf("incorrect group link: %+v", wire.Meta.Links[1])
 				}
 			})
 		}
@@ -153,7 +157,7 @@ func TestUpdateAlertKeepsKnownGroupName(t *testing.T) {
 	if err := json.Unmarshal(raw, &links); err != nil {
 		t.Fatal(err)
 	}
-	if len(links) != 1 || links[0]["url"] != "/v2/organizations/acme/alerting/groups?alertGroupNames=Known+group" {
+	if len(links) != 2 || links[1]["url"] != "/v2/organizations/acme/alerting/groups?alertGroupNames=Known+group" {
 		t.Fatalf("lost known group name: %s", raw)
 	}
 }

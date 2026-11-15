@@ -21,6 +21,7 @@ func TestCreateAlertAlwaysCreatesDisabledDraft(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			assertAlertLinkMeta(t, result, expectedAlertLink{URL: "/v2/organizations//alerting/groups?group_id=entity-1&rule=rule-1", Label: "Open alert"})
 			text := resultText(result)
 			if !strings.HasPrefix(text, `{"id":"rule-1"}`) || !strings.Contains(text, "disabled draft") || !strings.Contains(text, "patch_alert is_disabled=false") {
 				t.Fatalf("unexpected result: %s", text)

@@ -16,6 +16,7 @@ func TestUpdateAlertHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertAlertLinkMeta(t, result, expectedAlertLink{URL: "/v2/organizations//alerting/groups?group_id=entity-1&rule=rule-1", Label: "Open alert"})
 	if resultText(result) != `{"id":"rule-1"}` {
 		t.Fatalf("unexpected result: %s", resultText(result))
 	}

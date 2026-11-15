@@ -12,6 +12,7 @@ import (
 
 var promptDescriptionFiles = map[string]string{
 	"add_drop_rule.md":                     prompts.AddDropRuleDescription,
+	"add_remapping_rule.md":                prompts.AddRemappingRuleDescription,
 	"analyze_change_impact.md":             prompts.AnalyzeChangeImpactDescription,
 	"create_alert.md":                      prompts.CreateAlertDescription,
 	"create_alert_from_chart.md":           prompts.CreateAlertFromChartDescription,
@@ -25,6 +26,7 @@ var promptDescriptionFiles = map[string]string{
 	"get_alert_config.md":                  prompts.GetAlertConfigDescription,
 	"get_alert_coverage.md":                prompts.GetAlertCoverageDescription,
 	"get_alert_groups.md":                  prompts.GetAlertGroupsDescription,
+	"get_alert_hygiene.md":                 prompts.GetAlertHygieneDescription,
 	"get_alert_operations_summary.md":      prompts.GetAlertOperationsSummaryDescription,
 	"get_alert_rule_state.md":              prompts.GetAlertRuleStateDescription,
 	"get_alerts.md":                        prompts.GetAlertsDescription,
@@ -38,6 +40,7 @@ var promptDescriptionFiles = map[string]string{
 	"get_database_slow_queries.md":         prompts.GetDatabaseSlowQueriesDescription,
 	"get_databases.md":                     prompts.GetDatabasesDescription,
 	"get_drop_rules.md":                    prompts.GetDropRulesDescription,
+	"get_remapping_rules.md":               prompts.GetRemappingRulesDescription,
 	"get_entity_alert_rules.md":            prompts.GetEntityAlertRulesDescription,
 	"get_entity_kpis.md":                   prompts.GetEntityKPIsDescription,
 	"get_emerging_log_patterns.md":         prompts.GetEmergingLogPatternsDescription,
@@ -90,6 +93,7 @@ var promptDescriptionFiles = map[string]string{
 	"prometheus_labels.md":                 prompts.PromqlLabelsQueryDetails,
 	"prometheus_range_query_base.md":       prompts.PromqlRangeQueryDetails,
 	"recommend_alert_config.md":            prompts.RecommendAlertConfigDescription,
+	"set_dashboard_lock.md":                prompts.SetDashboardLockDescription,
 	"update_alert.md":                      prompts.UpdateAlertDescription,
 	"update_dashboard.md":                  prompts.UpdateDashboardDescription,
 	"validate_alert_expression.md":         prompts.ValidateAlertExpressionDescription,
@@ -389,6 +393,24 @@ func TestQueryToolDescriptionsNameEnvelopeFields(t *testing.T) {
 	}
 }
 
+func TestTraceQueryGuidanceDistinguishesSpansFromTraces(t *testing.T) {
+	checks := map[string]string{
+		"description": prompts.GetTracesDescription,
+		"reference":   prompts.TracejsonReference,
+	}
+	for name, body := range checks {
+		for _, phrase := range []string{
+			"filter-only results contain one row per span",
+			"deduplicate by `TraceId`",
+			"fetch the complete trace with `get_service_traces`",
+		} {
+			if !strings.Contains(body, phrase) {
+				t.Errorf("%s missing %q", name, phrase)
+			}
+		}
+	}
+}
+
 func TestPrometheusQueryDescriptionsUseValidPercentileSources(t *testing.T) {
 	for name, desc := range map[string]string{
 		"instant": prompts.PromqlInstantQueryDetails,
@@ -500,6 +522,17 @@ func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
 			t.Errorf("GetServiceLogsDescription missing %q: %s", c.phrase, c.reason)
+		}
+	}
+}
+
+func TestRawLogDescriptionsReserveRawForExactText(t *testing.T) {
+	for name, desc := range map[string]string{
+		"get_logs":         prompts.GetLogsDescription,
+		"get_service_logs": prompts.GetServiceLogsDescription,
+	} {
+		if !strings.Contains(desc, "`raw` only for exact text") {
+			t.Errorf("%s description must reserve raw mode for exact text", name)
 		}
 	}
 }
@@ -1013,6 +1046,7 @@ func createRetrySentence(readCall string) string {
 func TestCreateToolDescriptionsExplainUnknownOutcome(t *testing.T) {
 	for name, c := range map[string]struct{ desc, readCall string }{
 		"add_drop_rule":               {prompts.AddDropRuleDescription, "get_drop_rules"},
+		"add_remapping_rule":          {prompts.AddRemappingRuleDescription, "get_remapping_rules"},
 		"create_alert":                {prompts.CreateAlertDescription, "get_alert_config (rule_name)"},
 		"create_alert_from_chart":     {prompts.CreateAlertFromChartDescription, "get_alert_config (rule_name)"},
 		"create_dashboard":            {prompts.CreateDashboardDescription, "list_dashboards"},
@@ -1064,6 +1098,14 @@ func TestGetAlertsRoutingStatesDefaultWindow(t *testing.T) {
 	for _, phrase := range []string{"default 15 minutes", "at most 1 hour"} {
 		if !strings.Contains(routing, phrase) {
 			t.Errorf("get_alerts When to use section missing %q:\n%s", phrase, routing)
+		}
+	}
+}
+
+func TestPreviewDashboardDescriptionExplainsLockState(t *testing.T) {
+	for _, phrase := range []string{"locked:false", "dashboard is locked"} {
+		if !strings.Contains(prompts.PreviewDashboardDescription, phrase) {
+			t.Errorf("preview_dashboard description missing %q", phrase)
 		}
 	}
 }

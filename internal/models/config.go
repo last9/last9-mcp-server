@@ -5,6 +5,8 @@ import (
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/toolsets"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const DefaultMaxGetLogsEntries = 5000
@@ -24,6 +26,7 @@ type DatasourceInfo struct {
 
 // Config holds the server configuration parameters
 type Config struct {
+	MCPServerInfo *mcp.Implementation `json:"-"`
 	// Last9 connection settings
 	RefreshToken string // Refresh token for authentication
 	Region       string // AWS region (e.g., us-east-1, ap-south-1)

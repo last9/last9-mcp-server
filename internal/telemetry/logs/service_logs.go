@@ -33,7 +33,10 @@ type ServiceLogsResponse struct {
 	TotalMatchingLines *int           `json:"total_matching_lines,omitempty"`
 	LogsTruncated      *bool          `json:"logs_truncated,omitempty"`
 	SearchStats        map[string]any `json:"search_stats,omitempty"`
+	RawLimit           map[string]any `json:"l9_raw_limit,omitempty"`
 	Hint               string         `json:"hint,omitempty"`
+	WindowSource       string         `json:"window_source,omitempty"`
+	WindowMinutes      int            `json:"window_minutes,omitempty"`
 	coverageStatus     string
 	envelope           utils.ResultEnvelope
 }
@@ -51,6 +54,7 @@ type LogEntry struct {
 const (
 	defaultServiceLogsRawLimit     = 20
 	defaultServiceLogsSummaryLimit = 100
+	defaultServiceLogsLookback     = 60
 )
 
 // GetServiceLogsArgs represents the input arguments for the get_service_logs tool
@@ -88,6 +92,9 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		if err := validateLogResponseMode(args.ResponseMode); err != nil {
 			return nil, nil, err
 		}
+		if len(args.BodyFilters) > 0 && !hasExplicitLogWindow(args.StartTimeISO, args.LookbackMinutes) {
+			return nil, nil, fmt.Errorf("body_filters requires an explicit window: set lookback_minutes or start_time_iso")
+		}
 
 		// Set default values
 		limit := args.Limit
@@ -100,7 +107,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 
 		lookbackMinutes := args.LookbackMinutes
 		if lookbackMinutes == 0 {
-			lookbackMinutes = 60
+			lookbackMinutes = defaultServiceLogsLookback
 		}
 
 		// Convert args to map for GetTimeRange utility
@@ -156,7 +163,10 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		if logs.Count == 0 {
 			logs.envelope.Hint("No log lines matched. Before concluding there are none, confirm the service name with did_you_mean or get_service_profile, check env and index against the profile, relax filters, or widen the window.")
 		}
-
+		if args.StartTimeISO == "" && args.EndTimeISO == "" && args.LookbackMinutes == 0 {
+			logs.WindowSource = "default"
+			logs.WindowMinutes = defaultServiceLogsLookback
+		}
 		addServiceLogsGuidance(logs, args, limit)
 
 		bounds := serviceLogsScope{startTime, endTime, normalizedIndex}

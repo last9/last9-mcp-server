@@ -66,6 +66,7 @@ func TestNoRawTimeNowInQueryWindows(t *testing.T) {
 	allowed := map[string]bool{
 		"session.go":                    true, // guardrail idle expiry must advance even under the fake query clock
 		"clock.go":                      true,
+		"tool_phase.go":                 true, // elapsed-time measurement
 		"validate_dashboard_execute.go": true, // elapsed-time measurement
 		"test_helpers.go":               true, // fixture token expiry
 		"user_token_verifier.go":        true, // token expiry

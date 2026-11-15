@@ -48,7 +48,8 @@ func GetTraceWaterfallInputSchema() map[string]interface{} {
 // names (aggregates, groupby, as) and function object syntax ({\"$count\": []}).
 func GetTracesInputSchema() map[string]interface{} {
 	return map[string]interface{}{
-		"type": "object",
+		"type":                 "object",
+		"additionalProperties": false,
 		"properties": map[string]interface{}{
 			"tracejson_query": tracejsonQuerySchema(),
 			"start_time_iso": map[string]interface{}{
@@ -148,7 +149,6 @@ func aggregateStageSchema() map[string]interface{} {
 				"description": "Group-by fields as {\"FieldName\": \"alias\"}. Use 'groupby', NOT 'group_by'. Example: {\"ServiceName\": \"service\", \"SpanName\": \"span\"}",
 			},
 		},
-		"additionalProperties": false,
 	}
 }
 
@@ -208,6 +208,10 @@ func parseStageSchema() map[string]interface{} {
 		"properties": map[string]interface{}{
 			"type":   stringEnum("parse"),
 			"parser": stringEnum("json", "regexp", "logfmt"),
+			"field": map[string]interface{}{
+				"type":        "string",
+				"description": "Source field to parse.",
+			},
 			"pattern": map[string]interface{}{
 				"type":        "string",
 				"description": "Regexp pattern with named capture groups (for regexp parser). Example: (?P<user_id>\\d+)",
@@ -224,12 +228,37 @@ func selectStageSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":        "object",
 		"description": "Select stage: projects specific fields in the output.",
-		"required":    []string{"type", "labels"},
+		"required":    []string{"type"},
 		"properties": map[string]interface{}{
 			"type": stringEnum("select"),
+			"order": map[string]interface{}{
+				"type":        []string{"string", "array"},
+				"description": "Field or fields to order by.",
+				"items":       map[string]interface{}{"type": "string"},
+			},
+			"limit": map[string]interface{}{
+				"type":        "integer",
+				"description": "Maximum number of selected rows.",
+			},
+			"offset": map[string]interface{}{
+				"type":        "integer",
+				"description": "Number of selected rows to skip.",
+			},
 			"labels": map[string]interface{}{
 				"type":        "object",
 				"description": "Fields to include in output as {\"FieldName\": \"alias\"}.",
+			},
+			"direction": map[string]interface{}{
+				"type":        "integer",
+				"description": "Sort direction used by the trace pipeline producer.",
+			},
+			"starttime": map[string]interface{}{
+				"type":        "string",
+				"description": "Unix timestamp in seconds encoded as a decimal string, for example \"1793131500\". Optional; no default. Prefer top-level start_time_iso and end_time_iso for the overall trace-query window; use this only when reproducing a producer pipeline's selection window.",
+			},
+			"endtime": map[string]interface{}{
+				"type":        "string",
+				"description": "Unix timestamp in seconds encoded as a decimal string, for example \"1793131560\". Optional; no default. Prefer top-level start_time_iso and end_time_iso for the overall trace-query window; use this only when reproducing a producer pipeline's selection window.",
 			},
 		},
 	}

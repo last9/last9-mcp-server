@@ -51,7 +51,7 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	fs := flag.NewFlagSet("last9-mcp", flag.ExitOnError)
 
 	var cfg models.Config
-	fs.StringVar(&cfg.RefreshToken, "refresh_token", os.Getenv("LAST9_REFRESH_TOKEN"), "Last9 refresh token for authentication")
+	fs.StringVar(&cfg.RefreshToken, "refresh_token", "", "Last9 refresh token for authentication")
 	fs.StringVar(&cfg.DatasourceName, "datasource", os.Getenv("LAST9_DATASOURCE"), "Datasource name to use (overrides default datasource)")
 	fs.StringVar(&cfg.APIHost, "api_host", os.Getenv("LAST9_API_HOST"), "API host (defaults to app.last9.io)")
 	fs.BoolVar(&cfg.DisableTelemetry, "disable_telemetry", true, "Disable OpenTelemetry tracing/metrics")
@@ -172,7 +172,9 @@ func toolsetServerBuilder(cfg models.Config) func(toolsets.Set) (*last9mcp.Last9
 // prompts, tools and the instructions that name them, behind middleware.
 // middleware is added last so it runs before the per-tool argument middleware.
 func buildServer(cfg models.Config, middleware ...mcp.Middleware) (*last9mcp.Last9MCPServer, error) {
-	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
+	info := &mcp.Implementation{Name: "last9-mcp", Version: Version}
+	cfg.MCPServerInfo = info
+	server, err := last9mcp.NewServerWithOptions(info.Name, info.Version, last9mcp.WithSkipProviderInit())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create MCP server: %w", err)
 	}

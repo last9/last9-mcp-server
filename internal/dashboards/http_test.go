@@ -239,3 +239,21 @@ func TestDoJSONRequest_GETSuccess(t *testing.T) {
 		t.Fatalf("auth header %q", gotAuth)
 	}
 }
+
+func TestDoJSONRequest_ErrorBodyIsSanitized(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"bad","auth":"Bearer abc123","url":"https://internal.example/x","token=sekret"}`))
+	}))
+	defer srv.Close()
+
+	_, _, err := doJSONRequest(context.Background(), srv.Client(), testDashboardConfig(srv.URL), http.MethodGet, srv.URL+constants.EndpointDashboards, nil)
+	if err == nil {
+		t.Fatal("expected error for 400")
+	}
+	for _, secret := range []string{"abc123", "internal.example", "sekret"} {
+		if strings.Contains(err.Error(), secret) {
+			t.Fatalf("error leaked %q: %v", secret, err)
+		}
+	}
+}

@@ -9,11 +9,11 @@
 
 **Scope:** `service.name`→`ServiceName`; tenant→`resources['last9.tenant']`; env→`resources['deployment.environment']`.
 
-**Time:** `lookback_minutes` (default **60**); RFC3339 uses `start_time_iso`+`end_time_iso`, not Timestamp filters.
+**Time:** `lookback_minutes` default **60**, ≥1; TraceId requires explicit `lookback_minutes` or `start_time_iso`. RFC3339 uses `start_time_iso`+`end_time_iso`, not Timestamp filters.
 
 **Fields:** OTel enums like `SPAN_KIND_SERVER`; Duration is ns. Use `attributes['key']`/`resources['key']`, not `SpanAttributes.foo`.
 
-**Aggregate:** use `aggregates`+`groupby`. Average/mean→`{"function":{"$avg":["Duration"]}}`, not `$quantile`. By span: `{"type":"aggregate","aggregates":[{"function":{"$avg":["Duration"]},"as":"avg"}],"groupby":{"SpanName":"span"}}`. `$quantile` is the general/default percentile operator. Compute from raw spans; never average percentile samples. `Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first.
+**Aggregate:** use `aggregates`+`groupby`. Average/mean→`{"function":{"$avg":["Duration"]}}`, not `$quantile`. `$quantile` is the general/default percentile operator. Compute from raw spans; never average percentile samples. `Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first.
 
 **Transform:** `as` is an array: `{"type":"transform","transforms":[{"function":{"$split":["SpanName","/",1]},"as":["endpoint"]}]}` (read it as `attributes['endpoint']`).
 
@@ -50,4 +50,4 @@ Span filters, counts, averages or percentiles across services with a tracejson p
 Span or aggregate rows per pipeline.
 
 ## Known traps
-Field values in filters are strings, enums included (`STATUS_CODE_ERROR`).
+Filter values are strings (`STATUS_CODE_ERROR`). For trace-level questions, filter-only results contain one row per span: deduplicate by `TraceId`; fetch the complete trace with `get_service_traces`.

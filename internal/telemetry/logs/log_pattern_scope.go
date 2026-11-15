@@ -35,6 +35,7 @@ const (
 	defaultPatternLookback   = 60
 	defaultPatternTopN       = 20
 	maxPatternTopN           = 100
+	maxPatternSampleChunks   = 24
 )
 
 // LogPatternWindow describes the sample one window's patterns were mined from.
@@ -101,6 +102,55 @@ func (s logPatternScope) sample(ctx context.Context, client *http.Client, cfg mo
 	if err != nil {
 		return nil, LogPatternWindow{}, fmt.Errorf("failed to sample logs: %w", err)
 	}
+	return s.finishSample(logs, start, end)
+}
+
+func (s logPatternScope) sampleChunks(ctx context.Context, client *http.Client, cfg models.Config, start, end time.Time) ([]LogEntry, LogPatternWindow, error) {
+	lines := make([]LogEntry, 0, s.sampleSize)
+	currentEnd := end
+	partial := false
+	for chunks := 0; currentEnd.After(start) && chunks < maxPatternSampleChunks; chunks++ {
+		chunkStart := currentEnd.Add(-time.Hour)
+		if chunkStart.Before(start) {
+			chunkStart = start
+		}
+		remaining := s.sampleSize - len(lines)
+		logs, err := fetchServiceLogs(ctx, client, cfg, s.service, chunkStart, currentEnd, remaining, cloneLogJSONQuery(s.query), s.index)
+		if err != nil {
+			cause, _ := classifyScanError(err)
+			if len(lines) == 0 || cause != utils.GuidanceCauseTimeout {
+				return nil, LogPatternWindow{}, fmt.Errorf("failed to sample logs: %w", err)
+			}
+			partial = true
+			break
+		}
+		failed, err := logs.chunksFailed()
+		if err != nil {
+			return nil, LogPatternWindow{}, fmt.Errorf("log search for %s to %s: %w", chunkStart.Format(time.RFC3339), currentEnd.Format(time.RFC3339), err)
+		}
+		if failed > 0 {
+			return nil, LogPatternWindow{}, fmt.Errorf("log search for %s to %s is incomplete: %d of its search chunks failed; retry or narrow the window",
+				chunkStart.Format(time.RFC3339), currentEnd.Format(time.RFC3339), failed)
+		}
+		lines = append(lines, logs.Logs...)
+		if logs.mayMissLines(remaining) || len(lines) >= s.sampleSize {
+			partial = true
+			break
+		}
+		currentEnd = chunkStart
+	}
+	if currentEnd.After(start) {
+		partial = true
+	}
+	return lines, LogPatternWindow{
+		StartTime:          start.Format(time.RFC3339),
+		EndTime:            end.Format(time.RFC3339),
+		SampledLines:       len(lines),
+		SampleLimitReached: partial,
+	}, nil
+}
+
+func (s logPatternScope) finishSample(logs *ServiceLogsResponse, start, end time.Time) ([]LogEntry, LogPatternWindow, error) {
 	// A window missing a chunk would read as fewer or absent patterns, i.e.
 	// false novelty, so it fails like the chunked path does.
 	failed, err := logs.chunksFailed()
