@@ -271,10 +271,9 @@ func logStageEmitsResult(stage map[string]interface{}, stageType string) bool {
 	return false
 }
 
-// validateAggregateNumericDataflow makes one ordered pass over the sanitized
-// pipeline. String-backed attribute/resource fields become numeric-safe only
-// after a mandatory canonical regex. A later parse invalidates fields it can
-// produce, so the regex must follow the last relevant parse.
+// String-backed fields become numeric-safe only after a canonical regex.
+// A later parse invalidates fields it can produce, so the regex must follow
+// the last relevant parse.
 func validateAggregateNumericDataflow(stages []map[string]interface{}, pathPrefix string) error {
 	numericSafeFields := make(map[string]struct{})
 	stringBackedAliases := make(map[string]struct{})
