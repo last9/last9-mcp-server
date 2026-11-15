@@ -50,7 +50,7 @@ onset conclusions (a narrow raw sample is not a trend):
 4. Translate the query to JSON pipeline format using the correct field references
 5. Call the `get_logs` tool with canonical time params:
    - Use `start_time_iso` + `end_time_iso` when the user gave explicit absolute dates/times
-   - Otherwise use `lookback_minutes` (default: 5 when no time is specified)
+   - Otherwise use `lookback_minutes` (default: 5, minimum: 1); Body contains-family searches, including `i`/`not` variants, must set it explicitly
    - Chunked raw searches are limited to 24 chunks (currently at most 24 hours / 1440 minutes). Larger plans are refused before any log query is sent. Narrow `lookback_minutes` or the `start_time_iso`/`end_time_iso` window; do not retry unchanged. Lowering `limit` does not reduce the chunk count. Aggregate pipelines and server-side log search do not use this client-side chunk budget.
 6. Analyze the results and provide insights to the user
 
@@ -64,7 +64,7 @@ onset conclusions (a narrow raw sample is not a trend):
 - After inventory, query one service/env/index at a time. Aggregate by `SeverityText`, a structured attribute, or a specific pattern before fetching raw lines.
 
 **CRITICAL TIME PARAMETER RULES:**
-- **ALWAYS use lookback_minutes: 5 when no time range is specified**
+- **ALWAYS use lookback_minutes: 5 when no time range is specified; Body contains-family searches require this explicit value**
 - **NEVER use 60 minutes unless explicitly requested**
 - **Default means 5 minutes, not 60 minutes**
 - **`start_time_iso` and `end_time_iso` are top-level request parameters — NEVER put them inside the pipeline as `Timestamp` filter conditions**

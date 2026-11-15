@@ -377,6 +377,24 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 	}
 }
 
+func TestTraceQueryGuidanceDistinguishesSpansFromTraces(t *testing.T) {
+	checks := map[string]string{
+		"description": prompts.GetTracesDescription,
+		"reference":   prompts.TracejsonReference,
+	}
+	for name, body := range checks {
+		for _, phrase := range []string{
+			"filter-only results contain one row per span",
+			"deduplicate by `TraceId`",
+			"fetch the complete trace with `get_service_traces`",
+		} {
+			if !strings.Contains(body, phrase) {
+				t.Errorf("%s missing %q", name, phrase)
+			}
+		}
+	}
+}
+
 func TestPrometheusQueryDescriptionsUseValidPercentileSources(t *testing.T) {
 	for name, desc := range map[string]string{
 		"instant": prompts.PromqlInstantQueryDetails,
@@ -1064,6 +1082,14 @@ func TestGetAlertsRoutingStatesDefaultWindow(t *testing.T) {
 	for _, phrase := range []string{"default 15 minutes", "at most 1 hour"} {
 		if !strings.Contains(routing, phrase) {
 			t.Errorf("get_alerts When to use section missing %q:\n%s", phrase, routing)
+		}
+	}
+}
+
+func TestPreviewDashboardDescriptionExplainsLockState(t *testing.T) {
+	for _, phrase := range []string{"locked:false", "dashboard is locked"} {
+		if !strings.Contains(prompts.PreviewDashboardDescription, phrase) {
+			t.Errorf("preview_dashboard description missing %q", phrase)
 		}
 	}
 }

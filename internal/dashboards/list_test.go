@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -58,7 +59,7 @@ func overviewFixture(n, nameLen int) []map[string]any {
 			"id":         fmt.Sprintf("00000000-0000-4000-8000-%012d", i),
 			"name":       name,
 			"created_by": fmt.Sprintf("someone.with.a.long.address-%03d@example.com", i),
-			"updated_at": "2026-10-31T12:34:56.123456Z",
+			"updated_at": strconv.Itoa(1793683205 - i),
 			"tags":       []string{"production", "kubernetes", "golden-signals", "team-platform", "slo"},
 			"readonly":   i%7 == 0,
 		}
@@ -142,12 +143,24 @@ func TestListDashboardsDefaultPageStaysUnderResponseBound(t *testing.T) {
 		t.Fatalf("got %d dashboards, total %d, next_cursor %q", len(page.Dashboards), page.Total, page.NextCursor)
 	}
 	for key := range page.Dashboards[0] {
-		if key != "id" && key != "name" && key != "updated_at" && key != "locked" {
-			t.Errorf("listed field %q, want only id, name, updated_at and locked", key)
+		if key != "id" && key != "name" && key != "updated_at" && key != "created_by" && key != "locked" {
+			t.Errorf("listed field %q, want only summary and lock metadata", key)
 		}
 	}
-	if page.Dashboards[0]["locked"] != true || page.Dashboards[1]["locked"] != false {
-		t.Fatalf("lock state was not mapped from readonly: %+v", page.Dashboards[:2])
+}
+
+func TestListDashboardsHandler_ServesLockedPerRow(t *testing.T) {
+	rows := []map[string]any{
+		{"id": "a", "name": "A", "readonly": true, "created_by": "user-7"},
+		{"id": "b", "name": "B", "readonly": false},
+		{"id": "c", "name": "C"},
+	}
+	page, _ := listPage(t, dashboardListServer(t, rows), ListDashboardsArgs{})
+	if len(page.Dashboards) != 3 || page.Dashboards[0]["locked"] != true || page.Dashboards[1]["locked"] != false || page.Dashboards[0]["created_by"] != "user-7" {
+		t.Fatalf("rows %#v", page.Dashboards)
+	}
+	if _, ok := page.Dashboards[2]["locked"]; ok {
+		t.Fatalf("row without readonly gained locked: %#v", page.Dashboards[2])
 	}
 }
 
@@ -231,13 +244,16 @@ func TestListDashboardsRejectsForeignCursors(t *testing.T) {
 	limit := 2
 	page, _ := listPage(t, srv, ListDashboardsArgs{Limit: &limit})
 
-	for name, args := range map[string]ListDashboardsArgs{
-		"garbage":       {Cursor: "not-a-cursor"},
-		"other filter":  {Cursor: page.NextCursor, Name: "team"},
-		"negative skip": {Cursor: encodeListCursor(-1, "")},
+	for name, tc := range map[string]struct {
+		args ListDashboardsArgs
+		want string
+	}{
+		"garbage":       {ListDashboardsArgs{Cursor: "not-a-cursor"}, "malformed"},
+		"negative skip": {ListDashboardsArgs{Cursor: encodeListCursor(-1, "")}, "malformed"},
+		"other filter":  {ListDashboardsArgs{Cursor: page.NextCursor, Name: "team"}, "different name"},
 	} {
-		if _, err := callListDashboards(t, srv, args); err == nil || !strings.Contains(err.Error(), "cursor") {
-			t.Errorf("%s: err %v, want a cursor error", name, err)
+		if _, err := callListDashboards(t, srv, tc.args); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err %v, want a cursor error containing %q", name, err, tc.want)
 		}
 	}
 }

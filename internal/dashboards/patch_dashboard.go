@@ -98,6 +98,10 @@ func NewPatchDashboardHandler(client *http.Client, cfg models.Config) func(conte
 		if current.Dashboard == nil {
 			return nil, nil, errors.New("get dashboard returned no dashboard object; nothing was written")
 		}
+		lock := dashboardLockOf(current.Dashboard)
+		if lock.locked() {
+			return lockedResult(lock), nil, nil
+		}
 
 		changes, err := applyPatchOps(current.Dashboard, args.Ops)
 		if err != nil {
@@ -116,13 +120,12 @@ func NewPatchDashboardHandler(client *http.Client, cfg models.Config) func(conte
 		if err != nil {
 			return nil, nil, err
 		}
-		if _, err := apidashboards.UpdateDashboard(ctx, api, args.ID, payload); err != nil {
+		if err := apidashboards.UpdateDashboard(ctx, api, args.ID, payload); err != nil {
 			if upstreamLockedRefusal(err) {
-				createdBy, _ := current.Dashboard["created_by"].(string)
-				return nil, nil, dashboardLockedError(createdBy)
+				return lockedResult(lock), nil, nil
 			}
-			if upstreamBuiltInRefusal(err) {
-				return nil, nil, fmt.Errorf("dashboard is readonly and cannot be modified: %w", err)
+			if isForbidden(err) {
+				return forbiddenWriteResult(err, upstreamBuiltInReadonlyRefusal(err)), nil, nil
 			}
 			return nil, nil, mapDashboardAPIError(err)
 		}

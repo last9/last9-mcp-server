@@ -375,7 +375,7 @@ Rules, channels and attachments these tools create are marked `created_via: last
 
 ### Custom Dashboards
 
-- **`list_dashboards`** — Custom dashboards in your org, filtered by name and paged: IDs, names, and last-updated times
+- **`list_dashboards`** — Custom dashboards filtered by name and paged under 32 KB: IDs, names, last-updated times, authors and lock state
 - **`get_dashboard`** — Full dashboard definition by ID, including panels and queries
 - **`preview_dashboard`** — Read-only preview of an unsaved dashboard or patch: resolved queries, bounded per-panel results and a net panel diff; never saves
 - **`validate_dashboard`** — Read-only lint + execute + classify for a saved dashboard id or an inline `dashboard_definition` over a ≤24h window. Never creates or updates dashboards
@@ -1117,7 +1117,7 @@ Call it before any service-scoped investigation so tool selection matches the se
 - `limit` (integer, optional): Dashboards per page, 1–200. Default: 100.
 - `cursor` (string, optional): `next_cursor` from the previous page; pass the same `name` with it.
 
-Returns `{"dashboards": [{"id", "name", "updated_at", "locked"}], "total", "next_cursor"}`, most recently updated first. `locked` is present when the API reports lock state. A page ends early to stay under 32 KB; `next_cursor` is absent on the last page.
+Returns `{"dashboards": [{"id", "name", "updated_at", "created_by", "locked"}], "total", "next_cursor"}`, most recently updated first. `created_by` is omitted when empty; `locked` is omitted when the API does not report `readonly`. `updated_at` is Unix epoch seconds as a string. A page ends early to stay under 32 KB; `next_cursor` is absent on the last page.
 
 ### get_dashboard
 
@@ -1171,7 +1171,7 @@ Use only to restructure most of a dashboard; for adding, editing, removing or mo
 
 - `id` (string, required): Dashboard UUID to update.
 - `dashboard` (object, required): Full replacement dashboard body (same shape as create).
-- `metadata` (object, optional): Replacement metadata. Readonly system dashboards return a 403 error.
+- `metadata` (object, optional): Replacement metadata. Readonly system dashboards return a recoverable tool error.
 
 ### patch_dashboard
 
@@ -1195,7 +1195,7 @@ Prefer this over `update_dashboard` for small refinements: unchanged panels are 
 - `id` (string, required): Dashboard UUID.
 - `locked` (boolean, required): `true` locks the dashboard, `false` unlocks it.
 
-Write tool; call it only when the user explicitly asks. Only the dashboard's author or an org admin can lock or unlock it, and built-in dashboards are always read-only. Returns `{"id", "locked"}` with the resulting state. While locked, `update_dashboard`, `patch_dashboard` and `delete_dashboard` fail with an error starting `dashboard is locked`.
+Write tool; call it only when the user explicitly asks. Only the dashboard's author or an org admin can lock or unlock it, and built-in dashboards are always read-only. Returns `{"id", "locked"}` with the resulting state. While locked, `update_dashboard`, `patch_dashboard` and `delete_dashboard` send no write and return a recoverable tool error starting `dashboard is locked` that names the author and suggests unlocking or copying the dashboard with `create_dashboard`.
 
 ### list_dashboard_snapshots
 

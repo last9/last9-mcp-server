@@ -18,7 +18,7 @@ func dashboardObjectSchema(description string) map[string]interface{} {
 func panelObjectSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":     "object",
-		"required": []string{"name", "layout", "visualization"},
+		"required": []string{"name", "visualization"},
 		"properties": map[string]interface{}{
 			"name":    map[string]interface{}{"type": "string"},
 			"version": map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 1},
@@ -59,10 +59,16 @@ func panelObjectSchema() map[string]interface{} {
 			},
 			map[string]interface{}{"required": []string{"queries"}},
 		},
-		"allOf": []interface{}{map[string]interface{}{
-			"if":   map[string]interface{}{"required": []string{"visualization"}, "properties": map[string]interface{}{"visualization": map[string]interface{}{"required": []string{"type"}, "properties": map[string]interface{}{"type": map[string]interface{}{"const": "logs"}}}}},
-			"then": map[string]interface{}{"properties": map[string]interface{}{"visualization": map[string]interface{}{"required": []string{"logs_config"}}}},
-		}},
+		"allOf": []interface{}{
+			map[string]interface{}{
+				"if":   map[string]interface{}{"properties": map[string]interface{}{"visualization": map[string]interface{}{"required": []string{"type"}, "properties": map[string]interface{}{"type": map[string]interface{}{"not": map[string]interface{}{"enum": []string{"section", "markdown"}}}}}}},
+				"then": map[string]interface{}{"required": []string{"layout"}},
+			},
+			map[string]interface{}{
+				"if":   map[string]interface{}{"required": []string{"visualization"}, "properties": map[string]interface{}{"visualization": map[string]interface{}{"required": []string{"type"}, "properties": map[string]interface{}{"type": map[string]interface{}{"const": "logs"}}}}},
+				"then": map[string]interface{}{"properties": map[string]interface{}{"visualization": map[string]interface{}{"required": []string{"logs_config"}}}},
+			},
+		},
 	}
 }
 
@@ -121,7 +127,8 @@ func metadataObjectSchema() map[string]interface{} {
 // metadata as JSON objects rather than byte arrays.
 func GetCreateDashboardInputSchema() map[string]interface{} {
 	return map[string]interface{}{
-		"type": "object",
+		"type":                 "object",
+		"additionalProperties": false,
 		"properties": map[string]interface{}{
 			"dashboard": dashboardObjectSchema("(Required) Dashboard definition with name and panels."),
 			"metadata":  metadataObjectSchema(),
@@ -133,7 +140,8 @@ func GetCreateDashboardInputSchema() map[string]interface{} {
 // GetUpdateDashboardInputSchema returns the MCP-facing schema for update_dashboard.
 func GetUpdateDashboardInputSchema() map[string]interface{} {
 	return map[string]interface{}{
-		"type": "object",
+		"type":                 "object",
+		"additionalProperties": false,
 		"properties": map[string]interface{}{
 			"id": map[string]interface{}{
 				"type":        "string",
