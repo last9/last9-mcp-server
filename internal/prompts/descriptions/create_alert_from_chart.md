@@ -1,25 +1,9 @@
-Create an alert rule from a covered Last9 Discover chart using the identity and editor fields from describe_alert_chart. There is no query, PromQL or expression parameter: if the user pastes a custom query, pick a catalog signal_key from describe_alert_chart or explain that constraint; never call create_alert, create_kpi, get_entity_kpis, validate_alert_expression, or prometheus_range_query. Chart-derived rules are static-threshold only; algorithm cannot be set. Lifecycle: like create_alert, the rule is created disabled as a draft and does not fire; promote it with patch_alert is_disabled=false only after the user confirms. If disabling fails, the error names the rule id: it may be live.
+Create a disabled draft alert from a covered Last9 Discover chart using identity and editor fields from `describe_alert_chart`. There is no query, PromQL or expression parameter: use a returned catalog `signal_key` or explain the constraint; never call create_alert, create_kpi, get_entity_kpis, validate_alert_expression, or prometheus_range_query for this path.
 
-Parameters:
-- surface (Required): Surface identifier; one of discover-service or discover-exceptions.
-- chart_key (Required): Chart key within the surface, exactly as describe_alert_chart reports it (for example apdex, error_rate, response_time, exception_count).
-- service_name (Required): Service/entity name the chart is scoped to.
-- signal_key (Required): Signal key returned by describe_alert_chart for this chart; never guess keys.
-- name (Required): Alert rule name; duplicate names are rejected upstream with a conflict.
-- env: Environment when the chart distinguishes one, for example prod; omit otherwise.
-- attributes: Extra identity dimensions some charts need; use exactly the key names describe_alert_chart reports.
-- threshold: Breach threshold in the signal's own unit as reported by describe_alert_chart; must be 0 or more (chart signals are never negative); omit for the backend default 0.01.
-- threshold_operator: One of > < >= <= == !=; default >.
-- eval_window: Evaluation window in minutes, range 1-60; default 5.
-- bad_minutes: Minutes within eval_window the condition must hold before firing, range 1-eval_window; default 3.
-- severity: breach or threat; when omitted the backend derives it from the algorithm, and static chart rules default to breach.
-- group_id: Alert group UUID the chart resolves to; normally omit. The backend resolves the chart's group itself and rejects any other group_id as a mismatch, so only pass a group_id already returned for this same chart.
-- description: Responder-facing symptom, impact, and intended action, stored on the rule as properties.description; omit for none.
+Required: `surface` (`discover-service` or `discover-exceptions`), exact `chart_key`, scoped `service_name`, returned `signal_key`, and unique `name`. Optional `env` and `attributes` must use exactly the identity keys returned by `describe_alert_chart`.
 
-Units warning: the defaults (> 0.01 over a 5-minute window with 3 bad minutes) fit rate/count-style signals such as error_rate or exception_count. Score-unit signals like apdex live on a 0..1 scale — an explicit threshold there is required, because the 0.01 default would fire constantly.
+`threshold` uses the signal's unit, must be 0 or more, and defaults to 0.01. `threshold_operator` is `>`, `<`, `>=`, `<=`, `==`, or `!=` (default `>`). `eval_window` is 1–60 minutes (default 5); `bad_minutes` is 1–`eval_window` (default 3). `severity` is `breach` or `threat`. Normally omit `group_id`; if supplied it must be the id returned for this chart. `description` stores responder context.
 
-Retry discipline: On a timeout or connection error the create may or may not have been applied; check by name with get_alert_config (rule_name) before retrying. Never retry blindly: a blind retry duplicates the rule. get_alert_config output includes the entity_id; get_entity_alert_rules with that id shows the rule in full. On a duplicate-name conflict, check existing rules and pick a different name.
+The rule is static and created disabled. Promote with `patch_alert is_disabled=false` only after confirmation. Score signals such as Apdex need an explicit 0..1 threshold; the 0.01 default suits rate/count signals.
 
-Credentials must clear the alert-intelligence route's POST gate; viewer-role tokens are rejected with a permissions error.
-
-On success, _meta.reference_url opens the saved rule; _meta.links labels it "Open alert" and adds "Open group" only when the API supplies a group name.
+Read `last9://reference/tool_recipes` for lifecycle and retry recipes. On success `_meta.reference_url` opens the saved rule; `_meta.links` labels it "Open alert" and adds "Open group" only when the API supplies a group name. On a timeout or connection error the create may or may not have been applied; check by name with get_alert_config (rule_name) before retrying.

@@ -250,44 +250,16 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		reason string
 	}{
 		{"window_aggregate", "must document time-bucketed counts"},
-		{"window", "must document window key for window_aggregate"},
-		{"function", "must document function key for window_aggregate"},
-		{"\"function\":{\"$count\":[]},\"as\":\"count\",\"window\":[\"5\",\"minutes\"]", "must show a generic windowed count"},
-		{"\"type\":\"window_aggregate\",\"function\":{\"$count\":[]}", "must include the required stage type in the windowed count example"},
-		{"Ops: `$and`/`$or`/`$not`", "must retain a useful filter operator list"},
-		{"`$containsWords` args `[field,word]` (e.g. `[\"Body\",\"timeout\"]`)", "must show the required field argument for body-word filters"},
 		{"NOT SQL", "must clarify logjson_query is not SQL"},
-		{"Pass JSON stages in `logjson_query`, never `pipeline`", "must name the get_logs argument rather than a generic pipeline key"},
+		{"`logjson_query`, never `pipeline`", "must name the get_logs argument rather than a generic pipeline key"},
 		{"$neq", "must document existence idiom"},
-		{"`$neq` (is not X; never `$not`+`$eq`)", "must route negated equality to $neq"},
 		{"start_time_iso", "must document absolute time on tool args"},
 		{"resources['last9.tenant']", "must document tenant scoping"},
 		{"resources['deployment.environment']", "must document env scoping"},
-		{"no `service_name` arg; filter ServiceName in query", "must place service scope in the get_logs pipeline"},
+		{"no `service_name` argument", "must place service scope in the get_logs pipeline"},
 		{"last9://reference/logjson", "must point at the logjson resource"},
-		{"Predicates: one standalone, many in `$and`", "must allow valid standalone predicates"},
-		{"high→add filter, recount", "must repeat counts after narrowing broad filters"},
-		{"community_member_id", "must document bare single-token field mistake"},
 		{"attributes['key']", "must require attributes/resources wrapping"},
-		{"Parse Body-derived fields before filtering, grouping, or aggregation, then reference labels as `attributes['key']`", "must parse Body fields first and say how to reference parsed labels"},
-		{"`$quantile` is the general/default percentile operator", "must default to approximate percentile aggregation"},
-		{"\"function\":{\"$quantile\":[0.99,\"attributes['latency_ms']\"]},\"as\":\"p99\",\"window\":[\"24\",\"hours\"]", "must show a complete day-wise percentile window"},
-		{"\"type\":\"window_aggregate\",\"function\":{\"$quantile\":[0.99,\"attributes['latency_ms']\"]}", "must include the required stage type in the windowed percentile example"},
-		{"Day-wise: exactly ONE get_logs call over the full half-open start_time_iso/end_time_iso range with one window_aggregate; NEVER one call per day; honor requested timezone.", "must require one timezone-aware full-range day-wise call"},
-		{"Never template/merge/recombine aggregated percentile rows", "must forbid client-side percentile reconstruction"},
-		{"use the canonical anchored numeric `$regex` shown", "must require the deliberate canonical numeric allowlist"},
-		{"excludes non-matching values from percentile calculations; disclose that exclusion in the answer", "must disclose the numeric filter's effect"},
-		{"Use a discovered normalized route", "must discover normalized route semantics before aggregation"},
-		{"Raw URI: aggregate exact values; never normalize/merge later", "must allow exact raw URI aggregation without unsafe normalization"},
-		{"If `l9_result.partial=true`, preserve rows and disclose partial coverage", "must tie partial disclosure to result metadata"},
-		{"Units: report source; never convert", "must prevent inferred latency units"},
-		{"Only report returned P99 values; empty result→say unavailable and stop", "must prevent fallback counts from replacing an empty percentile result"},
-		{"ALL→`$and`; ANY→`$or`", "must document all/any-word Body searches"},
-		{"never `$icontainsWords`", "must avoid the slower case-insensitive word operator"},
-		{"no service→search `Body` with `$contains` (even service-like)", "must distinguish standalone identifiers from service names"},
-		{"Stages: `filter`|`parse`|`aggregate`|`window_aggregate` (no `transform`/`select`)", "must list valid stage types up front"},
-		{"`$regex` (RE2: no lookaround)", "must state the accepted regexp flavor"},
-		{"`community_member_id`→`attributes['key']`, `resource_attributes['key']`→`resources['key']`", "must show wrong→right field references"},
+		{"last9://reference/tool_recipes", "must point at deferred recipes"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
@@ -471,7 +443,6 @@ func TestPercentileReferenceManualsMatchToolDescriptions(t *testing.T) {
 
 func TestFilterOperatorGuidancePreserved(t *testing.T) {
 	for name, body := range map[string]string{
-		"get_logs":  prompts.GetLogsDescription,
 		"logjson":   prompts.LogjsonReference,
 		"tracejson": prompts.TracejsonReference,
 	} {
@@ -481,7 +452,7 @@ func TestFilterOperatorGuidancePreserved(t *testing.T) {
 			}
 		}
 	}
-	for name, body := range map[string]string{"get_logs": prompts.GetLogsDescription, "logjson": prompts.LogjsonReference} {
+	for name, body := range map[string]string{"logjson": prompts.LogjsonReference} {
 		if !strings.Contains(body, "$containsWords") {
 			t.Errorf("%s Body-search guidance missing $containsWords", name)
 		}
@@ -743,6 +714,7 @@ func TestReferenceManualsEmbedded(t *testing.T) {
 		"service_logs": prompts.ServiceLogsReference,
 		"metrics":      prompts.MetricsReference,
 		"alerting":     prompts.AlertingReference,
+		"tool_recipes": prompts.ToolRecipesReference,
 	} {
 		if len(body) < 1000 {
 			t.Errorf("%s reference too short (%d chars) — embed may be wrong", name, len(body))
