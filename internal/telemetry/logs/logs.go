@@ -217,11 +217,9 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		limited["l9_guidance"] = map[string]any{"message": rawLimitHint(n, count, effectiveGetLogsResultLimit(cfg, args.Limit))}
 		limitedEnv := env
 		limitedEnv.Trim(count - n)
-		return &mcp.CallToolResult{
-			Meta:              meta,
-			Content:           []mcp.Content{&mcp.TextContent{Text: formatJSON(limited)}},
-			StructuredContent: map[string]any{"envelope": limitedEnv},
-		}, nil
+		limitedResult := utils.EnvelopeToolResult(limited, formatJSON(limited), limitedEnv)
+		limitedResult.Meta = meta
+		return limitedResult, nil
 	})
 }
 

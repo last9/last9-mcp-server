@@ -223,11 +223,9 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			if err != nil {
 				return nil, err
 			}
-			return &mcp.CallToolResult{
-				Meta:              limitedMeta,
-				Content:           []mcp.Content{&mcp.TextContent{Text: string(encoded)}},
-				StructuredContent: map[string]any{"envelope": limited.envelope},
-			}, nil
+			limitedResult := utils.EnvelopeToolResult(&limited, string(encoded), limited.envelope)
+			limitedResult.Meta = limitedMeta
+			return limitedResult, nil
 		})
 		return bounded, nil, err
 	}
