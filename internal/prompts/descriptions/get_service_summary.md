@@ -1,6 +1,6 @@
 Rank APM server-span services over one window. Each row is one `(service, env)` with interval `request_count`, `throughput_rpm`, `http_4xx_count`, `http_5xx_count`, and `grpc_error_count`. Cite returned rows only.
 
-`sort_by` defaults to `request_count`; use `http_5xx_count`, `http_4xx_count`, `grpc_error_count`, or `throughput_rpm` for those explicit questions. Unknown keys are rejected. `limit` defaults to 20, maximum 100. `env` is a PromQL regex (default `.*`); anchor an exact value as `^prod$`.
+`sort_by` defaults to `request_count`; use `http_5xx_count`, `http_4xx_count`, `grpc_error_count`, or `throughput_rpm` for those explicit questions. Unknown keys are rejected. `limit` defaults to 10; values above 100 clamp to 100. `env` is a PromQL regex (default `.*`); anchor an exact value as `^prod$`.
 
 Prefer `lookback_minutes` (default 60). Both RFC3339 `start_time_iso` and `end_time_iso` define an absolute interval; one bound fills the other using lookback. Counts are interval totals; rpm is count/window minutes. Never add HTTP and gRPC classes. Missing classes are zero; log-only services are absent. Multiple source series are summed.
 

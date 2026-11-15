@@ -1,4 +1,4 @@
-Return ranked server-side exception aggregates by exception type, service, span name/kind, deployment environment, and count. Data comes from metrics, not raw spans: it has no trace/span ids, timestamps, messages, stacks, durations, status, or exact samples. Never present contextual traces as matches.
+Return ranked rows that aggregate server-side exception heat by exception type, service, span name/kind, deployment environment, and count. Data comes from metrics, not raw spans: rows are not verified samples and have no trace/span ids, timestamps, messages, stacks, durations, or status. Never present contextual traces as matches.
 
 For a known `service_name`, call `get_service_profile` first to decide whether span exceptions are likely the answer or a symptom. Use `did_you_mean` if service or environment spelling is uncertain.
 

@@ -9,13 +9,9 @@ Determine whether a known change coincides with a service regression.
 
 ## When not to use
 - Discover changes first: `get_change_events`
-- Compare arbitrary equal windows: `get_apm_service_deviations`
-- Investigate without a known change time: `get_service_profile`
 
 ## Pairs well with
 - `get_change_events`
-- `get_service_performance_details`
-- `get_service_dependency_graph`
 
 ## Output shape
 Verdict, scoped before/after windows, regressions, signal evidence, limitations and drill-downs.
