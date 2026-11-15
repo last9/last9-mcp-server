@@ -79,6 +79,23 @@ func TestGetDashboardHandler_UsesConfiguredRegionDefault(t *testing.T) {
 	}
 }
 
+func TestGetDashboardHandler_ReportsGenericForbiddenAsPermissionError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"forbidden"}`))
+	}))
+	defer srv.Close()
+
+	handler := NewGetDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDashboardArgs{ID: "uuid-1"})
+	if err == nil {
+		t.Fatal("expected permission error")
+	}
+	if !strings.Contains(err.Error(), "not permitted to access or modify dashboard") || strings.Contains(err.Error(), "readonly") {
+		t.Fatalf("unexpected permission error: %q", err)
+	}
+}
+
 func TestGetDashboardHandler_ServesLockStateAndAuthor(t *testing.T) {
 	tests := []struct {
 		name       string
