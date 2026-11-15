@@ -6,7 +6,7 @@ Queries need `name`, `type`, `query_type`, `telemetry`, `expr`, and `legend: {ty
 
 If the user supplies a service, use it without calling `get_service_profile`, `get_service_environments`, or `did_you_mean`. Validate with `validate_dashboard` and run each panel's query before approval. Create once, keep `dashboard.id`, and do not call create_dashboard again. Refine targeted panels through the route below; use `update_dashboard` only for full replacement.
 
-Read prompts `create_dashboard_guide`, `dashboard_examples`, and `query_guide`; the same guides are registered as `last9://reference/...` resources. Read `last9://reference/tool_recipes` for lifecycle routing.
+Read prompts `create_dashboard_guide`, `dashboard_examples`, and `query_guide`; the same guides are registered as `last9://reference/create_dashboard_guide`, `last9://reference/dashboard_examples`, and `last9://reference/query_guide`. Read `last9://reference/tool_recipes` for lifecycle routing.
 
 ## When to use
 Build a net-new dashboard with no id.
