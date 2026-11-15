@@ -63,6 +63,14 @@ type traceValidationContext struct {
 	stringBackedAliases map[string]struct{}
 }
 
+type traceColumnKind uint8
+
+const (
+	traceColumnUnknown traceColumnKind = iota
+	traceColumnNumeric
+	traceColumnString
+)
+
 // SanitizeTraceJSONQuery validates a tracejson_query pipeline before forwarding
 // to the API. It catches common LLM mistakes and returns descriptive errors so
 // the model can self-correct without waiting for a 400 from the upstream API.
@@ -124,6 +132,9 @@ func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 			if err := normalizeTransformStage(stage, path); err != nil {
 				return err
 			}
+		}
+		if err := validateTraceStageReferences(stage, stageType, path, validation); err != nil {
+			return err
 		}
 
 		if stageType == "select" && i == len(stages)-1 {
@@ -456,7 +467,7 @@ func validateFilterFields(value interface{}, path string, validation traceValida
 							return &tracePipelineError{category: traceCategoryInvalidField, path: fieldPath, msg: fmt.Sprintf("aggregate output %q is never null at %s; remove the redundant $notnull filter", fieldStr, fieldPath)}
 						}
 					}
-					if _, err := resolveTraceReference(fieldStr, fieldPath, validation); err != nil {
+					if _, err := validateTraceReference(fieldStr, fieldPath, validation); err != nil {
 						return err
 					}
 					if err := validateFieldSyntax(fieldStr, fieldPath); err != nil {
@@ -805,7 +816,7 @@ func validateAggregateStage(stage map[string]interface{}, path string, validatio
 	}
 	groupBy, _ := stage["groupby"].(map[string]interface{})
 	for field := range groupBy {
-		if _, err := resolveTraceReference(field, path+".groupby."+field, validation); err != nil {
+		if _, err := validateTraceReference(field, path+".groupby."+field, validation); err != nil {
 			return err
 		}
 	}
@@ -814,21 +825,21 @@ func validateAggregateStage(stage map[string]interface{}, path string, validatio
 
 func validateTraceAggregateReferences(function map[string]interface{}, path string, validation traceValidationContext) error {
 	for name, raw := range function {
-		base := strings.TrimSuffix(name, "_over_time")
-		if base == "$count" || base == "$rate" || base == "$uniq" {
-			continue
-		}
 		args, _ := raw.([]interface{})
 		field, i, ok := telemetry.AggregateFieldArg(name, args)
 		if !ok {
 			continue
 		}
 		fieldPath := fmt.Sprintf("%s.%s[%d]", path, name, i)
-		available, err := resolveTraceReference(field, fieldPath, validation)
+		kind, err := validateTraceReference(field, fieldPath, validation)
 		if err != nil {
 			return err
 		}
-		if available {
+		base := strings.TrimSuffix(name, "_over_time")
+		if base == "$count" || base == "$rate" || base == "$uniq" {
+			continue
+		}
+		if kind == traceColumnNumeric {
 			continue
 		}
 		if _, stringBacked := traceStringFields[field]; stringBacked && isTraceQuantile(name) {
@@ -881,21 +892,111 @@ func traceStringAliasesForStage(stage map[string]interface{}, previous, availabl
 	return aliases
 }
 
-func resolveTraceReference(field, path string, validation traceValidationContext) (bool, error) {
+func validateTraceReference(field, path string, validation traceValidationContext) (traceColumnKind, error) {
 	if _, available := validation.availableOutputs[field]; available {
-		return true, nil
+		if _, stringBacked := validation.stringBackedAliases[field]; stringBacked {
+			return traceColumnString, nil
+		}
+		return traceColumnNumeric, nil
 	}
 	name := wrappedTraceFieldName(field)
 	if name == "" {
 		name = field
 	}
 	if _, available := validation.availableOutputs[name]; available {
-		return false, &tracePipelineError{category: traceCategoryInvalidField, path: path, msg: fmt.Sprintf("aggregate output %q must be referenced as %q, not %q", name, name, field)}
+		return traceColumnUnknown, &tracePipelineError{category: traceCategoryInvalidField, path: path, msg: fmt.Sprintf("aggregate output %q must be referenced as %q, not %q", name, name, field)}
 	}
 	if _, shadowed := validation.shadowedOutputs[name]; shadowed {
-		return false, &tracePipelineError{category: traceCategoryInvalidField, path: path, msg: fmt.Sprintf("aggregate output %q is not available at %s; use an output from the closest aggregate stage", name, path)}
+		return traceColumnUnknown, &tracePipelineError{category: traceCategoryInvalidField, path: path, msg: fmt.Sprintf("aggregate output %q is not available at %s; use an output from the closest aggregate stage", name, path)}
 	}
-	return false, nil
+	if err := validateFieldSyntax(field, path); err != nil {
+		return traceColumnUnknown, err
+	}
+	if _, stringBacked := traceStringFields[field]; stringBacked {
+		return traceColumnString, nil
+	}
+	if _, stringBacked := validation.stringBackedAliases[field]; stringBacked {
+		return traceColumnString, nil
+	}
+	return traceColumnUnknown, nil
+}
+
+func validateTraceStageReferences(stage map[string]interface{}, stageType, path string, validation traceValidationContext) error {
+	check := func(field, fieldPath string) error {
+		if field == "" || field == "*" {
+			return nil
+		}
+		_, err := validateTraceReference(field, fieldPath, validation)
+		return err
+	}
+	switch stageType {
+	case "window_aggregate":
+		groupBy, _ := stage["groupby"].(map[string]interface{})
+		for field := range groupBy {
+			if err := check(field, path+".groupby."+field); err != nil {
+				return err
+			}
+		}
+	case "parse":
+		field, _ := stage["field"].(string)
+		return check(field, path+".field")
+	case "transform":
+		transforms, _ := stage["transforms"].([]interface{})
+		for i, raw := range transforms {
+			entry, _ := raw.(map[string]interface{})
+			function, _ := entry["function"].(map[string]interface{})
+			for name, rawArgs := range function {
+				args, _ := rawArgs.([]interface{})
+				for _, argIndex := range traceTransformFieldArgs(name, len(args)) {
+					field, _ := args[argIndex].(string)
+					if err := check(field, fmt.Sprintf("%s.transforms[%d].function.%s[%d]", path, i, name, argIndex)); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	case "select":
+		labels, _ := stage["labels"].(map[string]interface{})
+		for field := range labels {
+			if err := check(field, path+".labels."+field); err != nil {
+				return err
+			}
+		}
+		switch order := stage["order"].(type) {
+		case string:
+			return check(order, path+".order")
+		case []interface{}:
+			for i, raw := range order {
+				field, _ := raw.(string)
+				if err := check(field, fmt.Sprintf("%s.order[%d]", path, i)); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func traceTransformFieldArgs(name string, argCount int) []int {
+	switch name {
+	case "$concat":
+		indexes := make([]int, argCount)
+		for i := range indexes {
+			indexes[i] = i
+		}
+		return indexes
+	case "$join":
+		indexes := make([]int, 0, max(0, argCount-1))
+		for i := 1; i < argCount; i++ {
+			indexes = append(indexes, i)
+		}
+		return indexes
+	case "$split", "$split_into", "$replace_regex", "$length", "$arrayElement":
+		if argCount > 0 {
+			return []int{0}
+		}
+	}
+	return nil
 }
 
 func wrappedTraceFieldName(field string) string {
