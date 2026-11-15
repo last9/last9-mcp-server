@@ -22,7 +22,7 @@ Language routing: HTTP 5xx → `http_5xx_count`; HTTP 4xx → `http_4xx_count`; 
 
 ## Trace attribute deviations
 
-Compare returned current and baseline cohorts without deriving causal claims. Rank by the returned score and preserve evidence limitations. Attribute values can reveal correlated cohorts, not root cause. Follow promising cohorts with scoped trace or log queries only after inspecting the result.
+`latency` and `errors` split spans within the same target window. Only `time` compares separate target and baseline windows. Compare the returned cohorts without deriving causal claims. Rank by the returned score and preserve evidence limitations. Attribute values can reveal correlated cohorts, not root cause. Follow promising cohorts with scoped trace or log queries only after inspecting the result.
 
 ## Log query recipes
 
