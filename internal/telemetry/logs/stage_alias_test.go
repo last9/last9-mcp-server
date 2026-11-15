@@ -134,6 +134,27 @@ func TestPrepareLogJSONQueryRejectsNotNullOnAggregateOutput(t *testing.T) {
 	requireInvalidField(t, err, "logjson_query[2].query.$notnull[0]", `aggregate output "n" is never null`)
 }
 
+func TestPrepareLogJSONQueryRejectsNumericAggregateOfStringGroupByAlias(t *testing.T) {
+	stages := []map[string]interface{}{
+		cmpFilter("$eq", "ServiceName", "example-service"),
+		countBy("n", map[string]interface{}{"ServiceName": "svc"}),
+		aggregateStage(fn1("$sum", "svc"), "bad"),
+	}
+
+	_, err := prepareLogJSONQuery(stages, "logjson_query")
+	requireInvalidField(t, err, "logjson_query[2].aggregates[0].function.$sum[0]", "string-backed")
+}
+
+func TestPrepareLogJSONQueryRejectsWrappedAggregateOutput(t *testing.T) {
+	stages := []map[string]interface{}{
+		countBy("n1", nil),
+		aggregateStage(fn1("$sum", "attributes['n1']"), "total"),
+	}
+
+	_, err := prepareLogJSONQuery(stages, "logjson_query")
+	requireInvalidField(t, err, "logjson_query[1].aggregates[0].function.$sum[0]", "aggregate output")
+}
+
 func TestGetLogsHandlerRejectsNotNullOnCanonicalizedAggregateOutput(t *testing.T) {
 	for _, searchAPI := range []bool{false, true} {
 		t.Run(map[bool]string{false: "query range", true: "search API"}[searchAPI], func(t *testing.T) {

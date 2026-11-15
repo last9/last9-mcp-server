@@ -331,6 +331,37 @@ func TestSanitizeTraceJSONQueryRejectsNumericAggregateOfStringGroupByAlias(t *te
 	}
 }
 
+func TestSanitizeTraceJSONQueryRejectsSameStageNumericAggregateOfStringGroupByAlias(t *testing.T) {
+	stage := aggStage(fn1("$avg", "svc"), "bad")
+	stage["groupby"] = map[string]interface{}{"ServiceName": "svc"}
+
+	err := SanitizeTraceJSONQuery([]map[string]interface{}{stage})
+	requireTraceInvalidField(t, err, "tracejson_query[0].aggregates[0].function.$avg[0]", "string-backed")
+}
+
+func TestSanitizeTraceJSONQueryRejectsNotNullOnAggregateOutput(t *testing.T) {
+	stages := []map[string]interface{}{
+		aggStage(fn1("$count"), "n"),
+		{"type": "filter", "query": map[string]interface{}{"$notnull": []interface{}{"n"}}},
+	}
+
+	err := SanitizeTraceJSONQuery(stages)
+	requireTraceInvalidField(t, err, "tracejson_query[1].query.$neq[0]", "never null")
+}
+
+func TestSanitizeTraceJSONQueryRejectsEmptyAlias(t *testing.T) {
+	for name, stage := range map[string]map[string]interface{}{
+		"aggregate": aggStage(fn1("$count"), ""),
+		"window":    winStage(fn1("$count"), ""),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := SanitizeTraceJSONQuery([]map[string]interface{}{stage}); err == nil {
+				t.Fatal("expected empty alias error")
+			}
+		})
+	}
+}
+
 func TestSanitizeTraceJSONQueryRejectsShadowedAggregateAlias(t *testing.T) {
 	for name, consumer := range map[string]map[string]interface{}{
 		"filter":    {"type": "filter", "query": map[string]interface{}{"$gt": []interface{}{"n", 0}}},
