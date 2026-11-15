@@ -20,6 +20,7 @@ func TestServerVersion(t *testing.T) {
 	}{
 		{name: "release", version: "0.24.0", commit: "abc1234", want: "0.24.0"},
 		{name: "development commit", version: "dev", commit: "abc1234567890", want: "dev+abc1234"},
+		{name: "development short commit", version: "dev", commit: "abc", want: "dev+abc"},
 		{name: "development empty commit", version: "dev", commit: "", want: "dev"},
 		{name: "development unknown commit", version: "dev", commit: "unknown", want: "dev"},
 	}
