@@ -309,6 +309,9 @@ func validateAggregateNumericDataflow(stages []map[string]interface{}, pathPrefi
 					continue
 				}
 				fieldPath := fmt.Sprintf("%s.%s[%d]", functionPath, name, fieldIndex)
+				if _, isOutput := aggregateOutputs[field]; isOutput {
+					continue
+				}
 				if wrapped := wrappedLogFieldName(field); wrapped != "" {
 					if _, isOutput := aggregateOutputs[wrapped]; isOutput {
 						return newLogValidationError(LogValidationInvalidField, fieldPath, fmt.Sprintf("aggregate output %q must be referenced as %q, not %q", wrapped, wrapped, field))
