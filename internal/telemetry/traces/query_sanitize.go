@@ -73,10 +73,11 @@ func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 	for i, stage := range stages {
 		stageType, _ := stage["type"].(string)
 		path := fmt.Sprintf("tracejson_query[%d]", i)
+		availableOutputs := telemetry.CollectAggregateOutputAliases(stages, i)
 		validation := traceValidationContext{
-			availableOutputs:    telemetry.CollectAggregateOutputAliases(stages, i),
+			availableOutputs:    availableOutputs,
 			shadowedOutputs:     telemetry.CollectShadowedStageAliases(stages, i),
-			stringBackedAliases: traceStringAliasesForStage(stage, stringBackedAliases),
+			stringBackedAliases: traceStringAliasesForStage(stage, stringBackedAliases, availableOutputs),
 		}
 		applyImplicitQuantileExactDefault(stage, hasResult)
 
@@ -141,7 +142,7 @@ func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 
 		hasResult = traceStageHasResult(stage, stageType, hasResult)
 		if stageType == "aggregate" || stageType == "window_aggregate" {
-			stringBackedAliases = nextTraceStringBackedAliases(stage, stringBackedAliases)
+			stringBackedAliases = nextTraceStringBackedAliases(stage, stringBackedAliases, validation.availableOutputs)
 		}
 	}
 	return nil
@@ -849,12 +850,15 @@ func validateTraceAggregateReferences(function map[string]interface{}, path stri
 	return nil
 }
 
-func nextTraceStringBackedAliases(stage map[string]interface{}, previous map[string]struct{}) map[string]struct{} {
+func nextTraceStringBackedAliases(stage map[string]interface{}, previous, availableOutputs map[string]struct{}) map[string]struct{} {
 	next := map[string]struct{}{}
 	groupBy, _ := stage["groupby"].(map[string]interface{})
 	for field, rawAlias := range groupBy {
 		alias, _ := rawAlias.(string)
 		if alias == "" {
+			continue
+		}
+		if _, available := availableOutputs[field]; available {
 			continue
 		}
 		_, builtInString := traceStringFields[field]
@@ -866,12 +870,12 @@ func nextTraceStringBackedAliases(stage map[string]interface{}, previous map[str
 	return next
 }
 
-func traceStringAliasesForStage(stage map[string]interface{}, previous map[string]struct{}) map[string]struct{} {
+func traceStringAliasesForStage(stage map[string]interface{}, previous, availableOutputs map[string]struct{}) map[string]struct{} {
 	aliases := make(map[string]struct{}, len(previous))
 	for alias := range previous {
 		aliases[alias] = struct{}{}
 	}
-	for alias := range nextTraceStringBackedAliases(stage, previous) {
+	for alias := range nextTraceStringBackedAliases(stage, previous, availableOutputs) {
 		aliases[alias] = struct{}{}
 	}
 	return aliases

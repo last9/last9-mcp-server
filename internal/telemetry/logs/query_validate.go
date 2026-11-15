@@ -384,6 +384,9 @@ func validateAggregateNumericDataflow(stages []map[string]interface{}, pathPrefi
 			if alias == "__result__" {
 				continue
 			}
+			if _, isOutput := aggregateOutputs[field]; isOutput {
+				continue
+			}
 			_, isStringBackedAlias := stringBackedAliases[field]
 			if isStringBackedLogField(field) || isStringBackedAlias {
 				nextStringBackedAliases[alias] = struct{}{}
