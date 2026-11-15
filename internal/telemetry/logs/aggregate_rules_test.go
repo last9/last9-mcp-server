@@ -219,6 +219,25 @@ func TestPrepareLogJSONQueryRejectsQuantileOfBuiltInStringField(t *testing.T) {
 	requireInvalidField(t, err, "logjson_query[2].aggregates[0].function.$quantile_exact[1]", "built-in string field")
 }
 
+func TestPrepareLogJSONQueryAcceptsNumericOutputNamedForBuiltInStringField(t *testing.T) {
+	for _, field := range []string{"Body", "ServiceName"} {
+		for _, operator := range []string{"$quantile", "$quantile_exact"} {
+			for kind, consumer := range map[string]func(map[string]interface{}, string) map[string]interface{}{
+				"aggregate": aggregateStage,
+				"window":    windowStage,
+			} {
+				stages := []map[string]interface{}{
+					aggregateStage(fn1("$count"), field),
+					consumer(fn1(operator, 0.95, field), "p95"),
+				}
+				if _, err := prepareLogJSONQuery(stages, "logjson_query"); err != nil {
+					t.Errorf("%s/%s/%s: %v", field, operator, kind, err)
+				}
+			}
+		}
+	}
+}
+
 func TestPrepareLogJSONQueryDefaultsQuantileExactToWindowGroupByResult(t *testing.T) {
 	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
 		for kind, consumer := range map[string]func(map[string]interface{}, string) map[string]interface{}{

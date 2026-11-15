@@ -330,6 +330,25 @@ func TestSanitizeTraceJSONQueryRejectsNumericAggregateOfStringGroupByAlias(t *te
 	}
 }
 
+func TestSanitizeTraceJSONQueryAcceptsNumericOutputNamedForBuiltInStringField(t *testing.T) {
+	for _, field := range []string{"ServiceName", "SpanName"} {
+		for _, operator := range []string{"$quantile", "$quantile_exact"} {
+			for kind, consumer := range map[string]func(map[string]interface{}, string) map[string]interface{}{
+				"aggregate": func(fn map[string]interface{}, as string) map[string]interface{} { return aggStage(fn, as) },
+				"window":    winStage,
+			} {
+				stages := []map[string]interface{}{
+					aggStage(fn1("$count"), field),
+					consumer(fn1(operator, 0.95, field), "p95"),
+				}
+				if err := SanitizeTraceJSONQuery(stages); err != nil {
+					t.Errorf("%s/%s/%s: %v", field, operator, kind, err)
+				}
+			}
+		}
+	}
+}
+
 func TestSanitizeTraceJSONQueryRejectsSameStageNumericAggregateOfStringGroupByAlias(t *testing.T) {
 	stage := aggStage(fn1("$avg", "svc"), "bad")
 	stage["groupby"] = map[string]interface{}{"ServiceName": "svc"}
@@ -378,6 +397,29 @@ func TestSanitizeTraceJSONQueryRejectsShadowedAggregateAlias(t *testing.T) {
 				t.Fatalf("error = %v, want shadowed aggregate output rejection", err)
 			}
 		})
+	}
+}
+
+func TestSanitizeTraceJSONQueryChecksAggregateOutputVisibilityForEveryConsumer(t *testing.T) {
+	producer := aggStage(fn1("$count"), "old_count")
+	replacement := aggStage(fn1("$count"), "new_count")
+
+	grouped := aggStage(fn1("$count"), "total")
+	grouped["groupby"] = map[string]interface{}{"old_count": "old"}
+	err := SanitizeTraceJSONQuery([]map[string]interface{}{producer, replacement, grouped})
+	requireTraceInvalidField(t, err, "tracejson_query[2].groupby.old_count", "not available")
+
+	wrapped := aggStage(fn1("$sum", "attributes['old_count']"), "total")
+	err = SanitizeTraceJSONQuery([]map[string]interface{}{producer, wrapped})
+	requireTraceInvalidField(t, err, "tracejson_query[1].aggregates[0].function.$sum[0]", `must be referenced as "old_count"`)
+
+	current := aggStage(fn1("$count"), "total")
+	current["groupby"] = map[string]interface{}{"old_count": "old"}
+	if err := SanitizeTraceJSONQuery([]map[string]interface{}{producer, current}); err != nil {
+		t.Fatalf("closest output groupby: %v", err)
+	}
+	if err := SanitizeTraceJSONQuery([]map[string]interface{}{producer, aggStage(fn1("$sum", "old_count"), "total")}); err != nil {
+		t.Fatalf("bare closest output aggregate: %v", err)
 	}
 }
 
