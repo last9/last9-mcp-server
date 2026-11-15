@@ -367,6 +367,31 @@ func TestSanitizeTraceJSONQueryRejectsNotNullOnAggregateOutput(t *testing.T) {
 	requireTraceInvalidField(t, err, "tracejson_query[1].query.$neq[0]", "never null")
 }
 
+func TestSanitizeTraceJSONQueryPreservesNumericOutputsThroughRegrouping(t *testing.T) {
+	for _, output := range []string{"requests", "ServiceName", "SpanName"} {
+		for _, consumer := range []struct {
+			name  string
+			stage map[string]interface{}
+		}{
+			{"aggregate", aggStage(fn1("$quantile_exact", 0.95, "bucket"), "p95")},
+			{"window", winStage(fn1("$quantile_exact", 0.95, "bucket"), "p95")},
+		} {
+			t.Run(output+"/"+consumer.name, func(t *testing.T) {
+				regroup := aggStage(fn1("$count"), "n")
+				regroup["groupby"] = map[string]interface{}{output: "bucket"}
+				stages := []map[string]interface{}{
+					aggStage(fn1("$count"), output),
+					regroup,
+					consumer.stage,
+				}
+				if err := SanitizeTraceJSONQuery(stages); err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+			})
+		}
+	}
+}
+
 func TestSanitizeTraceJSONQueryRejectsEmptyAlias(t *testing.T) {
 	for name, stage := range map[string]map[string]interface{}{
 		"aggregate": aggStage(fn1("$count"), ""),

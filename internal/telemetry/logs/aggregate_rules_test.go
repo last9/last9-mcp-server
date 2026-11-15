@@ -355,6 +355,31 @@ func TestPrepareLogJSONQueryQuantileExactNeedsNumericGuard(t *testing.T) {
 	}
 }
 
+func TestPrepareLogJSONQueryPreservesNumericOutputsThroughRegrouping(t *testing.T) {
+	for _, output := range []string{"requests", "ServiceName", "Body"} {
+		for _, consumer := range []struct {
+			name  string
+			stage map[string]interface{}
+		}{
+			{"aggregate", aggregateStage(fn1("$quantile_exact", 0.95, "bucket"), "p95")},
+			{"window", windowStage(fn1("$quantile_exact", 0.95, "bucket"), "p95")},
+		} {
+			t.Run(output+"/"+consumer.name, func(t *testing.T) {
+				regroup := aggregateStage(fn1("$count"), "n")
+				regroup["groupby"] = map[string]interface{}{output: "bucket"}
+				stages := []map[string]interface{}{
+					aggregateStage(fn1("$count"), output),
+					regroup,
+					consumer.stage,
+				}
+				if _, err := prepareLogJSONQuery(stages, "logjson_query"); err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+			})
+		}
+	}
+}
+
 func cmpFilter(op string, args ...interface{}) map[string]interface{} {
 	return map[string]interface{}{"type": "filter", "query": map[string]interface{}{op: args}}
 }
