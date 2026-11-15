@@ -448,6 +448,42 @@ func TestSanitizeTraceJSONQueryChecksAggregateOutputVisibilityForEveryConsumer(t
 	}
 }
 
+func TestSanitizeTraceJSONQueryChecksLineageForEveryTraceReference(t *testing.T) {
+	producer := aggStage(fn1("$count"), "old_count")
+	replacement := aggStage(fn1("$count"), "new_count")
+	cases := []struct {
+		name, path string
+		stage      map[string]interface{}
+	}{
+		{"count operand", "tracejson_query[2].aggregates[0].function.$count[0]", aggStage(fn1("$count", "old_count"), "n")},
+		{"uniq operand", "tracejson_query[2].aggregates[0].function.$uniq[0]", aggStage(fn1("$uniq", "old_count"), "n")},
+		{"transform operand", "tracejson_query[2].transforms[0].function.$split[0]", map[string]interface{}{
+			"type": "transform", "transforms": []interface{}{map[string]interface{}{
+				"function": map[string]interface{}{"$split": []interface{}{"old_count", "/", 1}}, "as": []interface{}{"part"},
+			}},
+		}},
+		{"concat operand", "tracejson_query[2].transforms[0].function.$concat[1]", map[string]interface{}{
+			"type": "transform", "transforms": []interface{}{map[string]interface{}{
+				"function": map[string]interface{}{"$concat": []interface{}{"new_count", "old_count"}}, "as": []interface{}{"joined"},
+			}},
+		}},
+		{"window groupby", "tracejson_query[2].groupby.old_count", func() map[string]interface{} {
+			stage := winStage(fn1("$count"), "n")
+			stage["groupby"] = map[string]interface{}{"old_count": "old"}
+			return stage
+		}()},
+		{"select label", "tracejson_query[2].labels.old_count", map[string]interface{}{"type": "select", "labels": map[string]interface{}{"old_count": "old"}}},
+		{"select order", "tracejson_query[2].order[0]", map[string]interface{}{"type": "select", "order": []interface{}{"old_count"}}},
+		{"parse field", "tracejson_query[2].field", map[string]interface{}{"type": "parse", "parser": "json", "field": "old_count"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := SanitizeTraceJSONQuery([]map[string]interface{}{producer, replacement, tc.stage})
+			requireTraceInvalidField(t, err, tc.path, `aggregate output "old_count" is not available`)
+		})
+	}
+}
+
 func TestSanitizeTraceJSONQuery_RejectsInvalidAggregateAlias(t *testing.T) {
 	for _, as := range []string{"p99 latency", "123", "a;b", "p99-latency"} {
 		err := SanitizeTraceJSONQuery([]map[string]interface{}{aggStage(fn1("$count"), as)})
