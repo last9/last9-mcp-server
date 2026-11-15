@@ -46,7 +46,7 @@ var (
 )
 
 func serverVersion(version, commit string) string {
-	if version != "dev" || commit == "unknown" {
+	if version != "dev" || commit == "" || commit == "unknown" {
 		return version
 	}
 	if len(commit) > 7 {
