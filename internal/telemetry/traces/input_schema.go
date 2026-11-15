@@ -105,7 +105,7 @@ func filterStageSchema() map[string]interface{} {
 					"Numeric: $gt, $lt, $gte, $lte. " +
 					"String: $contains, $notcontains, $icontains, $inotcontains, $containsWords, $notcontainsWords, $icontainsWords, $inotcontainsWords. " +
 					"Regex: $regex, $notregex, $iregex, $inotregex. " +
-					"Existence: no $notnull operator — use $neq against an empty string instead, e.g. {\"$neq\": [field, \"\"]}. " +
+					"Existence: prefer $neq against an empty string, e.g. {\"$neq\": [field, \"\"]}; $notnull is normalized to that form. " +
 					"Each operator takes [field, value] except logical operators which take an array of conditions. " +
 					"Example: {\"$and\": [{\"$eq\": [\"ServiceName\", \"api\"]}, {\"$eq\": [\"StatusCode\", \"STATUS_CODE_ERROR\"]}]}",
 			},

@@ -98,6 +98,7 @@ The JSON pipeline format supports filtering, parsing, aggregation on trace data.
     "$or": [...],         // OR multiple conditions
     "$eq": [field, value],     // Equals. value must be a string
     "$neq": [field, value],    // Not equals. value must be a string
+    "$notnull": [field],       // Normalized to $neq against an empty string
     "$gt": [field, value],     // Greater than. value must be a number or numeric string
     "$lt": [field, value],     // Less than. value must be a number or numeric string
     "$gte": [field, value],    // Greater than or equal. value must be a number or numeric string
