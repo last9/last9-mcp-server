@@ -783,6 +783,10 @@ func TestGetLogsHandlerRejectsUnsafeQuantilesBeforeAPICall(t *testing.T) {
 			testQuantileAggregate(field),
 		}, field},
 		{"sanitized resource alias", []map[string]interface{}{testQuantileAggregate("k8s.pod.cpu")}, "resources['k8s.pod.cpu']"},
+		{"string-backed groupby alias", []map[string]interface{}{
+			countBy("n", map[string]interface{}{field: "latency"}),
+			testQuantileAggregate("latency"),
+		}, "latency"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1000,6 +1004,46 @@ func TestGetLogsHandlerAcceptsSafeQuantileInputs(t *testing.T) {
 func TestPrepareLogJSONQueryRejectsNonNumericRegexForAttributeQuantile(t *testing.T) {
 	field := "attributes['latency_ms']"
 	assertPrepareQuantileRejected(t, []map[string]interface{}{testNumericFilter(field, `^.+$`), testQuantileAggregate(field)})
+}
+
+func TestPrepareLogJSONQueryValidatesQuantileGroupByAliasProvenance(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		field    string
+		operator string
+	}{
+		{name: "attribute quantile", field: "attributes['latency_ms']", operator: "$quantile"},
+		{name: "resource quantile exact", field: "resources['latency_ms']", operator: "$quantile_exact"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			grouped := countBy("n", map[string]interface{}{tc.field: "latency"})
+			quantile := map[string]interface{}{
+				"type": "aggregate",
+				"aggregates": []interface{}{map[string]interface{}{
+					"function": fn1(tc.operator, 0.99, "latency"), "as": "p99",
+				}},
+			}
+
+			assertPrepareQuantileRejected(t, []map[string]interface{}{grouped, quantile})
+			if _, err := prepareLogJSONQuery([]map[string]interface{}{
+				testCanonicalNumericFilter(tc.field), grouped, quantile,
+			}, "logjson_query"); err != nil {
+				t.Fatalf("numeric-safe alias rejected: %v", err)
+			}
+		})
+	}
+
+	if _, err := prepareLogJSONQuery([]map[string]interface{}{
+		countBy("n", nil),
+		{
+			"type": "aggregate",
+			"aggregates": []interface{}{map[string]interface{}{
+				"function": fn1("$quantile", 0.99, "n"), "as": "p99",
+			}},
+		},
+	}, "logjson_query"); err != nil {
+		t.Fatalf("numeric aggregate alias rejected: %v", err)
+	}
 }
 
 func assertPrepareQuantileRejected(t *testing.T, pipeline []map[string]interface{}) {

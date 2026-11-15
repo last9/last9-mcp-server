@@ -5,7 +5,7 @@
 
 **Pattern:** wildcards like `checkout.*` → `$regex` (RE2: no lookaround). Trace ID substring → `$contains` on `TraceId`; exact ID → `get_service_traces`.
 
-**Existence:** `{"$neq":["attributes['key']",""]}`; never `$exists`/`$notnull`.
+**Existence:** `$notnull:[field]` → `$neq:[field,""]`; never `$exists`.
 
 **Scope:** `service.name`→`ServiceName`; tenant→`resources['last9.tenant']`; env→`resources['deployment.environment']`.
 

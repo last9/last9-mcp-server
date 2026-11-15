@@ -168,7 +168,6 @@ internal/telemetry/logs/query_sanitize_test.go	4	// TestPrepareLogJSONQueryNonMa
 internal/telemetry/logs/query_sanitize_test.go	4	// TestPrepareLogJSONQueryCatchAllTips verifies that inputs which pass schema
 internal/telemetry/logs/query_validate.go	5	// traceOnlyLogFields are span/trace fields that have no meaning as top-level
 internal/telemetry/logs/query_validate.go	6	// prepareLogJSONQuery validates then sanitizes a logjson pipeline, then
-internal/telemetry/logs/query_validate.go	4	// validateQuantileNumericDataflow makes one ordered pass over the sanitized
 internal/telemetry/logs/sample_body_test.go	4	// TestGetLogAttributesForPipeline_PlaintextFallbackFiveDistinctSamplesCappedAtThree
 internal/telemetry/logs/schema_test.go	6	// TestGetLogsArgs_SchemaCompatibility ensures the generated JSON Schema for
 internal/telemetry/logs/service_logs.go	8	// ShouldOptimizeLineFilterQuery is intentionally left at the zero value
