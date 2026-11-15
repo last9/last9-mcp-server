@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
-	"strings"
 	"time"
 
 	"last9-mcp/internal/constants"
@@ -23,6 +22,7 @@ import (
 const (
 	defaultGetLogsLookbackMinutes = 5
 	defaultGetLogsAggregateLimit  = 1000
+	maxGetLogsChunks              = 24
 )
 
 // GetLogsArgs represents the input arguments for the get_logs tool
@@ -131,11 +131,39 @@ type getLogsQuery struct {
 
 func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, q getLogsQuery) (*mcp.CallToolResult, error) {
 	args, startTime, endTime := q.args, q.startTime, q.endTime
-
-	result, env, err := fetchLogJSONQuery(ctx, client, cfg, args.LogjsonQuery, startTime, endTime, args)
+	normalizedIndex, err := utils.NormalizeLogIndex(args.Index)
 	if err != nil {
 		return nil, err
 	}
+	args.Index = normalizedIndex
+	hasExplicitIndex := normalizedIndex != ""
+	var cancelLink context.CancelFunc
+	var resolvedIndexCh chan string
+	if hasExplicitIndex {
+		var linkCtx context.Context
+		linkCtx, cancelLink = context.WithCancel(ctx)
+		defer cancelLink()
+		resolvedIndexCh = make(chan string, 1)
+		go func() {
+			resolvedIndex, _ := utils.ResolveLogIndexDashboardParam(linkCtx, client, cfg, normalizedIndex)
+			resolvedIndexCh <- resolvedIndex
+		}()
+	}
+
+	endFetch := utils.StartToolPhase(ctx, "get_logs", "fetch")
+	result, env, err := fetchLogJSONQuery(ctx, client, cfg, args.LogjsonQuery, startTime, endTime, args)
+	endFetch(err)
+	if err != nil {
+		if cancelLink != nil {
+			cancelLink()
+			<-resolvedIndexCh
+		}
+		if scanResult := scanErrorResult(err, getLogsScanSteps); scanResult != nil {
+			return scanResult, nil
+		}
+		return nil, err
+	}
+	endProcess := utils.StartToolPhase(ctx, "get_logs", "post_process")
 	q.guardrailVerdict.AddHints(&env)
 	addGetLogsHints(cfg, args, result, &env)
 	defaultWindow := args.StartTimeISO == "" && args.EndTimeISO == "" && args.LookbackMinutes == 0
@@ -155,27 +183,46 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 	if args.ResponseMode != logResponseModeRaw {
 		result = summarizeLogResult(result, startTime, endTime, truncated)
 	}
-	text := utils.FormatQueryResponse(result, &env)
+	text := formatJSON(result)
+	endProcess(nil)
 
 	// Build deep link URL
+	endLink := utils.StartToolPhase(ctx, "get_logs", "deep_link")
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 	dashboardIndex := ""
-	hasExplicitIndex := strings.TrimSpace(args.Index) != ""
 	if hasExplicitIndex {
-		resolvedIndex, err := utils.ResolveLogIndexDashboardParam(ctx, client, cfg, args.Index)
-		if err == nil {
-			dashboardIndex = resolvedIndex
-		}
+		dashboardIndex = <-resolvedIndexCh
 	}
 	dashboardURL := dlBuilder.BuildLogsLink(startTime, endTime, args.LogjsonQuery, dashboardIndex)
 	var meta mcp.Meta
 	if !hasExplicitIndex || dashboardIndex != "" {
 		meta = deeplink.ToMeta(dashboardURL)
 	}
+	endLink(nil)
 
 	toolResult := utils.EnvelopeToolResult(result, text, env)
 	toolResult.Meta = meta
-	return toolResult, nil
+	kind, items, err := extractResultItems(result)
+	if err != nil || kind != "streams" {
+		return toolResult, nil
+	}
+	count := countLogEntriesInResultItems(items)
+	return boundRawResult(toolResult, count, cfg.MCPServerInfo, func(n int) (*mcp.CallToolResult, error) {
+		limited := mapsClone(result)
+		data := mapsClone(result["data"].(map[string]interface{}))
+		data["result"] = truncateResultItemsByEntryLimit(items, n)
+		limited["data"] = data
+		limited["logs_truncated"] = true
+		limited["l9_raw_limit"] = map[string]any{"returned_entries": n, "fetched_entries": count, "max_bytes": maxRawResultBytes}
+		limited["l9_guidance"] = map[string]any{"message": rawLimitHint(n, count, effectiveGetLogsResultLimit(cfg, args.Limit))}
+		limitedEnv := env
+		limitedEnv.Trim(count - n)
+		return &mcp.CallToolResult{
+			Meta:              meta,
+			Content:           []mcp.Content{&mcp.TextContent{Text: formatJSON(limited)}},
+			StructuredContent: map[string]any{"envelope": limitedEnv},
+		}, nil
+	})
 }
 
 func addGetLogsHints(cfg models.Config, args GetLogsArgs, result map[string]interface{}, env *utils.ResultEnvelope) {
@@ -233,7 +280,9 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 			}
 		}
 		if stages, ok := logjsonQuery.([]map[string]interface{}); ok && !truncated {
+			endSanity := utils.StartToolPhase(ctx, "get_logs", "count_sanity")
 			result = utils.AppendCountSanity(ctx, client, cfg, stages, startTime, endTime, result)
+			endSanity(nil)
 		}
 		return result, env, nil
 	}
@@ -251,6 +300,12 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		EndMs:    endTime,
 		Pipeline: args.LogjsonQuery,
 	})
+	if endTime > startTime {
+		chunkCount := 1 + (endTime-startTime-1)/adaptiveCfg.ChunkSizeMs
+		if chunkCount > maxGetLogsChunks {
+			return nil, env, fmt.Errorf("get_logs requires %d chunks (maximum %d); no log queries were sent. Reduce lookback_minutes to 1440 or less, or narrow start_time_iso/end_time_iso to at most 24 hours. Do not retry unchanged", chunkCount, maxGetLogsChunks)
+		}
+	}
 	chunks := utils.GetAdaptiveChunks(startTime, endTime, adaptiveCfg)
 	if len(chunks) == 0 {
 		if chunkingDebug {
@@ -472,7 +527,9 @@ func fetchViaLogSearchAPI(
 		}
 	}
 	if hasStages && !partial {
+		endSanity := utils.StartToolPhase(ctx, "get_logs", "count_sanity")
 		result = utils.AppendCountSanity(ctx, client, cfg, stages, startTime, endTime, result)
+		endSanity(nil)
 	}
 	if rawLimit > 0 && applyGetLogsEntryLimit(result, rawLimit) {
 		env.Truncate(rawLimit)

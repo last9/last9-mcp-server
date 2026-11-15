@@ -81,7 +81,7 @@ func TestGetLogsGuardrailEnforceRejectNeverQueries(t *testing.T) {
 
 func TestGetLogsGuardrailShadowRunsAndHints(t *testing.T) {
 	s := newGuardrailServer(t, http.StatusOK, `{"data":{"bytes":10}}`)
-	result := callGuardedGetLogs(t, s, guardrail.ModeShadow, GetLogsArgs{LogjsonQuery: rawErrorFilter, LookbackMinutes: twoDaysMinutes})
+	result := callGuardedGetLogs(t, s, guardrail.ModeShadow, GetLogsArgs{LogjsonQuery: aggregatePipeline(rawErrorFilter), LookbackMinutes: twoDaysMinutes})
 
 	if result.IsError || s.QueryCalls.Load() == 0 {
 		t.Fatalf("shadow blocked the query: isError=%v queries=%d", result.IsError, s.QueryCalls.Load())
@@ -105,7 +105,7 @@ func TestGetLogsGuardrailAllowedQueryRunsWithoutHints(t *testing.T) {
 
 func TestGetLogsGuardrailOffSkipsEstimate(t *testing.T) {
 	s := newGuardrailServer(t, http.StatusOK, `{"data":{"bytes":10}}`)
-	result := callGuardedGetLogs(t, s, guardrail.ModeOff, GetLogsArgs{LogjsonQuery: rawErrorFilter, LookbackMinutes: twoDaysMinutes})
+	result := callGuardedGetLogs(t, s, guardrail.ModeOff, GetLogsArgs{LogjsonQuery: aggregatePipeline(rawErrorFilter), LookbackMinutes: twoDaysMinutes})
 
 	if result.IsError || s.EstimateCalls.Load() != 0 || s.QueryCalls.Load() == 0 {
 		t.Fatalf("isError=%v estimates=%d queries=%d", result.IsError, s.EstimateCalls.Load(), s.QueryCalls.Load())
@@ -162,7 +162,7 @@ func TestGetServiceLogsGuardrailShadowRunsAndHints(t *testing.T) {
 
 func TestGetLogsGuardrailScopedFilterSkipsRangeCapWhenEstimateUnavailable(t *testing.T) {
 	s := newGuardrailServer(t, http.StatusNotFound, `404 page not found`)
-	result := callGuardedGetLogs(t, s, guardrail.ModeEnforce, GetLogsArgs{LogjsonQuery: serviceErrorFilter, LookbackMinutes: twoDaysMinutes})
+	result := callGuardedGetLogs(t, s, guardrail.ModeEnforce, GetLogsArgs{LogjsonQuery: aggregatePipeline(serviceErrorFilter), LookbackMinutes: twoDaysMinutes})
 
 	if result.IsError || s.QueryCalls.Load() == 0 {
 		t.Fatalf("scoped query blocked without an estimate: isError=%v queries=%d", result.IsError, s.QueryCalls.Load())
@@ -170,6 +170,17 @@ func TestGetLogsGuardrailScopedFilterSkipsRangeCapWhenEstimateUnavailable(t *tes
 	if guardrailtest.EnvelopeHint(t, result, "query_guardrail["+guardrail.ReasonRangeTooWide+"]") != "" {
 		t.Fatalf("range cap applied to a scoped query: %v", utils.GetResultEnvelope(t, result).Hints)
 	}
+}
+
+func aggregatePipeline(filters []map[string]interface{}) []map[string]interface{} {
+	pipeline := append([]map[string]interface{}{}, filters...)
+	return append(pipeline, map[string]interface{}{
+		"type": "aggregate",
+		"aggregates": []interface{}{map[string]interface{}{
+			"function": map[string]interface{}{"$count": []interface{}{}},
+			"as":       "count",
+		}},
+	})
 }
 
 func TestGetLogsGuardrailEstimateUnavailableStillRuns(t *testing.T) {

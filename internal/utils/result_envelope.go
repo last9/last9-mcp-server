@@ -47,7 +47,7 @@ func (e *ResultEnvelope) Trim(omitted int) {
 	if omitted <= 0 {
 		return
 	}
-	e.TrimmedItems = omitted
+	e.TrimmedItems += omitted
 	e.Hint(fmt.Sprintf("Response trimmed to fit %d bytes: %d items omitted. Narrow the filters or time range, or aggregate, rather than raising limit.", MaxResultTextBytes, omitted))
 }
 

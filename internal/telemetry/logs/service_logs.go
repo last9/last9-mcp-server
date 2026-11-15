@@ -179,7 +179,9 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 
 		var responseJSON string
 		if response == logs {
-			responseJSON, err = formatServiceLogs(logs)
+			var encoded []byte
+			encoded, err = json.MarshalIndent(logs, "", "  ")
+			responseJSON = string(encoded)
 		} else {
 			var encoded []byte
 			encoded, err = json.MarshalIndent(response, "", "  ")
@@ -199,7 +201,35 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 
 		result := utils.EnvelopeToolResult(response, responseJSON, logs.envelope)
 		result.Meta = meta
-		return result, nil, nil
+		if response != logs {
+			return result, nil, nil
+		}
+		count := len(logs.Logs)
+		bounded, err := boundRawResult(result, count, cfg.MCPServerInfo, func(n int) (*mcp.CallToolResult, error) {
+			limited := *logs
+			limited.Logs = logs.Logs[:n]
+			limited.Count = n
+			truncated := true
+			limited.LogsTruncated = &truncated
+			limited.RawLimit = map[string]any{"returned_entries": n, "fetched_entries": count, "max_bytes": maxRawResultBytes}
+			limited.Hint = rawLimitHint(n, count, limit)
+			limited.coverageStatus = "partial"
+			limited.envelope.Trim(count - n)
+			limitedMeta := mapsClone(meta)
+			if coverage := serviceLogsCoverage(&limited, logjsonQuery, bounds); coverage != nil {
+				limitedMeta["last9/coverage"] = coverage
+			}
+			encoded, err := json.MarshalIndent(&limited, "", "  ")
+			if err != nil {
+				return nil, err
+			}
+			return &mcp.CallToolResult{
+				Meta:              limitedMeta,
+				Content:           []mcp.Content{&mcp.TextContent{Text: string(encoded)}},
+				StructuredContent: map[string]any{"envelope": limited.envelope},
+			}, nil
+		})
+		return bounded, nil, err
 	}
 }
 
