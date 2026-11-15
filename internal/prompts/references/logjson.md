@@ -164,7 +164,7 @@ No other stage type exists: `transform` and `select` are rejected.
     // Existence
     "$notnull": [field],      // Field is present and not null
 
-    // Numeric comparison — value must be a string containing a number
+    // Numeric comparison — value must be a number or a numeric string
     "$gt":  [field, value],   // Greater than
     "$lt":  [field, value],   // Less than
     "$gte": [field, value],   // Greater than or equal

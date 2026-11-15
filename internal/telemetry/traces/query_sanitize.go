@@ -68,17 +68,19 @@ func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 		stageType, _ := stage["type"].(string)
 		path := fmt.Sprintf("tracejson_query[%d]", i)
 		shadowedAliases := telemetry.CollectShadowedStageAliases(stages, i)
+		aggregateOutputs := telemetry.CollectAggregateOutputAliases(stages, i)
 		applyImplicitQuantileExactDefault(stage, hasResult)
 
 		if err := validateStageKeys(stage, stageType, path); err != nil {
 			return err
 		}
 		if stageType == "window_aggregate" {
+			stageStringAliases := traceStringAliasesForStage(stage, stringBackedAliases)
 			function, _ := stage["function"].(map[string]interface{})
 			if err := rejectShadowedAggregateFields(function, path+".function", shadowedAliases); err != nil {
 				return err
 			}
-			if err := rejectStringAliasNumericAggregate(function, path+".function", stringBackedAliases); err != nil {
+			if err := rejectStringAliasNumericAggregate(function, path+".function", stageStringAliases); err != nil {
 				return err
 			}
 		}
@@ -94,7 +96,7 @@ func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 				if err := validateTraceFilterCondition(query, path+".query"); err != nil {
 					return err
 				}
-				if err := validateFilterFields(query, path+".query", shadowedAliases); err != nil {
+				if err := validateFilterFields(query, path+".query", shadowedAliases, aggregateOutputs); err != nil {
 					return err
 				}
 				// tracejson requires the top-level filter query to be wrapped in a
@@ -107,7 +109,7 @@ func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 		}
 
 		if stageType == "aggregate" {
-			if err := validateAggregateStage(stage, path, shadowedAliases, stringBackedAliases); err != nil {
+			if err := validateAggregateStage(stage, path, shadowedAliases, traceStringAliasesForStage(stage, stringBackedAliases)); err != nil {
 				return err
 			}
 		}
@@ -233,7 +235,7 @@ func SanitizeTraceFilterConditions(conditions []map[string]interface{}, pathPref
 			if err := validateTraceFilterCondition(cond, path); err != nil {
 				return nil, err
 			}
-			if err := validateFilterFields(cond, path, nil); err != nil {
+			if err := validateFilterFields(cond, path, nil, nil); err != nil {
 				return nil, err
 			}
 			sanitized = append(sanitized, cond)
@@ -412,18 +414,18 @@ func validateTraceFilterCondition(value interface{}, path string) error {
 // validateFilterFields walks the query tree and checks every string field operand
 // for common LLM mistakes: flat resource_ prefix, double-quoted attribute syntax,
 // and dot-notation field names.
-func validateFilterFields(value interface{}, path string, shadowedAliases map[string]struct{}) error {
+func validateFilterFields(value interface{}, path string, shadowedAliases, aggregateOutputs map[string]struct{}) error {
 	switch typed := value.(type) {
 	case []interface{}:
 		for i, item := range typed {
-			if err := validateFilterFields(item, fmt.Sprintf("%s[%d]", path, i), shadowedAliases); err != nil {
+			if err := validateFilterFields(item, fmt.Sprintf("%s[%d]", path, i), shadowedAliases, aggregateOutputs); err != nil {
 				return err
 			}
 		}
 	case map[string]interface{}:
 		for key, item := range typed {
 			if _, isLogical := traceFilterLogicalOperators[key]; isLogical {
-				if err := validateFilterFields(item, path+"."+key, shadowedAliases); err != nil {
+				if err := validateFilterFields(item, path+"."+key, shadowedAliases, aggregateOutputs); err != nil {
 					return err
 				}
 				continue
@@ -443,6 +445,11 @@ func validateFilterFields(value interface{}, path string, shadowedAliases map[st
 				}
 				if fieldStr, ok := args[0].(string); ok {
 					fieldPath := fmt.Sprintf("%s.%s[0]", path, key)
+					if key == "$neq" && len(args) == 2 && args[1] == "" {
+						if _, isOutput := aggregateOutputs[fieldStr]; isOutput {
+							return &tracePipelineError{category: traceCategoryInvalidField, path: fieldPath, msg: fmt.Sprintf("aggregate output %q is never null at %s; remove the redundant $notnull filter", fieldStr, fieldPath)}
+						}
+					}
 					if _, shadowed := shadowedAliases[fieldStr]; shadowed {
 						return &tracePipelineError{
 							category: traceCategoryInvalidField,
@@ -840,6 +847,17 @@ func nextTraceStringBackedAliases(stage map[string]interface{}, previous map[str
 	return next
 }
 
+func traceStringAliasesForStage(stage map[string]interface{}, previous map[string]struct{}) map[string]struct{} {
+	aliases := make(map[string]struct{}, len(previous))
+	for alias := range previous {
+		aliases[alias] = struct{}{}
+	}
+	for alias := range nextTraceStringBackedAliases(stage, previous) {
+		aliases[alias] = struct{}{}
+	}
+	return aliases
+}
+
 func rejectShadowedAggregateFields(function map[string]interface{}, path string, shadowedAliases map[string]struct{}) error {
 	for name, raw := range function {
 		args, _ := raw.([]interface{})
@@ -894,6 +912,9 @@ func isTraceQuantile(name string) bool {
 }
 
 func validateTraceAlias(as interface{}, path string) error {
+	if as == "" {
+		return &tracePipelineError{category: traceCategoryInvalidField, path: path, msg: fmt.Sprintf("%s must be a non-empty output name", path)}
+	}
 	if e := telemetry.ValidateAggregateAlias(as, path); e != nil {
 		return &tracePipelineError{category: traceCategoryInvalidField, path: e.Path, msg: e.Message}
 	}

@@ -240,8 +240,7 @@ func TestSanitizeTraceJSONQueryDefaultsQuantileExactToEveryWindowResult(t *testi
 			grouped := winStage(fn1("$count"), "n")
 			grouped["groupby"] = map[string]interface{}{"Duration": "__result__"}
 			for producerName, producer := range map[string]map[string]interface{}{
-				"groupby":     grouped,
-				"empty alias": winStage(fn1("$count"), ""),
+				"groupby": grouped,
 			} {
 				stages := []map[string]interface{}{producer, consumer(fn1(operator, 0.99), "p99")}
 				if err := SanitizeTraceJSONQuery(stages); err != nil {

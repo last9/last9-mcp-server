@@ -127,7 +127,7 @@ func prepareLogJSONQuery(stages []map[string]interface{}, pathPrefix string) ([]
 			}
 		}
 	}
-	if err := validateQuantileNumericDataflow(sanitized, pathPrefix); err != nil {
+	if err := validateAggregateNumericDataflow(sanitized, pathPrefix); err != nil {
 		return nil, err
 	}
 
@@ -271,14 +271,15 @@ func logStageEmitsResult(stage map[string]interface{}, stageType string) bool {
 	return false
 }
 
-// validateQuantileNumericDataflow makes one ordered pass over the sanitized
+// validateAggregateNumericDataflow makes one ordered pass over the sanitized
 // pipeline. String-backed attribute/resource fields become numeric-safe only
 // after a mandatory canonical regex. A later parse invalidates fields it can
 // produce, so the regex must follow the last relevant parse.
-func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix string) error {
+func validateAggregateNumericDataflow(stages []map[string]interface{}, pathPrefix string) error {
 	numericSafeFields := make(map[string]struct{})
 	stringBackedAliases := make(map[string]struct{})
 	builtInStringAliases := make(map[string]struct{})
+	aggregateOutputs := make(map[string]struct{})
 
 	for stageIndex, stage := range stages {
 		stagePath := fmt.Sprintf("%s[%d]", pathPrefix, stageIndex)
@@ -300,17 +301,29 @@ func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix
 		checkFunction := func(function map[string]interface{}, functionPath string) error {
 			for name, raw := range function {
 				baseName := strings.TrimSuffix(name, "_over_time")
-				if baseName != "$quantile" && baseName != "$quantile_exact" {
+				if baseName == "$count" || baseName == "$rate" || baseName == "$uniq" {
 					continue
 				}
-				rawArgs, ok := raw.([]interface{})
-				if !ok || len(rawArgs) != 2 {
+				rawArgs, _ := raw.([]interface{})
+				field, fieldIndex, ok := telemetry.AggregateFieldArg(name, rawArgs)
+				if !ok {
 					continue
 				}
-				field, _ := rawArgs[1].(string)
+				fieldPath := fmt.Sprintf("%s.%s[%d]", functionPath, name, fieldIndex)
+				if wrapped := wrappedLogFieldName(field); wrapped != "" {
+					if _, isOutput := aggregateOutputs[wrapped]; isOutput {
+						return newLogValidationError(LogValidationInvalidField, fieldPath, fmt.Sprintf("aggregate output %q must be referenced as %q, not %q", wrapped, wrapped, field))
+					}
+				}
 				_, isStringBackedAlias := stringBackedAliases[field]
 				if !isStringBackedLogField(field) && !isStringBackedAlias {
 					continue
+				}
+				if baseName != "$quantile" && baseName != "$quantile_exact" {
+					if !isStringBackedAlias {
+						continue
+					}
+					return newLogValidationError(LogValidationInvalidField, fieldPath, fmt.Sprintf("%s field %q at %s is a string-backed groupby output and cannot be used by a numeric aggregate", name, field, fieldPath))
 				}
 				_, isBuiltInStringAlias := builtInStringAliases[field]
 				if isBuiltInStringLogField(field) || isBuiltInStringAlias {
@@ -384,9 +397,19 @@ func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix
 		stringBackedAliases = nextStringBackedAliases
 		builtInStringAliases = nextBuiltInStringAliases
 		numericSafeFields = nextNumericSafeFields
+		aggregateOutputs = telemetry.CollectAggregateOutputAliases(stages, stageIndex+1)
 	}
 
 	return nil
+}
+
+func wrappedLogFieldName(field string) string {
+	for _, prefix := range []string{"attributes['", "resources['"} {
+		if strings.HasPrefix(field, prefix) && strings.HasSuffix(field, "']") {
+			return strings.TrimSuffix(strings.TrimPrefix(field, prefix), "']")
+		}
+	}
+	return ""
 }
 
 func isStringBackedLogField(field string) bool {
