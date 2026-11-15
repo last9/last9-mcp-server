@@ -25,8 +25,8 @@ var descriptionBudgetOverrides = map[string]int{
 	"prometheus_range_query":          3000,
 	"get_log_attributes_for_pipeline": 2800,
 	"get_trace_waterfall":             2700,
-	"get_traces":                      3090,
-	"get_service_logs":                2770,
+	"get_traces":                      3156,
+	"get_service_logs":                2802,
 	"get_service_performance_details": 2800,
 	"get_alerts":                      2600,
 	"get_emerging_log_patterns":       2700,
@@ -38,7 +38,7 @@ var descriptionBudgetOverrides = map[string]int{
 // servedSizeBudgets cap description plus compact input schema JSON for tools
 // whose hand-built schema weighs as much as their description.
 var servedSizeBudgets = map[string]int{
-	"get_logs": 7882,
+	"get_logs": 7960,
 }
 
 // maxSchemaDepth bounds input schema nesting (root = 1). The dashboard write
@@ -266,7 +266,7 @@ func TestToolMetadataViolationsCatchBadFixtures(t *testing.T) {
 		{name: "namespaced verb", tool: &mcp.Tool{Name: "grafana_list_fixtures", Description: "ok", InputSchema: okSchema}},
 		{name: "over default budget", tool: &mcp.Tool{Name: "get_fixture", Description: strings.Repeat("x", defaultDescriptionBudget+1), InputSchema: okSchema}, want: "budget 2500"},
 		{name: "over override budget", tool: &mcp.Tool{Name: "prometheus_range_query", Description: strings.Repeat("x", descriptionBudgetOverrides["prometheus_range_query"]+1), InputSchema: okSchema}, want: "budget 3000"},
-		{name: "over served-size budget", tool: &mcp.Tool{Name: "get_logs", Description: "ok", InputSchema: map[string]any{"description": strings.Repeat("x", servedSizeBudgets["get_logs"])}}, want: "served-size budget 7882"},
+		{name: "over served-size budget", tool: &mcp.Tool{Name: "get_logs", Description: "ok", InputSchema: map[string]any{"description": strings.Repeat("x", servedSizeBudgets["get_logs"])}}, want: "served-size budget 7960"},
 		{name: "unregistered resource", tool: &mcp.Tool{Name: "get_fixture", Description: "See last9://reference/nope.", InputSchema: okSchema}, want: "unregistered resource last9://reference/nope"},
 		{name: "integer enum", tool: &mcp.Tool{Name: "get_fixture", Description: "ok", InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 			"version": map[string]any{"type": "integer", "enum": []any{float64(1)}},

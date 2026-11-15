@@ -9,7 +9,7 @@
 
 **Scope:** `service.name`→`ServiceName`; tenant→`resources['last9.tenant']`; env→`resources['deployment.environment']`.
 
-**Time:** `lookback_minutes` (default **60**); RFC3339 uses `start_time_iso`+`end_time_iso`, not Timestamp filters.
+**Time:** `lookback_minutes` default **60**, ≥1; TraceId requires explicit `lookback_minutes` or `start_time_iso`. RFC3339 uses `start_time_iso`+`end_time_iso`, not Timestamp filters.
 
 **Fields:** OTel enums: `SPAN_KIND_SERVER`, `STATUS_CODE_ERROR`; Duration is ns. Use `attributes['key']`/`resources['key']`, not `SpanAttributes.foo`.
 

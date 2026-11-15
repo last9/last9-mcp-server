@@ -4,7 +4,7 @@ Query logs with JSON stages in `logjson_query`, never `pipeline`; this is NOT SQ
 
 There is no `service_name` argument: filter `ServiceName`. Tenant and environment are `resources['last9.tenant']` and `resources['deployment.environment']`. Discover uncertain fields with `get_log_attributes_for_pipeline`. Bare fields include `ServiceName`, `Body`, `SeverityText`, and `Timestamp`.
 
-`lookback_minutes` defaults to 5. For an absolute window set top-level RFC3339 `start_time_iso` and `end_time_iso`, never a Timestamp predicate. Omit `response_mode`; use `raw` only for exact text. Raw output is capped at 32,000 bytes.
+`lookback_minutes` defaults to 5 and must be at least 1. For an absolute window set top-level RFC3339 `start_time_iso` and `end_time_iso`, never a Timestamp predicate. Body contains-family searches require explicit `lookback_minutes` or `start_time_iso`. Omit `response_mode`; use `raw` only for exact text. Raw output is capped at 32,000 bytes.
 
 A count aggregate is `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`. A window stage uses `type`, `function`, `as`, and `window`, for example `{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"]}`. More aggregate syntax and percentile recipes live in `last9://reference/tool_recipes`. Read `last9://reference/logjson` before writing a parse stage, percentile, or unfamiliar filter. Preserve `l9_result.partial` and `l9_sanity` warnings.
 
