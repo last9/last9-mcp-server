@@ -176,6 +176,9 @@ Read these resources before writing a non-trivial query{{if has "get_logs"}}. Af
 {{- with $addDropRule}}
 - {{.}} drops matching future logs: confirm with the user first.
 {{- end}}
+{{- with tools "set_dashboard_lock"}}
+- Lock or unlock a dashboard with {{.}} only when the user explicitly asks; an edit refused with `dashboard is locked` names the author who can unlock it.
+{{- end}}
 {{- with $addRemappingRule}}
 - {{.}} rewrites attributes on future logs or traces: confirm with the user first.
 {{- end}}

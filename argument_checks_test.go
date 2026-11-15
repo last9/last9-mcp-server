@@ -121,9 +121,13 @@ func TestDashboardArgumentCheckRunsAfterIntegerCoercion(t *testing.T) {
 }
 
 func TestRegisteredDashboardWritesAcceptRoundTripDefaults(t *testing.T) {
-	var requests atomic.Int32
+	var reads, writes atomic.Int32
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests.Add(1)
+		if r.Method == http.MethodGet {
+			reads.Add(1)
+		} else {
+			writes.Add(1)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"dashboard":{"id":"dash-1","name":"Example"}}`))
 	}))
@@ -144,13 +148,21 @@ func TestRegisteredDashboardWritesAcceptRoundTripDefaults(t *testing.T) {
 				if tool == "update_dashboard" {
 					args = `{"id":"dash-1","dashboard":{"name":"Example","panels":` + panelJSON + `}}`
 				}
-				before := requests.Load()
+				readsBefore := reads.Load()
+				writesBefore := writes.Load()
 				result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: tool, Arguments: json.RawMessage(args)})
 				if result.IsError {
 					t.Fatalf("write rejected: %s", toolResultText(result))
 				}
-				if got := requests.Load(); got != before+1 {
-					t.Fatalf("upstream requests = %d, want %d", got, before+1)
+				if got := writes.Load(); got != writesBefore+1 {
+					t.Fatalf("upstream writes = %d, want %d", got, writesBefore+1)
+				}
+				wantReads := readsBefore
+				if tool == "update_dashboard" {
+					wantReads++
+				}
+				if got := reads.Load(); got != wantReads {
+					t.Fatalf("upstream reads = %d, want %d", got, wantReads)
 				}
 			})
 		}

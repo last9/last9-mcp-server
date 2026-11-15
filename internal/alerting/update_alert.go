@@ -49,7 +49,7 @@ func NewUpdateAlertHandler(client *http.Client, cfg models.Config) func(context.
 		}
 		response, err := parseMutationIDResponse(body)
 		if err != nil {
-			return nil, nil, fmt.Errorf("invalid update alert response: %w", err)
+			return nil, nil, utils.MarkUnusableWriteResponse(fmt.Errorf("invalid update alert response: %w", err))
 		}
 		if strings.TrimSpace(response.GroupName) == "" {
 			response.GroupName = stored.GroupName

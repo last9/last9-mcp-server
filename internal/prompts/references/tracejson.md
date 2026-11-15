@@ -16,6 +16,7 @@ These are instructions for constructing natural language trace analytics queries
 - If the user asks to "show", "find", "get", "display" traces → Use ONLY filter operations
 - If the user asks "how many", "count", "average", "sum" → Then add aggregation
 - Most trace queries are simple filtering - do NOT assume aggregation is needed
+- For trace-level questions, filter-only results contain one row per span; deduplicate by `TraceId`, then fetch the complete trace with `get_service_traces` using that exact ID.
 
 **CRITICAL: AGGREGATION MUST ALWAYS BE PRECEDED BY FILTER**
 - The first stage in any pipeline MUST be a filter operation

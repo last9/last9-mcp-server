@@ -782,7 +782,7 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Annotations: writeTool("Create Dashboard", false, false),
 		Description: prompts.CreateDashboardDescription,
 		InputSchema: dashboards.GetCreateDashboardInputSchema(),
-	}, "list_dashboards, looking for a dashboard with the name you passed",
+	}, "list_dashboards with name set to the name you passed",
 		dashboards.NewCreateDashboardHandler(client, cfg)))
 
 	reg(registerWriteTool(server, gate, &mcp.Tool{
@@ -804,8 +804,15 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Name:        "delete_dashboard",
 		Annotations: writeTool("Delete Dashboard", true, true),
 		Description: prompts.DeleteDashboardDescription,
-	}, "list_dashboards; id is no longer listed if the delete landed",
+	}, "get_dashboard for id; a not-found error means the delete landed",
 		dashboards.NewDeleteDashboardHandler(client, cfg)))
+
+	reg(registerWriteTool(server, gate, &mcp.Tool{
+		Name:        "set_dashboard_lock",
+		Annotations: writeTool("Set Dashboard Lock", false, true),
+		Description: prompts.SetDashboardLockDescription,
+	}, "get_dashboard for id; its locked field shows the current state",
+		dashboards.NewSetDashboardLockHandler(client, cfg)))
 
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
 		Name:        "list_dashboard_snapshots",
