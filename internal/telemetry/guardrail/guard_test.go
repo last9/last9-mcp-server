@@ -145,8 +145,34 @@ func TestCheck_EstimateUnavailableKeepsRangeCheck(t *testing.T) {
 			if v.Decision.Reason != ReasonRangeTooWide || v.Blocked != (mode == ModeEnforce) {
 				t.Fatalf("wide unscoped query without estimate: %+v", v)
 			}
-			if !hasHint(v, ReasonRangeTooWide) || !hasHint(v, ReasonEstimateUnavailable) {
+			// Enforce rejects on the range cap alone, before asking for an estimate.
+			if !hasHint(v, ReasonRangeTooWide) || hasHint(v, ReasonEstimateUnavailable) != (mode == ModeShadow) {
 				t.Errorf("hints = %v", v.Hints)
+			}
+		})
+	}
+}
+
+func TestCheck_EnforceRangeRejectSkipsEstimate(t *testing.T) {
+	for _, tc := range []struct {
+		mode      string
+		rng       time.Duration
+		wantCalls int
+	}{
+		{ModeEnforce, testLimits.RangeCap - time.Second, 1},
+		{ModeEnforce, testLimits.RangeCap, 1},
+		{ModeEnforce, testLimits.RangeCap + time.Second, 0},
+		{ModeShadow, testLimits.RangeCap + time.Second, 1},
+	} {
+		t.Run(fmt.Sprintf("%s/%s", tc.mode, tc.rng), func(t *testing.T) {
+			est := &stubEstimator{bytes: 1}
+			v := testGuard(tc.mode, est).Check(context.Background(), nil, query(unscopedPipeline, tc.rng))
+			if est.calls != tc.wantCalls {
+				t.Fatalf("estimate calls = %d, want %d", est.calls, tc.wantCalls)
+			}
+			wantReject := tc.rng > testLimits.RangeCap
+			if (v.Decision.Reason == ReasonRangeTooWide) != wantReject || v.Blocked != (wantReject && tc.mode == ModeEnforce) {
+				t.Fatalf("verdict = %+v", v)
 			}
 		})
 	}
