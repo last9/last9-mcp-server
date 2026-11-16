@@ -48,7 +48,7 @@ var (
 
 func serverVersion(version, commit string) string {
 	commit = strings.TrimSpace(commit)
-	if version != "dev" || commit == "" || commit == "unknown" {
+	if version != "dev" || commit == "" || strings.EqualFold(commit, "unknown") {
 		return version
 	}
 	if len(commit) > 7 {
