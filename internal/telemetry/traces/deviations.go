@@ -135,7 +135,7 @@ func deviationTracesLink(cfg models.Config, request deviationAPIRequest) string 
 	scope := request.Scope
 	conditions := []interface{}{
 		map[string]interface{}{"$eq": []interface{}{"ServiceName", scope.ServiceName}},
-		map[string]interface{}{"$eq": []interface{}{"resources['deployment.environment']", scope.Environment}},
+		map[string]interface{}{"$eq": []interface{}{ResourceAttributeField("deployment.environment"), scope.Environment}},
 	}
 	if scope.Operation != "" {
 		conditions = append(conditions, map[string]interface{}{"$eq": []interface{}{"SpanName", scope.Operation}})
