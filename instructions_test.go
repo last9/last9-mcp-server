@@ -305,6 +305,16 @@ func TestDiscoverSectionListsOnlyNameLookups(t *testing.T) {
 	}
 }
 
+func TestSearchDocsInstructionStaysRoutingOnly(t *testing.T) {
+	instructions, _ := initializeOver(t, "investigate")
+	if !strings.Contains(instructions, "- Last9 documentation: `search_docs`.") {
+		t.Fatalf("instructions must route documentation requests to search_docs:\n%s", instructions)
+	}
+	if strings.Contains(instructions, "cite only URLs it returns") {
+		t.Fatalf("instructions duplicate search_docs policy from its tool description:\n%s", instructions)
+	}
+}
+
 // maxInvestigateInstructionsBytes caps the policy automation sessions receive,
 // near its size: it precedes every tool description and growing it moved
 // log_query evals, so each increase is a reviewed decision.

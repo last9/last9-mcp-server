@@ -48,7 +48,7 @@ For today's date or a relative window ("since 9am IST"), call {{.}}.
 ## Discover before you query
 Never guess service, environment, attribute, metric or label names, or dashboard ids; look them up and reuse the exact values.
 {{- with $docs}}
-- Last9 documentation pages: {{.}}; cite only URLs it returns.
+- Last9 documentation: {{.}}.
 {{- end}}
 {{- with $services}}
 - Services, environments and datasources: {{.}}.
