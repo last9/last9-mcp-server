@@ -86,6 +86,13 @@ func (g *Guard) Check(ctx context.Context, req *mcp.CallToolRequest, q Query) Ve
 	}
 
 	s := scan{Range: time.Duration(q.EndMs-q.StartMs) * time.Millisecond, Scoped: PipelineScoped(q.Pipeline)}
+	// The range cap needs no estimate; shadow still fetches one to account the run.
+	if d := decide(g.limits, s); d.Action == Reject && mode == ModeEnforce {
+		v.Decision, v.Blocked = d, true
+		logDecision(mode, q, s, v)
+		v.Hints = append([]string{decisionHint(mode, d)}, v.Hints...)
+		return v
+	}
 	if est, err := g.fetchEstimate(ctx, q); err != nil {
 		slog.Info("query guardrail estimate unavailable", "tool", q.Tool, "mode", mode, "err", err)
 		v.Hints = append(v.Hints, hint(ReasonEstimateUnavailable, "", "The scan estimate could not be fetched, so only the range cap was checked; the scope threshold and the scan and session budgets were not."))
