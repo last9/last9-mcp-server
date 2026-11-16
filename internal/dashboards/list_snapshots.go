@@ -34,11 +34,6 @@ func NewListDashboardSnapshotsHandler(client *http.Client, cfg models.Config) fu
 			return nil, nil, mapSnapshotAPIError(err)
 		}
 
-		return &mcp.CallToolResult{
-			Meta: deeplink.ToMeta(dlBuilder.BuildDashboardLink(args.DashboardID)),
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: string(body)},
-			},
-		}, nil, nil
+		return jsonTextResult(body, dlBuilder.BuildDashboardLink(args.DashboardID)), nil, nil
 	}
 }

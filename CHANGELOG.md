@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Oversized log stream responses retain the longest prefix of individual lines that fits the response budget, preserving stream labels and reporting omitted lines in `trimmed_items` instead of discarding an entire stream (#357).
+- Development builds now report `dev+<short commit SHA>` in MCP `serverInfo.version` and the startup log, so builds without a release version can be traced to a commit; builds with missing or `unknown` commit metadata continue to report `dev`, and release versions are unchanged (#567).
+- Generic dashboard 403s on reads, write pre-reads and writes now report a permission failure instead of claiming the dashboard is read-only, and dashboard tools preserve literal `<`, `>` and `&` characters from upstream JSON (#537).
 - `get_service_logs` body filters, `get_logs` Body contains-family filters and `get_traces` TraceId filters now require a positive explicit time window instead of silently searching their short defaults. Defaulted log and trace searches expose `window_source` and `window_minutes`, and empty default-window log results name the actual duration (#560).
 - Dashboard create, update and preview now accept product dashboard round-trips with null or omitted section/markdown layouts, null panel/query arrays, and empty legend or log-sort defaults. Query and CSV panels still require grid layouts, and invalid nonempty enum values remain rejected (#548).
 - `--help` no longer prints `LAST9_REFRESH_TOKEN` as the default value of `--refresh_token`; the environment value is now applied by the configuration parser after flag registration (#559).

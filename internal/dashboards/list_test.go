@@ -164,6 +164,16 @@ func TestListDashboardsHandler_ServesLockedPerRow(t *testing.T) {
 	}
 }
 
+func TestListDashboardsHandler_PreservesLiteralHTMLCharacters(t *testing.T) {
+	text, err := callListDashboards(t, dashboardListServer(t, []map[string]any{{"id": "a", "name": "a<b>&c"}}), ListDashboardsArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, `a<b>&c`) {
+		t.Fatalf("HTML characters were not preserved literally: %s", text)
+	}
+}
+
 func TestListDashboardsCursorPagingReturnsEveryDashboardOnce(t *testing.T) {
 	rows := overviewFixture(500, 60)
 	got := listAllPages(t, dashboardListServer(t, rows), ListDashboardsArgs{})
