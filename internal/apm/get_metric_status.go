@@ -48,7 +48,7 @@ func NewGetMetricStatusHandler(client *http.Client, cfg models.Config) func(cont
 			return ambiguousDatasourceResult(args.Datasource, choice), nil, nil
 		}
 		endTime := utils.Now().UTC().Unix()
-		status, err := computeGetMetricStatus(ctx, client, choice.cfg, args, endTime)
+		status, err := computeGetMetricStatus(ctx, client, choice.cfg, metricStatusRequest{Args: args, EndTime: endTime})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -63,7 +63,11 @@ func NewGetMetricStatusHandler(client *http.Client, cfg models.Config) func(cont
 		res := withDatasourceNote(&mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: strings.TrimSuffix(payload.String(), "\n")}},
 		}, choice.note)
-		return withMetricsLink(res, cfg, startTime, endTime, metricSelector(strings.TrimSpace(args.Metric))), nil, nil
+		return withMetricsLink(res, choice.cfg, metricsLink{
+			StartSec: startTime,
+			EndSec:   endTime,
+			Query:    metricSelector(strings.TrimSpace(args.Metric)),
+		}), nil, nil
 	}
 }
 
@@ -77,7 +81,15 @@ func validateGetMetricStatusArgs(args GetMetricStatusArgs) error {
 	return nil
 }
 
-func computeGetMetricStatus(ctx context.Context, client *http.Client, queryCfg models.Config, args GetMetricStatusArgs, endTime int64) (GetMetricStatusResult, error) {
+// metricStatusRequest is one get_metric_status evaluation: the tool arguments
+// and the end time every probe (and the result link) shares.
+type metricStatusRequest struct {
+	Args    GetMetricStatusArgs
+	EndTime int64
+}
+
+func computeGetMetricStatus(ctx context.Context, client *http.Client, queryCfg models.Config, req metricStatusRequest) (GetMetricStatusResult, error) {
+	args, endTime := req.Args, req.EndTime
 	metric := strings.TrimSpace(args.Metric)
 	dur := promDurationFromMinutes(args.WindowMinutes)
 	sel := metricSelector(metric)

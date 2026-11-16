@@ -67,25 +67,34 @@ const (
 	profileTabTopFunctions = "top-functions"
 )
 
+// profilesLinkInput is what a Profiles page deep link opens: the resolved
+// window and filters, the profile type as the caller passed it, and the tab.
+type profilesLinkInput struct {
+	Start, End     time.Time
+	Filters        ProfileFilters
+	RawProfileType string
+	Tab            string
+}
+
 // withProfilesLink attaches a Profiles page deep link over the resolved window.
 // The profile type is set only when the caller passed one. Error results carry
 // no link.
-func withProfilesLink(res *mcp.CallToolResult, cfg models.Config, start, end time.Time, filters ProfileFilters, rawProfileType, tab string) *mcp.CallToolResult {
+func withProfilesLink(res *mcp.CallToolResult, cfg models.Config, in profilesLinkInput) *mcp.CallToolResult {
 	if res == nil || res.IsError {
 		return res
 	}
 	params := deeplink.ProfilesLinkParams{
-		Service:    filters.Service,
-		Env:        filters.Env,
-		Cluster:    filters.Cluster,
-		Namespace:  filters.Namespace,
-		Runtime:    filters.Runtime,
-		ProfileTab: tab,
+		Service:    in.Filters.Service,
+		Env:        in.Filters.Env,
+		Cluster:    in.Filters.Cluster,
+		Namespace:  in.Filters.Namespace,
+		Runtime:    in.Filters.Runtime,
+		ProfileTab: in.Tab,
 	}
-	if strings.TrimSpace(rawProfileType) != "" {
-		params.ProfileType = string(filters.ProfileType)
+	if strings.TrimSpace(in.RawProfileType) != "" {
+		params.ProfileType = string(in.Filters.ProfileType)
 	}
-	link := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildProfilesLink(start.UnixMilli(), end.UnixMilli(), params)
+	link := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildProfilesLink(in.Start.UnixMilli(), in.End.UnixMilli(), params)
 	res.Meta = deeplink.ToMeta(link)
 	return res
 }

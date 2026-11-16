@@ -190,6 +190,26 @@ func TestGetMetricStatusHandler_MetricsLink(t *testing.T) {
 	})
 }
 
+func TestGetMetricStatusHandler_MetricsLinkUsesChosenDatasourceCluster(t *testing.T) {
+	useFakeNow(t, "2026-02-09T16:04:05Z")
+	server := staticServer(t, http.StatusOK, `[]`)
+	cfg := linkTestConfig(server.URL)
+	cfg.Datasources = []models.DatasourceInfo{
+		{Name: "prod-eu", ReadURL: "https://prod-eu.example.com/prom", Username: "u", Password: "p", Region: "eu-west-1", ClusterID: "cluster-eu"},
+	}
+	handler := NewGetMetricStatusHandler(server.Client(), cfg)
+
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetMetricStatusArgs{
+		Metric:        "up",
+		WindowMinutes: 60,
+		Datasource:    "prod-eu",
+	})
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	assertQueryParams(t, referenceURL(t, res), map[string]string{"cluster": "cluster-eu"})
+}
+
 func TestGetMetricStatusHandler_NoLinkOnUpstreamError(t *testing.T) {
 	server := staticServer(t, http.StatusUnprocessableEntity, `{"error":"bad query"}`)
 	handler := NewGetMetricStatusHandler(server.Client(), linkTestConfig(server.URL))

@@ -74,6 +74,6 @@ func NewGetTopFunctionsHandler(client *http.Client, cfg models.Config) func(cont
 			"function_count": len(functions),
 			"functions":      functions,
 		})
-		return withProfilesLink(result, cfg, start, end, filters, args.ProfileType, profileTabTopFunctions), nil, err
+		return withProfilesLink(result, cfg, profilesLinkInput{Start: start, End: end, Filters: filters, RawProfileType: args.ProfileType, Tab: profileTabTopFunctions}), nil, err
 	}
 }

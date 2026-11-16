@@ -110,13 +110,20 @@ func promToolResult(raw []byte, err error, note string) (*mcp.CallToolResult, an
 	return promBodyResult(raw, note), nil, nil
 }
 
+// metricsLink is the query and window, in Unix seconds, a Metrics explorer
+// deep link opens.
+type metricsLink struct {
+	StartSec, EndSec int64
+	Query            string
+}
+
 // withMetricsLink attaches a Metrics explorer deep link for the query and the
 // window it ran over. Error results carry no link.
-func withMetricsLink(res *mcp.CallToolResult, cfg models.Config, startSec, endSec int64, query string) *mcp.CallToolResult {
+func withMetricsLink(res *mcp.CallToolResult, cfg models.Config, link metricsLink) *mcp.CallToolResult {
 	if res == nil || res.IsError {
 		return res
 	}
-	res.Meta = deeplink.ToMeta(deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildMetricsLink(startSec*1000, endSec*1000, query))
+	res.Meta = deeplink.ToMeta(deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildMetricsLink(link.StartSec*1000, link.EndSec*1000, link.Query))
 	return res
 }
 

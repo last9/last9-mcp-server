@@ -73,6 +73,6 @@ func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(c
 			Timestamp:  timeParam,
 		})
 		res, out, err := promToolResult(raw, err, choice.note)
-		return withMetricsLink(res, choice.cfg, timeParam-instantQueryLinkWindow, timeParam, query), out, err
+		return withMetricsLink(res, choice.cfg, metricsLink{StartSec: timeParam - instantQueryLinkWindow, EndSec: timeParam, Query: query}), out, err
 	}
 }
