@@ -13,6 +13,8 @@ import (
 	"time"
 	"unicode"
 
+	"last9-mcp/internal/utils"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -112,7 +114,7 @@ func (f *Fetcher) Search(ctx context.Context, query string, limit int) ([]Hit, e
 
 func (f *Fetcher) load(ctx context.Context) (*Index, error) {
 	f.mu.Lock()
-	if f.index != nil && time.Since(f.fetchedAt) < f.ttl {
+	if f.index != nil && utils.Now().Sub(f.fetchedAt) < f.ttl {
 		index := f.index
 		f.mu.Unlock()
 		return index, nil
@@ -143,7 +145,7 @@ func (f *Fetcher) load(ctx context.Context) (*Index, error) {
 			f.etag = nextETag
 		}
 		if err == nil {
-			f.fetchedAt = time.Now()
+			f.fetchedAt = utils.Now()
 		}
 	}
 	if f.index != nil {
