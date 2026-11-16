@@ -810,7 +810,7 @@ func TestDumpToolsInvestigate(t *testing.T) {
 	for _, tool := range out.Tools {
 		byName[tool.Name] = true
 	}
-	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "get_metric_status", "did_you_mean", "get_service_profile", "list_datasources", "get_entity_kpis", "get_alert_operations_summary"} {
+	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "get_metric_status", "did_you_mean", "search_docs", "get_service_profile", "list_datasources", "get_entity_kpis", "get_alert_operations_summary"} {
 		if !byName[want] {
 			t.Errorf("investigate dump missing %q", want)
 		}
@@ -820,7 +820,7 @@ func TestDumpToolsInvestigate(t *testing.T) {
 			t.Errorf("investigate dump should exclude %q", deny)
 		}
 	}
-	if len(out.Tools) >= 44 {
+	if len(out.Tools) >= 45 {
 		t.Fatalf("investigate should expose fewer than full surface; got %d", len(out.Tools))
 	}
 }
@@ -938,6 +938,7 @@ func TestDumpToolsServesCoreToolsUnderEveryToolset(t *testing.T) {
 			wants := map[string][]string{
 				"get_current_time":       {"`range`", "`timezone`", "since <point>", "IST = Asia/Kolkata", "epoch_seconds"},
 				"get_workspace_overview": {"Recommended first call when a request names no service or tool", "names a service, signal or tool: call its tool directly", "`telemetry`", "`errors`", "`null`, which means unknown"},
+				"search_docs":            {"Searches Last9 product docs", "cite only URLs returned by this tool"},
 			}
 			for tool, phrases := range wants {
 				for _, want := range phrases {

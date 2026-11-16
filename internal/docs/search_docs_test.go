@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const fixtureIndex = `{"generated_at":"2026-11-16T00:00:00Z","pages":[
@@ -35,6 +37,26 @@ func TestSearchRanksKubernetesSynonyms(t *testing.T) {
 		if !want[hit.URL] {
 			t.Errorf("unexpected URL %q", hit.URL)
 		}
+	}
+}
+
+func TestSearchDocsHandlerOutputAndValidation(t *testing.T) {
+	f := fixtureFetcher(t, fixtureIndex)
+	handler := NewSearchDocsHandler(f)
+	result, _, err := handler(context.Background(), nil, SearchDocsArgs{Query: "promql"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(text, `"url":"https://last9.io/docs/prometheus/#promql"`) {
+		t.Fatalf("result = %s", text)
+	}
+	result, _, err = handler(context.Background(), nil, SearchDocsArgs{Query: "missing"})
+	if err != nil || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "no matching Last9 documentation page") {
+		t.Fatalf("no-match result=%#v err=%v", result, err)
+	}
+	if _, _, err := handler(context.Background(), nil, SearchDocsArgs{Query: "  "}); err == nil {
+		t.Fatal("empty query accepted")
 	}
 }
 
@@ -95,8 +117,14 @@ func TestSearchLimitNoMatchAndExcerptBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(hits) != 1 || len(hits[0].Excerpt) > 800 || strings.HasSuffix(hits[0].Excerpt, " wor") {
+	if len(hits) != 1 || len(hits[0].Excerpt) > 800 || !strings.HasSuffix(hits[0].Excerpt, "word") {
 		t.Fatalf("bad excerpt: len=%d %q", len(hits[0].Excerpt), hits[0].Excerpt)
+	}
+	if hits, err = f.Search(context.Background(), "kubernetes", -2); err != nil || len(hits) != 1 {
+		t.Fatalf("minimum limit: hits=%#v err=%v", hits, err)
+	}
+	if hits, err = f.Search(context.Background(), "kubernetes", 99); err != nil || len(hits) != 3 {
+		t.Fatalf("maximum limit: hits=%#v err=%v", hits, err)
 	}
 	if hits, err = f.Search(context.Background(), "doesnotexist", -2); err != nil || len(hits) != 0 {
 		t.Fatalf("no match: hits=%#v err=%v", hits, err)
@@ -104,6 +132,26 @@ func TestSearchLimitNoMatchAndExcerptBoundary(t *testing.T) {
 	if _, err := f.Search(context.Background(), "  ", 5); err == nil {
 		t.Fatal("empty query accepted")
 	}
+}
+
+func TestQuerySynonyms(t *testing.T) {
+	for query, want := range map[string]string{
+		"k8s": "kubernetes", "kubernetes": "k8s", "otel": "opentelemetry",
+		"otlp": "opentelemetry", "promql": "prometheus", "pods": "pod",
+	} {
+		if got := expand(tokenize(query)); !contains(got, want) {
+			t.Errorf("expand(%q) = %v, want %q", query, got, want)
+		}
+	}
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func fixtureFetcher(t *testing.T, body string) *Fetcher {

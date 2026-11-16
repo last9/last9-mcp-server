@@ -125,6 +125,7 @@ var named = map[string][]string{
 var core = []string{
 	"get_current_time",
 	"get_workspace_overview",
+	"search_docs",
 }
 
 // discovery tools included in the investigate composite (R9a).

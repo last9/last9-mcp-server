@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 	"unicode"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const (
@@ -42,6 +44,34 @@ type Hit struct {
 	Title   string `json:"title"`
 	URL     string `json:"url"`
 	Excerpt string `json:"excerpt"`
+}
+
+type SearchDocsArgs struct {
+	Query string `json:"query" jsonschema:"(Required) Search terms; must not be empty"`
+	Limit int    `json:"limit,omitempty" jsonschema:"Maximum pages to return; defaults to 5 and is clamped to 1..5"`
+}
+
+func NewSearchDocsHandler(fetcher *Fetcher) func(context.Context, *mcp.CallToolRequest, SearchDocsArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, args SearchDocsArgs) (*mcp.CallToolResult, any, error) {
+		limit := args.Limit
+		if limit == 0 {
+			limit = 5
+		}
+		hits, err := fetcher.Search(ctx, args.Query, limit)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(hits) == 0 {
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "no matching Last9 documentation page"}}}, nil, nil
+		}
+		body, err := json.Marshal(struct {
+			Results []Hit `json:"results"`
+		}{Results: hits})
+		if err != nil {
+			return nil, nil, fmt.Errorf("encode docs search results: %w", err)
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(body)}}}, nil, nil
+	}
 }
 
 // ponytail: in-memory only; embed a snapshot if egress from restricted pods needs it
@@ -106,11 +136,15 @@ func (f *Fetcher) load(ctx context.Context) (*Index, error) {
 	defer close(f.refreshing)
 	f.refreshing = nil
 	if err == nil {
-		if !notModified {
+		if notModified && f.index == nil {
+			err = fmt.Errorf("fetch docs index: HTTP 304 before an index was loaded")
+		} else if !notModified {
 			f.index = index
 			f.etag = nextETag
 		}
-		f.fetchedAt = time.Now()
+		if err == nil {
+			f.fetchedAt = time.Now()
+		}
 	}
 	if f.index != nil {
 		return f.index, nil
@@ -255,12 +289,13 @@ func expand(terms []string) []string {
 
 func excerpt(text string) string {
 	text = strings.Join(strings.Fields(text), " ")
-	if len(text) <= 800 {
+	runes := []rune(text)
+	if len(runes) <= 800 {
 		return text
 	}
-	cut := strings.LastIndexByte(text[:801], ' ')
+	cut := strings.LastIndex(string(runes[:801]), " ")
 	if cut <= 0 {
-		cut = 800
+		return string(runes[:800])
 	}
-	return text[:cut]
+	return string(runes)[:cut]
 }

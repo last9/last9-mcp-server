@@ -16,6 +16,7 @@ import (
 	"last9-mcp/internal/changeimpact"
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/dashboards"
+	"last9-mcp/internal/docs"
 	"last9-mcp/internal/grafana"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/prompts"
@@ -271,6 +272,12 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Annotations: readOnlyTool("Get Workspace Overview"),
 		Description: prompts.GetWorkspaceOverviewDescription,
 	}, workspace.NewGetWorkspaceOverviewHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "search_docs",
+		Annotations: readOnlyTool("Search Last9 Documentation"),
+		Description: prompts.SearchDocsDescription,
+	}, docs.NewSearchDocsHandler(docs.NewFetcher(client, docs.IndexURL))))
 
 	// Register exceptions tool
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
