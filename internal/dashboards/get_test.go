@@ -170,3 +170,38 @@ func TestGetDashboardHandler_NormalizesEscapedHTMLCharacters(t *testing.T) {
 		t.Fatalf("HTML characters were not preserved literally: %s", text)
 	}
 }
+
+func TestGetDashboardHandler_NormalizationRoundTripsOtherText(t *testing.T) {
+	// Literal escape text, quotes, backslashes and non-ASCII must survive the
+	// decode/re-encode that unescapes <, > and &.
+	name := `QA \` + `u003c <>& "q" \ é 🚀`
+	wire, err := json.Marshal(map[string]any{"dashboard": map[string]any{"id": "uuid-1", "name": name}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(wire)
+	}))
+	defer srv.Close()
+
+	handler := NewGetDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDashboardArgs{ID: "uuid-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	var got struct {
+		Dashboard struct {
+			Name string `json:"name"`
+		} `json:"dashboard"`
+	}
+	if err := json.Unmarshal([]byte(text), &got); err != nil {
+		t.Fatalf("output is not valid JSON: %v: %s", err, text)
+	}
+	if got.Dashboard.Name != name {
+		t.Fatalf("name = %q, want %q", got.Dashboard.Name, name)
+	}
+	if strings.Contains(text, `\`+`u0026`) || !strings.Contains(text, `<>&`) {
+		t.Fatalf("HTML characters were not preserved literally: %s", text)
+	}
+}
