@@ -45,6 +45,7 @@ func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(con
 			Timestamp:  endTimeParam,
 			Window:     endTimeParam - startTimeParam,
 		})
-		return promToolResult(raw, err, choice.note)
+		res, out, err := promToolResult(raw, err, choice.note)
+		return withMetricsLink(res, choice.cfg, startTimeParam, endTimeParam, query), out, err
 	}
 }

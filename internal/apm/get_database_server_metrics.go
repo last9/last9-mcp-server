@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -277,8 +278,10 @@ func NewGetDatabaseServerMetricsHandler(client *http.Client, cfg models.Config) 
 		}
 		metricsWg.Wait()
 
+		dbLinkMeta := deeplink.ToMeta(deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildDatabasesLink())
 		if len(results) == 0 {
 			return &mcp.CallToolResult{
+				Meta: dbLinkMeta,
 				Content: []mcp.Content{
 					&mcp.TextContent{Text: apmEmptyAdvice(
 						"database server-side metrics",
@@ -315,6 +318,7 @@ func NewGetDatabaseServerMetricsHandler(client *http.Client, cfg models.Config) 
 		}
 
 		return &mcp.CallToolResult{
+			Meta: dbLinkMeta,
 			Content: []mcp.Content{
 				&mcp.TextContent{Text: string(jsonBytes)},
 			},

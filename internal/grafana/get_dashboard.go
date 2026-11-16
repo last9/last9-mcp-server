@@ -32,6 +32,7 @@ func NewGetDashboardHandler(client *http.Client, cfg models.Config) func(context
 		}
 		if args.FullJSON {
 			return &mcp.CallToolResult{
+				Meta:    grafanaLinkMeta(cfg, "/d/"+url.PathEscape(args.UID)),
 				Content: []mcp.Content{&mcp.TextContent{Text: string(body)}},
 			}, nil, nil
 		}
@@ -46,6 +47,7 @@ func NewGetDashboardHandler(client *http.Client, cfg models.Config) func(context
 			return nil, nil, err
 		}
 		return &mcp.CallToolResult{
+			Meta:    grafanaLinkMeta(cfg, "/d/"+url.PathEscape(args.UID)),
 			Content: []mcp.Content{&mcp.TextContent{Text: string(out)}},
 		}, nil, nil
 	}

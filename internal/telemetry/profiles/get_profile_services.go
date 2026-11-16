@@ -62,6 +62,6 @@ func NewGetProfileServicesHandler(client *http.Client, cfg models.Config) func(c
 			"start":        start.UTC().Format(time.RFC3339),
 			"end":          end.UTC().Format(time.RFC3339),
 		})
-		return result, nil, err
+		return withProfilesLink(result, cfg, start, end, filters, args.ProfileType, ""), nil, err
 	}
 }

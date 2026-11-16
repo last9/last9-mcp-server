@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -233,6 +234,59 @@ func TestGetChangeEventsHandler_DiscoveryReadsEventNameOnly(t *testing.T) {
 	for _, want := range []string{excludeBackupEvents, excludeScheduledSearchEvents} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("event_name discovery must apply %s, got matches %v", want, capturedMatches)
+		}
+	}
+}
+
+func TestGetChangeEventsHandler_MetricsExplorerLink(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
+		switch r.URL.Path {
+		case constants.EndpointPromLabelValues:
+			_, _ = io.WriteString(w, `["deployment"]`)
+		default:
+			_, _ = io.WriteString(w, `[]`)
+		}
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL: server.URL,
+		OrgSlug:    "acme",
+		ClusterID:  "cluster-1",
+		TokenManager: &auth.TokenManager{
+			AccessToken: "test-token",
+			ExpiresAt:   time.Now().Add(24 * time.Hour),
+		},
+	}
+
+	handler := NewGetChangeEventsHandler(server.Client(), cfg)
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetChangeEventsArgs{
+		StartTimeISO: "2026-02-09T15:04:05Z",
+		EndTimeISO:   "2026-02-09T16:04:05Z",
+		ServiceName:  "checkout",
+		Env:          "prod",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	raw, _ := res.Meta["reference_url"].(string)
+	u, err := url.Parse(raw)
+	if err != nil || u.Path != "/v2/organizations/acme/metrics" {
+		t.Fatalf("reference_url = %q, want the metrics explorer", raw)
+	}
+	q := u.Query()
+	want := map[string]string{
+		"from":    "1770649445",
+		"to":      "1770653045",
+		"cluster": "cluster-1",
+		"mode":    "code",
+		"query":   buildChangeEventsPromQL("checkout", "prod", ""),
+	}
+	for k, v := range want {
+		if got := q.Get(k); got != v {
+			t.Errorf("%s = %q, want %q", k, got, v)
 		}
 	}
 }

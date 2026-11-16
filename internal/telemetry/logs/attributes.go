@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"time"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -154,7 +155,9 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(con
 			}
 		}
 
+		dashboardURL := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildLogsLink(startTime*1000, endTime*1000, nil, "")
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: summary,

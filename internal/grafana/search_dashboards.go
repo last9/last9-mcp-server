@@ -34,6 +34,7 @@ func NewSearchDashboardsHandler(client *http.Client, cfg models.Config) func(con
 			return nil, nil, err
 		}
 		return &mcp.CallToolResult{
+			Meta:    grafanaLinkMeta(cfg, "/dashboards"),
 			Content: []mcp.Content{&mcp.TextContent{Text: string(out)}},
 		}, nil, nil
 	}

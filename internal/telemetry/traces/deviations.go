@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"last9-mcp/internal/constants"
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -113,12 +114,40 @@ type AttributeDeviations struct {
 
 func NewGetTraceAttributeDeviationsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetTraceAttributeDeviationsArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args GetTraceAttributeDeviationsArgs) (*mcp.CallToolResult, any, error) {
-		body, err := fetchAttributeDeviations(ctx, client, cfg, args)
+		request, err := buildDeviationAPIRequest(args, utils.Now())
 		if err != nil {
 			return nil, nil, err
 		}
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(body)}}}, nil, nil
+		body, err := callAttributeDeviationsAPI(ctx, client, cfg, request)
+		if err != nil {
+			return nil, nil, err
+		}
+		return &mcp.CallToolResult{
+			Meta:    deeplink.ToMeta(deviationTracesLink(cfg, request)),
+			Content: []mcp.Content{&mcp.TextContent{Text: string(body)}},
+		}, nil, nil
 	}
+}
+
+// deviationTracesLink opens the Traces explorer over the analysis window,
+// scoped to the same service, environment, operation, and filters.
+func deviationTracesLink(cfg models.Config, request deviationAPIRequest) string {
+	scope := request.Scope
+	conditions := []interface{}{
+		map[string]interface{}{"$eq": []interface{}{"ServiceName", scope.ServiceName}},
+		map[string]interface{}{"$eq": []interface{}{"resources['deployment.environment']", scope.Environment}},
+	}
+	if scope.Operation != "" {
+		conditions = append(conditions, map[string]interface{}{"$eq": []interface{}{"SpanName", scope.Operation}})
+	}
+	for _, filter := range scope.Filters {
+		conditions = append(conditions, filter)
+	}
+	pipeline := []map[string]interface{}{
+		{"type": "filter", "query": map[string]interface{}{"$and": conditions}},
+	}
+	target := request.Comparison.Target
+	return deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildTracesLink(target.Start.UnixMilli(), target.End.UnixMilli(), pipeline, "", "")
 }
 
 // QueryTraceAttributeDeviations runs the get_trace_attribute_deviations analysis

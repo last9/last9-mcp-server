@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/alerts"
 	"last9-mcp/internal/models"
@@ -230,6 +231,7 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 		}
 
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildAlertingGroupsLink()),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(formattedBytes),

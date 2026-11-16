@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/last9api/prom"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/namematch"
@@ -107,6 +108,16 @@ func promToolResult(raw []byte, err error, note string) (*mcp.CallToolResult, an
 		return nil, nil, err
 	}
 	return promBodyResult(raw, note), nil, nil
+}
+
+// withMetricsLink attaches a Metrics explorer deep link for the query and the
+// window it ran over. Error results carry no link.
+func withMetricsLink(res *mcp.CallToolResult, cfg models.Config, startSec, endSec int64, query string) *mcp.CallToolResult {
+	if res == nil || res.IsError {
+		return res
+	}
+	res.Meta = deeplink.ToMeta(deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildMetricsLink(startSec*1000, endSec*1000, query))
+	return res
 }
 
 // promBodyResult serves an upstream body as is, with the datasource note as a
