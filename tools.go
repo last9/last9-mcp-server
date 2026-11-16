@@ -277,7 +277,7 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Name:        "search_docs",
 		Annotations: readOnlyTool("Search Last9 Documentation"),
 		Description: prompts.SearchDocsDescription,
-	}, docs.NewSearchDocsHandler(docs.NewFetcher(client, docs.IndexURL))))
+	}, docs.NewSearchDocsHandler(client, cfg)))
 
 	// Register exceptions tool
 	reg(registerIfAllowed(server, gate, &mcp.Tool{

@@ -43,7 +43,7 @@ func TestSearchRanksKubernetesSynonyms(t *testing.T) {
 
 func TestSearchDocsHandlerOutputAndValidation(t *testing.T) {
 	f := fixtureFetcher(t, fixtureIndex)
-	handler := NewSearchDocsHandler(f)
+	handler := newSearchDocsHandler(f)
 	result, _, err := handler(context.Background(), nil, SearchDocsArgs{Query: "promql"})
 	if err != nil {
 		t.Fatal(err)

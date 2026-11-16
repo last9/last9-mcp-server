@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode"
 
+	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -53,7 +54,11 @@ type SearchDocsArgs struct {
 	Limit int    `json:"limit,omitempty" jsonschema:"Maximum pages to return; defaults to 5 and is clamped to 1..5"`
 }
 
-func NewSearchDocsHandler(fetcher *Fetcher) func(context.Context, *mcp.CallToolRequest, SearchDocsArgs) (*mcp.CallToolResult, any, error) {
+func NewSearchDocsHandler(client *http.Client, _ models.Config) func(context.Context, *mcp.CallToolRequest, SearchDocsArgs) (*mcp.CallToolResult, any, error) {
+	return newSearchDocsHandler(NewFetcher(client, IndexURL))
+}
+
+func newSearchDocsHandler(fetcher *Fetcher) func(context.Context, *mcp.CallToolRequest, SearchDocsArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args SearchDocsArgs) (*mcp.CallToolResult, any, error) {
 		limit := args.Limit
 		if limit == 0 {
