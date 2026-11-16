@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -46,6 +47,7 @@ var (
 )
 
 func serverVersion(version, commit string) string {
+	commit = strings.TrimSpace(commit)
 	if version != "dev" || commit == "" || commit == "unknown" {
 		return version
 	}
