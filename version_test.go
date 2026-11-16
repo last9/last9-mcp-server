@@ -25,6 +25,7 @@ func TestServerVersion(t *testing.T) {
 		{name: "development whitespace commit", version: "dev", commit: " \t\n", want: "dev"},
 		{name: "development padded commit", version: "dev", commit: " abc1234567890\n", want: "dev+abc1234"},
 		{name: "development unknown commit", version: "dev", commit: "unknown", want: "dev"},
+		{name: "development uppercase unknown commit", version: "dev", commit: " UNKNOWN\n", want: "dev"},
 	}
 
 	for _, tt := range tests {
