@@ -27,7 +27,7 @@ func TestResultEnvelopeEachMarkerMakesItNonEmpty(t *testing.T) {
 		"skip":         func(e *ResultEnvelope) { e.Skip("count sanity") },
 		"truncate":     func(e *ResultEnvelope) { e.Truncate(10) },
 		"hint":         func(e *ResultEnvelope) { e.Hint("widen the window") },
-		"trim":         func(e *ResultEnvelope) { e.Trim(3) },
+		"trim":         func(e *ResultEnvelope) { e.Trim(3, MaxResultTextBytes) },
 		"continuation": func(e *ResultEnvelope) { e.Continuation = map[string]any{"cursor": "abc"} },
 	}
 	for name, mark := range cases {
@@ -63,16 +63,16 @@ func TestResultEnvelopeTruncateRecordsLimit(t *testing.T) {
 
 func TestResultEnvelopeTrimRecordsCountAndHint(t *testing.T) {
 	var env ResultEnvelope
-	env.Trim(0)
+	env.Trim(0, 500)
 	if !env.IsEmpty() {
 		t.Fatal("Trim(0) must not mark the envelope")
 	}
-	env.Trim(7)
+	env.Trim(7, 500)
 	if env.TrimmedItems != 7 {
 		t.Fatalf("trimmed_items = %d, want 7", env.TrimmedItems)
 	}
-	if len(env.Hints) != 1 || !strings.Contains(env.Hints[0], "7") {
-		t.Fatalf("hints = %v, want one hint naming the omitted count", env.Hints)
+	if len(env.Hints) != 1 || !strings.Contains(env.Hints[0], "7 items") || !strings.Contains(env.Hints[0], "500 bytes") {
+		t.Fatalf("hints = %v, want one hint naming the omitted count and the budget", env.Hints)
 	}
 }
 
@@ -156,8 +156,7 @@ func TestFormatQueryResponseWithoutResultArrayIsUntouched(t *testing.T) {
 }
 
 func TestEnvelopeToolResultWithoutMarkers(t *testing.T) {
-	payload := map[string]any{"rows": []any{1.0}}
-	result := EnvelopeToolResult(payload, `{"rows":[1]}`, ResultEnvelope{})
+	result := EnvelopeToolResult(`{"rows":[1]}`, ResultEnvelope{})
 
 	if len(result.Content) != 1 {
 		t.Fatalf("content blocks = %d, want only the payload", len(result.Content))
@@ -165,45 +164,51 @@ func TestEnvelopeToolResultWithoutMarkers(t *testing.T) {
 	if text := result.Content[0].(*mcp.TextContent).Text; text != `{"rows":[1]}` {
 		t.Fatalf("payload text = %q", text)
 	}
-	structured := structuredAsMap(t, result)
-	if _, ok := structured["result"].(map[string]any); !ok {
-		t.Fatalf("structuredContent.result = %#v, want the payload", structured["result"])
-	}
-	if env, ok := structured["envelope"].(map[string]any); !ok || len(env) != 0 {
-		t.Fatalf("structuredContent.envelope = %#v, want {}", structured["envelope"])
+	if result.StructuredContent != nil {
+		t.Fatalf("structuredContent = %#v, want the payload sent once", result.StructuredContent)
 	}
 }
 
-func TestEnvelopeToolResultAppendsEnvelopeBlock(t *testing.T) {
+func TestEnvelopeToolResultJoinsObjectPayload(t *testing.T) {
 	var env ResultEnvelope
 	env.Truncate(5)
 	env.Hint("lower the limit")
-	result := EnvelopeToolResult([]any{}, "[]", env)
-
-	if len(result.Content) != 2 {
-		t.Fatalf("content blocks = %d, want payload + envelope", len(result.Content))
-	}
-	block := result.Content[1].(*mcp.TextContent).Text
-	encoded, _ := json.Marshal(env)
-	if block != "envelope: "+string(encoded) {
-		t.Fatalf("envelope block = %q", block)
-	}
-	structured := structuredAsMap(t, result)
-	got := structured["envelope"].(map[string]any)
-	if got["truncated"] != true || got["limit"] != 5.0 {
-		t.Fatalf("structured envelope = %#v", got)
+	for name, text := range map[string]string{
+		"compact":  `{"rows":[1]}`,
+		"indented": "{\n  \"rows\": [\n    1\n  ]\n}\n",
+		"empty":    "{}",
+	} {
+		t.Run(name, func(t *testing.T) {
+			result := EnvelopeToolResult(text, env)
+			if len(result.Content) != 1 || result.StructuredContent != nil {
+				t.Fatalf("content blocks = %d structured = %#v, want one text block", len(result.Content), result.StructuredContent)
+			}
+			var payload map[string]any
+			if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &payload); err != nil {
+				t.Fatalf("payload is not one JSON object: %v", err)
+			}
+			got, _ := payload[EnvelopeKey].(map[string]any)
+			if got["truncated"] != true || got["limit"] != 5.0 {
+				t.Fatalf("%s = %#v", EnvelopeKey, payload[EnvelopeKey])
+			}
+			if name != "empty" && len(payload) != 2 {
+				t.Fatalf("payload members = %v, want rows and the envelope", payload)
+			}
+		})
 	}
 }
 
-func structuredAsMap(t *testing.T, result *mcp.CallToolResult) map[string]any {
-	t.Helper()
-	encoded, err := json.Marshal(result.StructuredContent)
-	if err != nil {
-		t.Fatal(err)
+func TestEnvelopeToolResultAppendsBlockToNonObjectPayload(t *testing.T) {
+	var env ResultEnvelope
+	env.Hint("no series matched")
+	encoded, _ := json.Marshal(env)
+	for _, text := range []string{"[]", "Query not run: rejected."} {
+		result := EnvelopeToolResult(text, env)
+		if len(result.Content) != 2 || result.Content[0].(*mcp.TextContent).Text != text {
+			t.Fatalf("%q: content = %#v, want the payload untouched plus an envelope block", text, result.Content)
+		}
+		if block := result.Content[1].(*mcp.TextContent).Text; block != "envelope: "+string(encoded) {
+			t.Fatalf("envelope block = %q", block)
+		}
 	}
-	var out map[string]any
-	if err := json.Unmarshal(encoded, &out); err != nil {
-		t.Fatal(err)
-	}
-	return out
 }

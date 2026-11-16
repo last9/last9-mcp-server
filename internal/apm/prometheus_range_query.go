@@ -71,11 +71,11 @@ func promRangeQueryResult(body []byte) *mcp.CallToolResult {
 		kept, omitted := utils.FitItems(series, utils.MaxResultTextBytes, jsonArraySize)
 		encoded, err := json.Marshal(kept)
 		if err == nil {
-			series, text = kept, string(encoded)
-			env.Trim(omitted)
+			text = string(encoded)
+			env.Trim(omitted, utils.MaxResultTextBytes)
 		}
 	}
-	return utils.EnvelopeToolResult(series, text, env)
+	return utils.EnvelopeToolResult(text, env)
 }
 
 func jsonArraySize(items []json.RawMessage) int {

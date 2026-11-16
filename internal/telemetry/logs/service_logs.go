@@ -199,7 +199,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			meta["last9/coverage"] = coverage
 		}
 
-		result := utils.EnvelopeToolResult(response, responseJSON, logs.envelope)
+		result := utils.EnvelopeToolResult(responseJSON, logs.envelope)
 		result.Meta = meta
 		if response != logs {
 			return result, nil, nil
@@ -214,7 +214,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			limited.RawLimit = map[string]any{"returned_entries": n, "fetched_entries": count, "max_bytes": maxRawResultBytes}
 			limited.Hint = rawLimitHint(n, count, limit)
 			limited.coverageStatus = "partial"
-			limited.envelope.Trim(count - n)
+			limited.envelope.Trim(count-n, maxRawResultBytes)
 			limitedMeta := mapsClone(meta)
 			if coverage := serviceLogsCoverage(&limited, logjsonQuery, bounds); coverage != nil {
 				limitedMeta["last9/coverage"] = coverage
@@ -223,7 +223,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			if err != nil {
 				return nil, err
 			}
-			limitedResult := utils.EnvelopeToolResult(&limited, string(encoded), limited.envelope)
+			limitedResult := utils.EnvelopeToolResult(string(encoded), limited.envelope)
 			limitedResult.Meta = limitedMeta
 			return limitedResult, nil
 		})
@@ -242,7 +242,7 @@ func formatServiceLogs(logs *ServiceLogsResponse) (string, error) {
 	})
 	logs.Logs, logs.Count = kept, len(kept)
 	if omitted > 0 {
-		logs.envelope.Trim(omitted)
+		logs.envelope.Trim(omitted, utils.MaxResultTextBytes)
 		if logs.coverageStatus == "complete" {
 			logs.coverageStatus = "partial"
 		}

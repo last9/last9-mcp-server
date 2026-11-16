@@ -126,9 +126,8 @@ func TestGetLogsRawEmptyResultHintsDiscovery(t *testing.T) {
 	if len(env.Hints) != 1 || !strings.Contains(env.Hints[0], "get_log_attributes_for_pipeline") {
 		t.Fatalf("hints = %v, want one pointing at discovery", env.Hints)
 	}
-	block := result.Content[1].(*mcp.TextContent).Text
-	if !strings.HasPrefix(block, "envelope: ") || !strings.Contains(block, "get_log_attributes_for_pipeline") {
-		t.Fatalf("envelope block = %q", block)
+	if len(result.Content) != 1 {
+		t.Fatalf("content blocks = %d, want the envelope inside the one JSON payload", len(result.Content))
 	}
 }
 

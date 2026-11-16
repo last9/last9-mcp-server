@@ -45,7 +45,7 @@ The tools whose manuals dominate description tokens and undergo progressive disc
 _Avoid_: treating every slightly long description as a whale; `get_service_traces` is not a whale by default
 
 **Result envelope**:
-How a query or read tool says its answer is incomplete: `partial` + `skipped` (stages or chunks that did not complete), `truncated` + `limit` (more matched, detected by fetching limit+1), `continuation` (where the tool paginates), `trimmed_items` (dropped to fit the response budget) and `hints` (next actions). Served as a trailing `envelope:` text block, only when non-empty, and as `structuredContent` `{result, envelope}`. Built with `utils.EnvelopeToolResult`; tools migrate as they are touched.
+How a query or read tool says its answer is incomplete: `partial` + `skipped` (stages or chunks that did not complete), `truncated` + `limit` (more matched, detected by fetching limit+1), `continuation` (where the tool paginates), `trimmed_items` (dropped to fit the response budget) and `hints` (next actions). Served only when non-empty: as the `l9_envelope` member of a JSON object payload, else as a trailing `envelope:` text block. Never mirrored into `structuredContent`, which would double the result's bytes. Built with `utils.EnvelopeToolResult`; tools migrate as they are touched.
 _Avoid_: ad-hoc completeness keys inside the payload (`l9_result`); silent truncation
 
 **Log pattern**:

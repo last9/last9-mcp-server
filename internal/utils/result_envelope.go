@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"maps"
 	"sort"
+	"strings"
+	"unicode"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -42,13 +44,14 @@ func (e *ResultEnvelope) Hint(hint string) {
 	e.Hints = append(e.Hints, hint)
 }
 
-// Trim records items dropped to keep the payload within MaxResultTextBytes.
-func (e *ResultEnvelope) Trim(omitted int) {
+// Trim records items dropped to keep the payload within maxBytes, the budget
+// that applied.
+func (e *ResultEnvelope) Trim(omitted, maxBytes int) {
 	if omitted <= 0 {
 		return
 	}
 	e.TrimmedItems += omitted
-	e.Hint(fmt.Sprintf("Response trimmed to fit %d bytes: %d items omitted. Narrow the filters or time range, or aggregate, rather than raising limit.", MaxResultTextBytes, omitted))
+	e.Hint(fmt.Sprintf("Response trimmed to fit %d bytes: %d items omitted. Narrow the filters or time range, or aggregate, rather than raising limit.", maxBytes, omitted))
 }
 
 func (e ResultEnvelope) IsEmpty() bool {
@@ -102,7 +105,7 @@ func trimQueryResponse[T any](response map[string]any, items []T, env *ResultEnv
 		return len(formatIndentedJSON(probe))
 	})
 	data["result"] = kept
-	env.Trim(omitted)
+	env.Trim(omitted, MaxResultTextBytes)
 	return formatIndentedJSON(response)
 }
 
@@ -114,22 +117,38 @@ func formatIndentedJSON(data any) string {
 	return string(encoded)
 }
 
-// EnvelopeToolResult returns text as the readable payload, adds the envelope as
-// its own text block when it carries anything, and mirrors both as
-// structuredContent {"result": payload, "envelope": env}.
-func EnvelopeToolResult(payload any, text string, env ResultEnvelope) *mcp.CallToolResult {
+// EnvelopeKey names the envelope member of a JSON object payload.
+const EnvelopeKey = "l9_envelope"
+
+// EnvelopeToolResult puts a non-empty envelope under EnvelopeKey in a JSON object
+// payload, else in a trailing "envelope: " block, so joined text stays one document.
+// No structuredContent mirror: it doubled every result against output budgets.
+func EnvelopeToolResult(text string, env ResultEnvelope) *mcp.CallToolResult {
 	content := []mcp.Content{&mcp.TextContent{Text: text}}
 	if !env.IsEmpty() {
 		encoded, err := json.Marshal(env)
 		if err == nil {
-			content = append(content, &mcp.TextContent{Text: "envelope: " + string(encoded)})
+			if joined, ok := withEnvelopeMember(text, encoded); ok {
+				content[0] = &mcp.TextContent{Text: joined}
+			} else {
+				content = append(content, &mcp.TextContent{Text: "envelope: " + string(encoded)})
+			}
 		}
 	}
-	return &mcp.CallToolResult{
-		Content: content,
-		StructuredContent: map[string]any{
-			"result":   payload,
-			"envelope": env,
-		},
+	return &mcp.CallToolResult{Content: content}
+}
+
+// withEnvelopeMember appends EnvelopeKey as the last member of a JSON object
+// text, leaving the caller's formatting of every other member intact.
+func withEnvelopeMember(text string, encodedEnv []byte) (string, bool) {
+	trimmed := strings.TrimSpace(text)
+	if !strings.HasPrefix(trimmed, "{") || !json.Valid([]byte(trimmed)) {
+		return "", false
 	}
+	members := strings.TrimRightFunc(strings.TrimSuffix(trimmed, "}"), unicode.IsSpace)
+	separator := ","
+	if members == "{" {
+		separator = ""
+	}
+	return members + separator + "\n  \"" + EnvelopeKey + "\": " + string(encodedEnv) + "\n}", true
 }

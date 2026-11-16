@@ -287,19 +287,15 @@ func promSeries(n int, labelBytes int) string {
 	return "[" + strings.Join(series, ",") + "]"
 }
 
-func TestPromRangeQueryKeepsBodyAndMirrorsSeries(t *testing.T) {
+func TestPromRangeQueryKeepsBodyUnchanged(t *testing.T) {
 	body := promSeries(2, 3)
 	result := callPromRangeQuery(t, body)
 
 	if len(result.Content) != 1 || result.Content[0].(*mcp.TextContent).Text != body {
 		t.Fatalf("content = %#v, want the upstream body unchanged and no envelope block", result.Content)
 	}
-	encoded, _ := json.Marshal(result.StructuredContent)
-	var structured struct {
-		Result []map[string]any `json:"result"`
-	}
-	if err := json.Unmarshal(encoded, &structured); err != nil || len(structured.Result) != 2 {
-		t.Fatalf("structuredContent = %s, want the two series", encoded)
+	if result.StructuredContent != nil {
+		t.Fatalf("structuredContent = %#v, want the series sent once", result.StructuredContent)
 	}
 	if env := utils.GetResultEnvelope(t, result); !env.IsEmpty() {
 		t.Fatalf("envelope = %+v, want empty", env)

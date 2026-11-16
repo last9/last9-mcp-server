@@ -200,7 +200,7 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 	}
 	endLink(nil)
 
-	toolResult := utils.EnvelopeToolResult(result, text, env)
+	toolResult := utils.EnvelopeToolResult(text, env)
 	toolResult.Meta = meta
 	kind, items, err := extractResultItems(result)
 	if err != nil || kind != "streams" {
@@ -216,8 +216,8 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		limited["l9_raw_limit"] = map[string]any{"returned_entries": n, "fetched_entries": count, "max_bytes": maxRawResultBytes}
 		limited["l9_guidance"] = map[string]any{"message": rawLimitHint(n, count, effectiveGetLogsResultLimit(cfg, args.Limit))}
 		limitedEnv := env
-		limitedEnv.Trim(count - n)
-		limitedResult := utils.EnvelopeToolResult(limited, formatJSON(limited), limitedEnv)
+		limitedEnv.Trim(count-n, maxRawResultBytes)
+		limitedResult := utils.EnvelopeToolResult(formatJSON(limited), limitedEnv)
 		limitedResult.Meta = meta
 		return limitedResult, nil
 	})

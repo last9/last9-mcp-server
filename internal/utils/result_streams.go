@@ -26,7 +26,7 @@ func trimStreamResponse(response map[string]any, items []any, env *ResultEnvelop
 		return len(formatIndentedJSON(probe)) > MaxResultTextBytes
 	})
 	data["result"] = streamLinePrefix(items, kept)
-	env.Trim(total - kept)
+	env.Trim(total-kept, MaxResultTextBytes)
 	return formatIndentedJSON(response)
 }
 

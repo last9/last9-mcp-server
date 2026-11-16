@@ -162,7 +162,7 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 	dashboardURL := dlBuilder.BuildTracesLink(startTime, endTime, args.TracejsonQuery, "", "")
 
-	toolResult := utils.EnvelopeToolResult(result, text, env)
+	toolResult := utils.EnvelopeToolResult(text, env)
 	toolResult.Meta = deeplink.ToMeta(dashboardURL)
 	return toolResult, nil
 }

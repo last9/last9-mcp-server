@@ -308,7 +308,7 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 
 		var env utils.ResultEnvelope
 		verdict.AddHints(&env)
-		result := utils.EnvelopeToolResult(traceResponse, string(jsonData), env)
+		result := utils.EnvelopeToolResult(string(jsonData), env)
 		// Escalate soft failures (e.g. malformed 200 body) per the
 		// package convention while preserving the structured
 		// success:false JSON and the dashboard deep link.

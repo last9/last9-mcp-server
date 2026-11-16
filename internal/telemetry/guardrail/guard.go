@@ -186,7 +186,7 @@ func (v Verdict) RejectionResult() *mcp.CallToolResult {
 	var env utils.ResultEnvelope
 	v.AddHints(&env)
 	text := fmt.Sprintf("Query not run: the query guardrail rejected it (%s). %s", v.Decision.Reason, v.Decision.Guidance)
-	result := utils.EnvelopeToolResult(nil, text, env)
+	result := utils.EnvelopeToolResult(text, env)
 	result.IsError = true
 	return result
 }

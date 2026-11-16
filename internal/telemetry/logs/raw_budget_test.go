@@ -24,7 +24,7 @@ func TestRawLogResponseByteBudget(t *testing.T) {
 				name += "/oversized-entry"
 			}
 			t.Run(name, func(t *testing.T) {
-				count, width := 30, 500
+				count, width := 30, 2000
 				if oversized {
 					count, width = 1, 50000
 				}
@@ -127,7 +127,7 @@ func TestBoundRawResultPreservesSmallAndRejectsOversizedMetadata(t *testing.T) {
 }
 
 func TestDefaultSmallRawResponsesAreBounded(t *testing.T) {
-	lines := repeatedLines(2, "ERROR", func(int) string { return strings.Repeat("x", 9000) })
+	lines := repeatedLines(2, "ERROR", func(int) string { return strings.Repeat("x", 20000) })
 	srv, _ := streamSearchServer(t, lines)
 	result, _, err := NewGetLogsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{LogjsonQuery: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "api"}}}}, StartTimeISO: "2023-11-14T22:13:20Z", EndTimeISO: "2023-11-14T22:23:20Z"})
 	if err != nil {
@@ -196,8 +196,8 @@ func TestRawStreamPrefixPreservesTotals(t *testing.T) {
 		t.Fatal(err)
 	}
 	kept := countLogEntriesInResultItems(items)
-	if kept == 0 || !reflect.DeepEqual(items, truncateResultItemsByEntryLimit(source, kept)) {
-		t.Fatalf("returned %d streams/%d entries differ from the whole-entry stream prefix", len(items), kept)
+	if len(items) != 2 || !reflect.DeepEqual(items, truncateResultItemsByEntryLimit(source, kept)) {
+		t.Fatal("returned entries differ from the whole-entry stream prefix")
 	}
 	if out["total_matching_lines"] != float64(1000) {
 		t.Fatalf("total matching lines changed: %v", out["total_matching_lines"])
@@ -211,7 +211,7 @@ func TestRawStreamPrefixPreservesTotals(t *testing.T) {
 func TestServiceLogsSmallSummaryModeBounded(t *testing.T) {
 	for _, mode := range []string{"", "summary"} {
 		t.Run(mode, func(t *testing.T) {
-			lines := repeatedLines(2, "ERROR", func(int) string { return strings.Repeat("x", 9000) })
+			lines := repeatedLines(2, "ERROR", func(int) string { return strings.Repeat("x", 20000) })
 			srv, _ := streamSearchServer(t, lines)
 			result, _, err := NewGetServiceLogsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), &mcp.CallToolRequest{}, GetServiceLogsArgs{ServiceName: "api", ResponseMode: mode, StartTimeISO: "2023-11-14T22:13:20Z", EndTimeISO: "2023-11-14T22:23:20Z"})
 			if err != nil {
