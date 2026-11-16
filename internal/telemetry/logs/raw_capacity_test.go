@@ -13,6 +13,7 @@ import (
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/telemetry/guardrail"
 	"last9-mcp/internal/telemetry/guardrail/guardrailtest"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -53,6 +54,10 @@ func TestRawEntryCapacityWithGuardrailMetadata(t *testing.T) {
 					}
 					if got := rawCapacityCount(t, tool, result); got != tc.want {
 						t.Fatalf("returned %d entries, want %d", got, tc.want)
+					}
+					encoded, err := json.Marshal(result)
+					if err != nil || len(encoded) > utils.MaxResultTextBytes {
+						t.Fatalf("result with bounded metadata is %d bytes: %v", len(encoded), err)
 					}
 				})
 			}

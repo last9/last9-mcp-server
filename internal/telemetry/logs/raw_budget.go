@@ -27,27 +27,15 @@ func boundRawResult(full *mcp.CallToolResult, count int, info *mcp.Implementatio
 		return &projected
 	}
 	size := func(result *mcp.CallToolResult) (int, error) {
-		projected := project(result)
+		projected := rawBudgetPayload(project(result))
 		encoded, err := json.Marshal(projected)
 		return len(encoded) + sdkResultTypeBytes, err
 	}
-	projectedFull := project(full)
-	encodedFull, err := json.Marshal(projectedFull)
-	if err != nil {
-		return nil, err
-	}
-	encodedWithoutEnvelope, err := json.Marshal(rawBudgetPayload(projectedFull))
-	if err != nil {
-		return nil, err
-	}
-	// Keep the established payload budget stable when metadata is appended.
-	// Trimming metadata added later by prefix still counts against the budget.
-	budget := maxRawResultBytes + len(encodedFull) - len(encodedWithoutEnvelope)
 	n, err := size(full)
 	if err != nil {
 		return nil, err
 	}
-	if n <= budget {
+	if n <= maxRawResultBytes {
 		return full, nil
 	}
 	var best *mcp.CallToolResult
@@ -61,7 +49,7 @@ func boundRawResult(full *mcp.CallToolResult, count int, info *mcp.Implementatio
 		if err != nil {
 			return nil, err
 		}
-		if n <= budget {
+		if n <= maxRawResultBytes {
 			best = candidate
 			low = mid + 1
 		} else {
@@ -76,7 +64,7 @@ func boundRawResult(full *mcp.CallToolResult, count int, info *mcp.Implementatio
 	if err != nil {
 		return nil, err
 	}
-	if n > budget {
+	if n > maxRawResultBytes {
 		return nil, fmt.Errorf("server metadata exceeds the 32000-byte log response limit")
 	}
 	return fallback, nil
