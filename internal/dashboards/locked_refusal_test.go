@@ -161,6 +161,47 @@ func TestDashboardWrites_PermissionRefusalDoesNotClaimReadonly(t *testing.T) {
 	}
 }
 
+// A 403 on the pre-read means the caller cannot read the dashboard; that is a
+// permission failure, not a statement about the dashboard's own state.
+func TestDashboardWrites_PreReadPermissionRefusalDoesNotClaimReadonly(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("sent %s after a refused pre-read", r.Method)
+		}
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = io.WriteString(w, `{"error":"forbidden"}`)
+	}))
+	t.Cleanup(srv.Close)
+	assertPermissionText := func(t *testing.T, text string) {
+		t.Helper()
+		if !strings.Contains(text, "not permitted to access") || strings.Contains(text, "readonly") || !strings.Contains(text, "403") {
+			t.Fatalf("text = %q", text)
+		}
+	}
+	for _, tool := range dashboardWriteTools {
+		t.Run(tool, func(t *testing.T) {
+			_, err := callDashboardWrite(t, tool, srv)
+			if err == nil {
+				t.Fatal("want an error for a refused pre-read")
+			}
+			assertPermissionText(t, err.Error())
+			if !strings.Contains(err.Error(), "nothing was written") {
+				t.Fatalf("text = %q", err.Error())
+			}
+		})
+	}
+	t.Run("preview_dashboard", func(t *testing.T) {
+		args := previewTestArgs()
+		args.ID = "uuid-1"
+		args.Ops = []PatchDashboardOp{{Op: "set_title", Title: "x"}}
+		_, _, err := NewPreviewDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))(context.Background(), nil, args)
+		if err == nil {
+			t.Fatal("want an error for a refused read")
+		}
+		assertPermissionText(t, err.Error())
+	})
+}
+
 func TestDashboardWrites_UnlockedDashboardIsWritten(t *testing.T) {
 	unlocked := strings.Replace(lockedFixture, `"readonly":true`, `"readonly":false`, 1)
 	for _, tool := range dashboardWriteTools {
