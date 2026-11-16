@@ -6,21 +6,30 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// jsonTextResult is the one text-output path for dashboard and snapshot JSON,
+// so every tool shows <, > and & literally.
+func jsonTextResult(body []byte, link string) *mcp.CallToolResult {
+	result := &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: string(normalizeEscapedHTML(body))},
+		},
+	}
+	if link != "" {
+		result.Meta = deeplink.ToMeta(link)
+	}
+	return result
+}
+
 func textResultWithLink(body []byte, fallbackID string, extractID func([]byte) string, buildLink func(string) string) *mcp.CallToolResult {
 	id := extractID(body)
 	if id == "" {
 		id = fallbackID
 	}
-
-	result := &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: string(body)},
-		},
-	}
+	link := ""
 	if id != "" {
-		result.Meta = deeplink.ToMeta(buildLink(id))
+		link = buildLink(id)
 	}
-	return result
+	return jsonTextResult(body, link)
 }
 
 func textResultWithDashboardLink(dlBuilder *deeplink.Builder, body []byte, fallbackDashboardID string) *mcp.CallToolResult {
