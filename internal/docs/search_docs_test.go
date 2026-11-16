@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -84,6 +85,90 @@ func TestFetcherConditionalRefreshAndStaleFallback(t *testing.T) {
 		if err != nil || len(hits) != 1 {
 			t.Fatalf("search %d: hits=%#v err=%v", i, hits, err)
 		}
+	}
+}
+
+type waitingContext struct {
+	context.Context
+	once    sync.Once
+	waiting chan struct{}
+}
+
+func (c *waitingContext) Done() <-chan struct{} {
+	c.once.Do(func() { close(c.waiting) })
+	return c.Context.Done()
+}
+
+func TestConcurrentRefreshSharesStaleResult(t *testing.T) {
+	for _, status := range []int{http.StatusNotModified, http.StatusBadGateway} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			var calls atomic.Int32
+			started := make(chan struct{})
+			release := make(chan struct{})
+			var releaseOnce sync.Once
+			unblock := func() { releaseOnce.Do(func() { close(release) }) }
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				n := calls.Add(1)
+				if n == 1 {
+					w.Header().Set("ETag", `"v1"`)
+					fmt.Fprint(w, fixtureIndex)
+					return
+				}
+				if n == 2 {
+					close(started)
+					<-release
+				}
+				w.WriteHeader(status)
+			}))
+			defer srv.Close()
+			defer unblock()
+
+			f := NewFetcher(srv.Client(), srv.URL)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if hits, err := f.Search(ctx, "promql", 5); err != nil || len(hits) != 1 {
+				t.Fatalf("initial search: hits=%v err=%v", hits, err)
+			}
+			f.mu.Lock()
+			f.fetchedAt = f.fetchedAt.Add(-2 * time.Hour)
+			f.mu.Unlock()
+
+			results := make(chan error, 2)
+			search := func(searchCtx context.Context) {
+				hits, err := f.Search(searchCtx, "promql", 5)
+				if err == nil && len(hits) != 1 {
+					err = fmt.Errorf("hits=%v", hits)
+				}
+				results <- err
+			}
+			go search(ctx)
+			select {
+			case <-started:
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+			waiter := &waitingContext{Context: ctx, waiting: make(chan struct{})}
+			go search(waiter)
+			select {
+			case <-waiter.waiting:
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+			unblock()
+			for range 2 {
+				select {
+				case err := <-results:
+					if err != nil {
+						t.Fatal(err)
+					}
+				case <-ctx.Done():
+					t.Fatal(ctx.Err())
+				}
+			}
+			if got := calls.Load(); got != 2 {
+				t.Fatalf("concurrent callers made %d requests; want initial load plus one shared refresh", got)
+			}
+		})
 	}
 }
 
