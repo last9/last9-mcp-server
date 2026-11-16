@@ -95,3 +95,37 @@ func TestBoundedLogEnvelopeContract(t *testing.T) {
 		}
 	}
 }
+
+func TestServiceLogsGuardrailHintsDoNotReduceRawEntries(t *testing.T) {
+	values := make([]logValue, 500)
+	for i := range values {
+		values[i] = logValue{Timestamp: "60000000000", Message: strings.Repeat("x", 100)}
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		if strings.HasSuffix(r.URL.Path, "/estimate") {
+			_, _ = w.Write([]byte(`{"data":{"bytes":5001,"scoped":true}}`))
+			return
+		}
+		_, _ = w.Write([]byte(strings.Replace(streamsAPIResponse(values), "{", `{"status":"success",`, 1)))
+	}))
+	defer srv.Close()
+
+	args := GetServiceLogsArgs{ServiceName: "api", LookbackMinutes: 5, Limit: 500, ResponseMode: "raw"}
+	off, _, err := NewGetServiceLogsHandler(srv.Client(), testLogsConfig(srv.URL))(context.Background(), &mcp.CallToolRequest{}, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shadowCfg := testLogsConfig(srv.URL)
+	shadowCfg.QueryGuardrail = guardrailtest.Limits(guardrail.ModeShadow)
+	shadow, _, err := NewGetServiceLogsHandler(srv.Client(), shadowCfg)(context.Background(), &mcp.CallToolRequest{}, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	offCount := decodeServiceLogs(t, off).Count
+	shadowCount := decodeServiceLogs(t, shadow).Count
+	if shadowCount != offCount {
+		t.Fatalf("shadow returned %d entries, want the off-mode baseline %d", shadowCount, offCount)
+	}
+}
