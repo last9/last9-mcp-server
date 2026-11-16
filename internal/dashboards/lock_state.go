@@ -142,7 +142,7 @@ const lockRecovery = "Ask its author or an org admin to unlock it with set_dashb
 	"or copy it with create_dashboard and edit the copy."
 
 func forbiddenWriteResult(err error, builtIn bool) *mcp.CallToolResult {
-	prefix := "dashboard write was forbidden, so nothing was written"
+	prefix := "not permitted to modify dashboard, so nothing was written"
 	if builtIn {
 		prefix = "dashboard is readonly and cannot be modified, so nothing was written; copy it with create_dashboard and edit the copy"
 	}
