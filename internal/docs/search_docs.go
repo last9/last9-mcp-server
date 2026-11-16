@@ -87,6 +87,7 @@ type Fetcher struct {
 	etag       string
 	fetchedAt  time.Time
 	refreshing chan struct{}
+	refreshErr error
 }
 
 func NewFetcher(client *http.Client, url string) *Fetcher {
@@ -123,7 +124,12 @@ func (f *Fetcher) load(ctx context.Context) (*Index, error) {
 		f.mu.Unlock()
 		select {
 		case <-wait:
-			return f.load(ctx)
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			if f.index != nil {
+				return f.index, nil
+			}
+			return nil, f.refreshErr
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
@@ -148,6 +154,7 @@ func (f *Fetcher) load(ctx context.Context) (*Index, error) {
 			f.fetchedAt = utils.Now()
 		}
 	}
+	f.refreshErr = err
 	if f.index != nil {
 		return f.index, nil
 	}
