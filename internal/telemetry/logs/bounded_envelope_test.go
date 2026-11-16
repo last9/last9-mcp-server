@@ -17,7 +17,7 @@ import (
 
 func TestBoundedLogEnvelopeContract(t *testing.T) {
 	for _, tool := range []string{"get_logs", "get_service_logs"} {
-		for _, count := range []int{2, 40} {
+		for _, count := range []int{2, 6, 40} {
 			t.Run(fmt.Sprintf("%s/%d", tool, count), func(t *testing.T) {
 				values := make([]logValue, count)
 				for i := range values {
@@ -59,26 +59,37 @@ func TestBoundedLogEnvelopeContract(t *testing.T) {
 					t.Fatal("unexpected tool error")
 				}
 
-				encoded, err := json.Marshal(result.StructuredContent)
-				if err != nil {
-					t.Fatal(err)
+				// Clients join text blocks, so the whole result must stay one JSON document.
+				var joined strings.Builder
+				for _, content := range result.Content {
+					joined.WriteString(content.(*mcp.TextContent).Text)
 				}
-				var structured map[string]json.RawMessage
-				if err := json.Unmarshal(encoded, &structured); err != nil {
-					t.Fatal(err)
+				var payload struct {
+					Envelope struct {
+						TrimmedItems int      `json:"trimmed_items"`
+						Hints        []string `json:"hints"`
+					} `json:"l9_envelope"`
 				}
-				if _, ok := structured["result"]; !ok {
-					t.Error("structured payload missing")
+				if err := json.Unmarshal([]byte(joined.String()), &payload); err != nil {
+					t.Fatalf("joined text is not one JSON document: %v", err)
+				}
+				hints := strings.Join(payload.Envelope.Hints, "\n")
+				if !strings.Contains(hints, "scan_budget_exceeded") {
+					t.Errorf("text client lost guardrail hint: %q", hints)
 				}
 
-				foundHint := false
-				for _, content := range result.Content {
-					if text, ok := content.(*mcp.TextContent); ok && strings.HasPrefix(text.Text, "envelope: ") && strings.Contains(text.Text, "scan_budget_exceeded") {
-						foundHint = true
-					}
+				// The 32 KB budget bounds the text a client reads once; 6 entries of 4 KB fit.
+				fits := count*4000 < maxRawResultBytes
+				if fits && payload.Envelope.TrimmedItems != 0 {
+					t.Errorf("trimmed %d of %d entries that fit the budget", payload.Envelope.TrimmedItems, count)
 				}
-				if !foundHint {
-					t.Error("text-only client lost guardrail hint")
+				if !fits {
+					if payload.Envelope.TrimmedItems == 0 {
+						t.Error("over-budget response not trimmed")
+					}
+					if want := fmt.Sprintf("trimmed to fit %d bytes", maxRawResultBytes); !strings.Contains(hints, want) {
+						t.Errorf("trim hint does not name the raw budget %q: %q", want, hints)
+					}
 				}
 			})
 		}
