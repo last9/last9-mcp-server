@@ -26,7 +26,6 @@ type dashboardLockFields struct {
 // withDashboardLockState adds top-level locked and created_by to a get-dashboard
 // body. A body that is not a {dashboard} object is served unchanged.
 func withDashboardLockState(body []byte) []byte {
-	body = normalizeEscapedHTML(body)
 	var resp map[string]json.RawMessage
 	if err := json.Unmarshal(body, &resp); err != nil || resp == nil {
 		return body
@@ -40,6 +39,9 @@ func withDashboardLockState(body []byte) []byte {
 	return encodeJSON(resp)
 }
 
+// normalizeEscapedHTML re-encodes a JSON body whose <, > and & arrive as
+// <, > and & so tool output shows the literal characters.
+// Any other body is served byte for byte.
 func normalizeEscapedHTML(body []byte) []byte {
 	lower := bytes.ToLower(body)
 	if !bytes.Contains(lower, []byte(`\u003c`)) && !bytes.Contains(lower, []byte(`\u003e`)) && !bytes.Contains(lower, []byte(`\u0026`)) {

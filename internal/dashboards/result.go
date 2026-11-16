@@ -7,6 +7,7 @@ import (
 )
 
 func textResultWithLink(body []byte, fallbackID string, extractID func([]byte) string, buildLink func(string) string) *mcp.CallToolResult {
+	body = normalizeEscapedHTML(body)
 	id := extractID(body)
 	if id == "" {
 		id = fallbackID
