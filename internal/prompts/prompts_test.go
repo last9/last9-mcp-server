@@ -586,6 +586,15 @@ func TestCreateAlertFromChartDescriptionStatesThresholdFloor(t *testing.T) {
 	}
 }
 
+func TestCreateAlertFromChartDescriptionWarnsWhenDisablingFails(t *testing.T) {
+	desc := prompts.CreateAlertFromChartDescription
+	for _, phrase := range []string{"If disabling fails", "rule id", "may be live"} {
+		if !strings.Contains(desc, phrase) {
+			t.Errorf("create_alert_from_chart does not preserve the failed-disable warning %q", phrase)
+		}
+	}
+}
+
 // create_alert_from_chart creates disabled drafts, so describe_alert_chart must not promise live rules.
 func TestDescribeAlertChartDescriptionSaysChartRulesAreDrafts(t *testing.T) {
 	desc := prompts.DescribeAlertChartDescription
