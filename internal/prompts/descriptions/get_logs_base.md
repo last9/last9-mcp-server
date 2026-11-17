@@ -8,6 +8,8 @@ There is no `service_name` argument: filter `ServiceName`. Tenant and environmen
 
 A count aggregate is `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`. A window stage uses `type`, `function`, `as`, and `window`, for example `{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"]}`. More aggregate syntax and percentile recipes live in `last9://reference/tool_recipes`. Read `last9://reference/logjson` before writing a parse stage, percentile, or unfamiliar filter. Preserve `l9_result.partial` and `l9_sanity` warnings.
 
+Day-wise percentiles require one `get_logs` call over the full range with one `window_aggregate`; parse Body JSON before filtering or aggregating parsed fields. Never query each day separately or reconstruct percentiles client-side.
+
 ## When to use
 Counts, aggregates, percentiles, or ad-hoc filters over logs.
 
