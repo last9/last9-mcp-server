@@ -164,6 +164,9 @@ landed; every toolset in `internal/toolsets/toolsets.go` that lists the write to
 list that read tool, or registration fails. Its write requests must go through `last9api.Client.Do` (or mark failures with
 `utils.MarkUnknownWriteOutcome`), and are never retried. After a timeout or lost connection
 the agent is told to run the verify call instead of retrying, so a create cannot duplicate.
+Write handlers check for and return `utils.WriteOutcomeUnknownError` before mapping
+`UpstreamHTTPError`. A 2xx response without a usable written object goes through
+`utils.MarkUnusableWriteResponse`, never a plain error.
 `write_tools_test.go` fails until the tool has a fixture there and passes those checks.
 
 ```go
@@ -431,9 +434,22 @@ struct, unless a struct genuinely makes it less readable.
 call must fail with its own diagnostic, not wait on a semaphore or reach the upstream. Test
 it with every slot held, asserting the original error and zero upstream requests.
 
+**Test validation through every registered tool that consumes it, not only through shared
+helpers.** Trim and case-fold sentinels before classification. Cover empty, whitespace-only,
+padded, case-variant, default, and limit-1/limit/limit+1 inputs.
+
+**Derive time-window validity and defaults in each handler.** An explicit end time anchors
+the requested window; it is not a default window. Explicit lookbacks must be positive.
+Table-test every supported operator family.
+
 **Track scope, completeness, metric status, and failures independently.** Missing
 attestations make a result partial, never complete. Test failed and partial retries and
 non-finite metric samples.
+
+**Preserve query and read response contracts on every path.** Return results through
+`utils.EnvelopeToolResult` without changing the payload shape. Detect truncation from API
+markers or by fetching limit+1; merger bypasses retain caps, guidance, schema-valid recovery
+examples, and malformed-shape rejection.
 
 **A shared predicate that reconciles a newer explicit field with a legacy fallback lets the
 explicit field win whenever it is set.** Normalize the legacy value once, inside the
