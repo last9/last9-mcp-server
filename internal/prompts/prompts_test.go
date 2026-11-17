@@ -283,6 +283,15 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 	}
 }
 
+func TestGetLogsDescriptionKeepsServiceRoutingNarrow(t *testing.T) {
+	if strings.Contains(prompts.GetLogsDescription, "across services") {
+		t.Fatal("get_logs description must not frame the tool as the default across services")
+	}
+	if !strings.Contains(prompts.GetLogsDescription, "Raw lines for one service: `get_service_logs`") {
+		t.Fatal("get_logs description must retain the narrow raw-line route to get_service_logs")
+	}
+}
+
 // Each step of the pipeline order must be a real stage type: a bare "scope"
 // step led models to invent {"type":"scope"} stages (lq-mf-005).
 func TestGetLogsDescriptionOrderNamesOnlyStageTypes(t *testing.T) {
