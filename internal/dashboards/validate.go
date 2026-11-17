@@ -106,19 +106,22 @@ func mapStatusAPIError(err error, forbiddenMsg, notFoundMsg string) error {
 	}
 }
 
+const dashboardForbiddenMsg = "not permitted to access or modify dashboard"
+
 func mapDashboardAPIError(err error) error {
-	return mapStatusAPIError(err, "dashboard is readonly and cannot be modified", "dashboard not found")
+	return mapStatusAPIError(err, dashboardForbiddenMsg, "dashboard not found")
 }
 
 // mapDashboardFetchError names the id on 404 because the shared upstream
 // advice ("capability may be unavailable") misleads for a bad dashboard id.
+// A 403 is the caller's permission: built-in and locked dashboards stay readable.
 func mapDashboardFetchError(id string, err error) error {
 	notFound := fmt.Sprintf("dashboard %q not found; list_dashboards lists dashboard ids", id)
 	var upstream *utils.UpstreamHTTPError
 	if errors.As(err, &upstream) && upstream.StatusCode == http.StatusNotFound {
 		return errors.New(notFound)
 	}
-	return mapStatusAPIError(err, "dashboard is readonly and cannot be modified", notFound)
+	return mapStatusAPIError(err, dashboardForbiddenMsg, notFound)
 }
 
 func mapSnapshotAPIError(err error) error {
