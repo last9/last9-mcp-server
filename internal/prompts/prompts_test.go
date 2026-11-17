@@ -1,6 +1,8 @@
 package prompts_test
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"regexp"
 	"sort"
@@ -9,6 +11,14 @@ import (
 
 	"last9-mcp/internal/prompts"
 )
+
+func TestGetLogsDescriptionEvalGatedCopy(t *testing.T) {
+	const want = "2cd585a4ef43c8f611a60eed7afc89ea66bd9bef446034a79eceecbb9189996c"
+	got := fmt.Sprintf("%x", sha256.Sum256([]byte(prompts.GetLogsDescription)))
+	if got != want {
+		t.Fatalf("get_logs description changed without an lq-101 gate run: got sha256 %s, want %s", got, want)
+	}
+}
 
 var promptDescriptionFiles = map[string]string{
 	"add_drop_rule.md":                     prompts.AddDropRuleDescription,
