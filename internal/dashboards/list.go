@@ -89,12 +89,7 @@ func NewListDashboardsHandler(client *http.Client, cfg models.Config) func(conte
 		if err != nil {
 			return nil, nil, err
 		}
-		return &mcp.CallToolResult{
-			Meta: deeplink.ToMeta(dlBuilder.BuildDashboardsIndexLink()),
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: string(page)},
-			},
-		}, nil, nil
+		return jsonTextResult(page, dlBuilder.BuildDashboardsIndexLink()), nil, nil
 	}
 }
 

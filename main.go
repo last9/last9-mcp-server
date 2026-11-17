@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -44,6 +45,17 @@ var (
 	CommitSHA = "unknown" // Set by goreleaser
 	BuildTime = "unknown" // Set by goreleaser
 )
+
+func serverVersion(version, commit string) string {
+	commit = strings.TrimSpace(commit)
+	if version != "dev" || commit == "" || strings.EqualFold(commit, "unknown") {
+		return version
+	}
+	if len(commit) > 7 {
+		commit = commit[:7]
+	}
+	return version + "+" + commit
+}
 
 // setupConfig initializes and parses the configuration
 func SetupConfig(defaults models.Config) (models.Config, error) {
@@ -162,7 +174,7 @@ func toolsetServerBuilder(cfg models.Config) func(toolsets.Set) (*last9mcp.Last9
 // prompts, tools and the instructions that name them, behind middleware.
 // middleware is added last so it runs before the per-tool argument middleware.
 func buildServer(cfg models.Config, middleware ...mcp.Middleware) (*last9mcp.Last9MCPServer, error) {
-	info := &mcp.Implementation{Name: "last9-mcp", Version: Version}
+	info := &mcp.Implementation{Name: "last9-mcp", Version: serverVersion(Version, CommitSHA)}
 	cfg.MCPServerInfo = info
 	server, err := last9mcp.NewServerWithOptions(info.Name, info.Version, last9mcp.WithSkipProviderInit())
 	if err != nil {
@@ -229,7 +241,7 @@ func run() int {
 		return 0
 	}
 
-	log.Printf("Starting Last9 MCP Server v%s", Version)
+	log.Printf("Starting Last9 MCP Server v%s", serverVersion(Version, CommitSHA))
 
 	// Load .env file if it exists (ignore errors if file doesn't exist)
 	if err := godotenv.Load(); err != nil {

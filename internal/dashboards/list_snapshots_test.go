@@ -57,3 +57,33 @@ func TestListDashboardSnapshotsHandler_QueriesByDashboardID(t *testing.T) {
 		t.Fatalf("reference_url %q", refURL)
 	}
 }
+
+func TestListDashboardSnapshotsHandler_PreservesLiteralHTMLCharacters(t *testing.T) {
+	// json.Marshal escapes <, > and & like a Go upstream; the large number must survive re-encoding.
+	wire, err := json.Marshal(map[string]any{
+		"snapshots": []map[string]any{{"id": "snap-1", "name": "a<b>&c", "size": json.Number("12345678901234567890")}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(wire), "<") {
+		t.Fatalf("fixture is not escaped: %s", wire)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(wire)
+	}))
+	defer srv.Close()
+
+	handler := NewListDashboardSnapshotsHandler(srv.Client(), testDashboardConfig(srv.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ListDashboardSnapshotsArgs{DashboardID: "dash-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(text, `a<b>&c`) || !strings.Contains(text, "12345678901234567890") {
+		t.Fatalf("body %s", text)
+	}
+	if refURL, _ := result.Meta["reference_url"].(string); refURL != "/v2/organizations/test-org/dashboards/dash-1" {
+		t.Fatalf("reference_url %q", refURL)
+	}
+}

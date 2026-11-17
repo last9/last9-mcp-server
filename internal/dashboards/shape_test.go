@@ -57,10 +57,36 @@ func TestCheckDashboardArguments_AcceptsValidAndLeavesOtherShapesToSchema(t *tes
 	}
 }
 
+func TestCheckDashboardArguments_AcceptsDashboardRoundTripDefaults(t *testing.T) {
+	args := json.RawMessage(`{"dashboard":{"name":"Round trip","panels":[{"id":"section-1","name":"Overview","layout":null,"queries":[],"full_width":true,"datasource_id":"","visualization":{"type":"section"}},{"name":"Notes","visualization":{"type":"markdown"}},{"name":"Logs","layout":{"x":0,"y":1,"w":12,"h":6},"visualization":{"type":"logs","logs_config":{"columns":["body"],"sort_order":""}},"queries":[{"name":"A","type":"range","query_type":"log_raw","telemetry":"logs","expr":"[]","legend":{"type":"","value":""}}]}]}}`)
+	if err := CheckDashboardArguments(args); err != nil {
+		t.Fatalf("round-trip dashboard: %v", err)
+	}
+	if err := CheckDashboardArguments(json.RawMessage(`{"dashboard":{"name":"Empty","panels":null}}`)); err != nil {
+		t.Fatalf("null panels: %v", err)
+	}
+}
+
+func TestCheckDashboardArguments_StillRejectsMissingQueryLayoutAndInvalidEnums(t *testing.T) {
+	args := json.RawMessage(`{"dashboard":{"name":"Invalid","panels":[{"name":"Query","layout":null,"visualization":{"type":"stat"},"queries":[]},{"name":"Logs","layout":{"x":0,"y":0,"w":12,"h":6},"visualization":{"type":"logs","logs_config":{"columns":["body"],"sort_order":"up"}},"queries":[]}]}}`)
+	err := CheckDashboardArguments(args)
+	if err == nil {
+		t.Fatal("expected shape error")
+	}
+	for _, want := range []string{
+		"dashboard.panels[0].layout: missing; want object {x, y, w, h}",
+		`dashboard.panels[1].visualization.logs_config.sort_order: got "up", want one of asc, desc`,
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error lacks %q:\n%v", want, err)
+		}
+	}
+}
+
 func TestCheckDashboardArguments_NamesWrongContainerTypes(t *testing.T) {
 	for args, want := range map[string]string{
 		`{"dashboard":{"name":"x","panels":{}}}`:     "dashboard.panels: got object, want array",
-		`{"dashboard":{"name":"x","panels":[null]}}`: "dashboard.panels[0]: got null, want object {name, layout, visualization}",
+		`{"dashboard":{"name":"x","panels":[null]}}`: "dashboard.panels[0]: got null, want object {name, visualization}",
 	} {
 		err := CheckDashboardArguments(json.RawMessage(args))
 		if err == nil || !strings.Contains(err.Error(), want) {

@@ -39,12 +39,33 @@ func withDashboardLockState(body []byte) []byte {
 	return encodeJSON(resp)
 }
 
+// normalizeEscapedHTML re-encodes a JSON body whose <, > and & arrive as
+// <, > and & so tool output shows the literal characters.
+// Any other body is served byte for byte.
+func normalizeEscapedHTML(body []byte) []byte {
+	lower := bytes.ToLower(body)
+	if !bytes.Contains(lower, []byte(`\u003c`)) && !bytes.Contains(lower, []byte(`\u003e`)) && !bytes.Contains(lower, []byte(`\u0026`)) {
+		return body
+	}
+	var value any
+	if err := decodeJSON(body, &value); err != nil {
+		return body
+	}
+	return encodeJSON(value)
+}
+
 func encodeJSON(v any) []byte {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	_ = enc.Encode(v)
 	return bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
+}
+
+func decodeJSON(body []byte, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	return dec.Decode(v)
 }
 
 // isDashboardLockedRefusal tells the API's lock refusal from the 403 a built-in dashboard gets.
@@ -121,7 +142,7 @@ const lockRecovery = "Ask its author or an org admin to unlock it with set_dashb
 	"or copy it with create_dashboard and edit the copy."
 
 func forbiddenWriteResult(err error, builtIn bool) *mcp.CallToolResult {
-	prefix := "dashboard write was forbidden, so nothing was written"
+	prefix := "not permitted to modify dashboard, so nothing was written"
 	if builtIn {
 		prefix = "dashboard is readonly and cannot be modified, so nothing was written; copy it with create_dashboard and edit the copy"
 	}
