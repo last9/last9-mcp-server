@@ -262,6 +262,8 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"attributes['key']", "must require attributes/resources wrapping"},
 		{"last9://reference/tool_recipes", "must point at deferred recipes"},
 		{"For Body-derived fields, call `get_log_attributes_for_pipeline` before querying; never use the global catalog or guess.", "must require scoped discovery before Body-field queries"},
+		{"Body-derived percentile workflow: first `get_log_attributes_for_pipeline`, then exactly one `get_logs` call", "must sequence scoped discovery before the only percentile query"},
+		{"Do not call `get_logs` before discovery or use service, profile, metric, or trace tools", "must prevent preliminary probes and cross-signal fallback"},
 		{"one `get_logs` call over the full range with one `window_aggregate`", "must keep day-wise percentiles in one server-side windowed query"},
 		{"parse Body JSON before filtering or aggregating parsed fields", "must parse Body-derived percentile fields before use"},
 		{`{"type":"parse","parser":"json","field":"Body","labels":{"latency":"latency"}}`, "must show the percentile parse stage"},
