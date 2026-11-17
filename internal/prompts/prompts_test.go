@@ -261,9 +261,14 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"last9://reference/logjson", "must point at the logjson resource"},
 		{"attributes['key']", "must require attributes/resources wrapping"},
 		{"last9://reference/tool_recipes", "must point at deferred recipes"},
+		{"For Body-derived fields, call `get_log_attributes_for_pipeline` before querying; never use the global catalog or guess.", "must require scoped discovery before Body-field queries"},
 		{"one `get_logs` call over the full range with one `window_aggregate`", "must keep day-wise percentiles in one server-side windowed query"},
 		{"parse Body JSON before filtering or aggregating parsed fields", "must parse Body-derived percentile fields before use"},
+		{`{"type":"parse","parser":"json","field":"Body","labels":{"latency":"latency"}}`, "must show the percentile parse stage"},
+		{`{"type":"filter","query":{"$regex":["attributes['latency']","^[0-9]+(?:\\.[0-9]+)?$"]}}`, "must show the percentile numeric filter"},
+		{`{"type":"window_aggregate","function":{"$quantile":[0.99,"attributes['latency']"]},"as":"p99","window":["24","hours"]}`, "must show the complete percentile window stage"},
 		{"Never query each day separately or reconstruct percentiles client-side", "must forbid client-side percentile reconstruction"},
+		{"If no percentile rows return, report unavailable and stop; never substitute counts, samples, traces, or metrics.", "must prevent fallback evidence from replacing an empty percentile result"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
