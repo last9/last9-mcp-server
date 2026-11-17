@@ -2,7 +2,7 @@ Query counts, percentiles, or filtered logs across services. For raw lines from 
 
 Pass JSON stages in `logjson_query`, never `pipeline`; this is NOT SQL.
 
-**Order:** filter→parse→filter→aggregate. Stage types: only filter/parse/aggregate/window_aggregate; parsed labels: attributes['key']. Scope before parsing. Example: `[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}]`. Use `$neq` for “is not”. A window stage uses `{"function":{},"as":"name","window":["5","minutes"]}`.
+**Order:** filter→parse→filter→aggregate. Stage types: only filter/parse/aggregate/window_aggregate; parsed labels: attributes['key']. Scope before parsing. Example: `[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}]`. Use `$neq` for “is not”. A window stage uses `{"type":"window_aggregate","function":{"$count":[]},"as":"name","window":["5","minutes"]}`.
 
 There is no `service_name` argument: filter `ServiceName`. Tenant and environment are `resources['last9.tenant']` and `resources['deployment.environment']`. Discover uncertain fields with `get_log_attributes_for_pipeline`.
 

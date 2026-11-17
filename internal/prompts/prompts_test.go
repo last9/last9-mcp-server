@@ -250,6 +250,7 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		reason string
 	}{
 		{"window_aggregate", "must document time-bucketed counts"},
+		{`"type":"window_aggregate"`, "must show a valid time-bucket stage type"},
 		{"NOT SQL", "must clarify logjson_query is not SQL"},
 		{"`logjson_query`, never `pipeline`", "must name the get_logs argument rather than a generic pipeline key"},
 		{"$neq", "must document existence idiom"},
