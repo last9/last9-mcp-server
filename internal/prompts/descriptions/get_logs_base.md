@@ -1,4 +1,4 @@
-Query counts, percentiles, or filtered logs across services. For raw lines from one service use `get_service_logs`.
+For raw lines from one service use `get_service_logs`.
 
 Pass JSON stages in `logjson_query`, never `pipeline`; this is NOT SQL.
 
