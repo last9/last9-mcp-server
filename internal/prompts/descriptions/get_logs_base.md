@@ -1,12 +1,14 @@
-Query logs with JSON stages in `logjson_query`, never `pipeline`; this is NOT SQL. Stages are `filter`, `parse`, `aggregate`, and `window_aggregate` only. Use it for counts, percentiles, or ad-hoc filtering across services. Use `get_service_logs` for raw lines from one known service.
+Query counts, percentiles, or filtered logs across services. For raw lines from one service use `get_service_logs`.
 
-**Order:** filter→parse→filter→aggregate. Stage types: only filter/parse/aggregate/window_aggregate; parsed labels: attributes['key']. Scope before parsing. A filter stage is `[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}]`. One predicate may stand alone; combine several with `$and`/`$or`/`$not`. Use `$neq` for “is not”, not `$not`+`$eq`. Regex is RE2. Parse Body-derived fields before using them; parsed labels are `attributes['key']`.
+Pass JSON stages in `logjson_query`, never `pipeline`; this is NOT SQL.
 
-There is no `service_name` argument: filter `ServiceName`. Tenant and environment are `resources['last9.tenant']` and `resources['deployment.environment']`. Discover uncertain fields with `get_log_attributes_for_pipeline`. Bare fields include `ServiceName`, `Body`, `SeverityText`, and `Timestamp`.
+**Order:** filter→parse→filter→aggregate. Stage types: only filter/parse/aggregate/window_aggregate; parsed labels: attributes['key']. Scope before parsing. Example: `[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}]`. Use `$neq` for “is not”. A window stage uses `{"function":{},"as":"name","window":["5","minutes"]}`.
 
-`lookback_minutes` defaults to 5 and must be at least 1. For an absolute window set top-level RFC3339 `start_time_iso` and `end_time_iso`, never a Timestamp predicate. Body contains-family searches require explicit `lookback_minutes` or `start_time_iso`. Omit `response_mode`; use `raw` only for exact text. Raw output is capped at 32,000 bytes.
+There is no `service_name` argument: filter `ServiceName`. Tenant and environment are `resources['last9.tenant']` and `resources['deployment.environment']`. Discover uncertain fields with `get_log_attributes_for_pipeline`.
 
-A count aggregate is `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`. A window stage uses `type`, `function`, `as`, and `window`, for example `{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"]}`. More aggregate syntax and percentile recipes live in `last9://reference/tool_recipes`. Read `last9://reference/logjson` before writing a parse stage, percentile, or unfamiliar filter. Preserve `l9_result.partial` and `l9_sanity` warnings.
+`lookback_minutes` defaults to 5 and has minimum 1. For an absolute window set top-level RFC3339 `start_time_iso` and `end_time_iso`, never a Timestamp predicate. Body contains-family searches require explicit `lookback_minutes` or `start_time_iso`. Omit `response_mode`; use `raw` only for exact text.
+
+A count is `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`. For other syntax read `last9://reference/logjson`; recipes are in `last9://reference/tool_recipes`. Preserve `l9_result.partial` and `l9_sanity` warnings.
 
 Day-wise percentiles require one `get_logs` call over the full range with one `window_aggregate`; parse Body JSON before filtering or aggregating parsed fields. Never query each day separately or reconstruct percentiles client-side.
 
