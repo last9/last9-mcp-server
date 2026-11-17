@@ -260,6 +260,9 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"last9://reference/logjson", "must point at the logjson resource"},
 		{"attributes['key']", "must require attributes/resources wrapping"},
 		{"last9://reference/tool_recipes", "must point at deferred recipes"},
+		{"one `get_logs` call over the full range with one `window_aggregate`", "must keep day-wise percentiles in one server-side windowed query"},
+		{"parse Body JSON before filtering or aggregating parsed fields", "must parse Body-derived percentile fields before use"},
+		{"Never query each day separately or reconstruct percentiles client-side", "must forbid client-side percentile reconstruction"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
