@@ -1,6 +1,8 @@
 package prompts_test
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"regexp"
 	"sort"
@@ -9,6 +11,14 @@ import (
 
 	"last9-mcp/internal/prompts"
 )
+
+func TestGetLogsDescriptionEvalGatedCopy(t *testing.T) {
+	const want = "2cd585a4ef43c8f611a60eed7afc89ea66bd9bef446034a79eceecbb9189996c"
+	got := fmt.Sprintf("%x", sha256.Sum256([]byte(prompts.GetLogsDescription)))
+	if got != want {
+		t.Fatalf("get_logs description changed without an lq-101 gate run: got sha256 %s, want %s", got, want)
+	}
+}
 
 var promptDescriptionFiles = map[string]string{
 	"add_drop_rule.md":                     prompts.AddDropRuleDescription,
@@ -616,6 +626,15 @@ func TestCreateAlertFromChartDescriptionStatesThresholdFloor(t *testing.T) {
 	}
 }
 
+func TestCreateAlertFromChartDescriptionWarnsWhenDisablingFails(t *testing.T) {
+	desc := prompts.CreateAlertFromChartDescription
+	for _, phrase := range []string{"If disabling fails", "rule id", "may be live"} {
+		if !strings.Contains(desc, phrase) {
+			t.Errorf("create_alert_from_chart does not preserve the failed-disable warning %q", phrase)
+		}
+	}
+}
+
 // create_alert_from_chart creates disabled drafts, so describe_alert_chart must not promise live rules.
 func TestDescribeAlertChartDescriptionSaysChartRulesAreDrafts(t *testing.T) {
 	desc := prompts.DescribeAlertChartDescription
@@ -744,6 +763,7 @@ func TestReferenceManualsEmbedded(t *testing.T) {
 		"service_logs": prompts.ServiceLogsReference,
 		"metrics":      prompts.MetricsReference,
 		"alerting":     prompts.AlertingReference,
+		"tool_recipes": prompts.ToolRecipesReference,
 	} {
 		if len(body) < 1000 {
 			t.Errorf("%s reference too short (%d chars) — embed may be wrong", name, len(body))
