@@ -1,71 +1,25 @@
-Get aggregate server-side exception heat over the requested time range.
-Returns ranked aggregate groups: exception type, service name, span name, span kind, deployment environment, and occurrence count.
+Return ranked rows that aggregate server-side exception heat by exception type, service, span name/kind, deployment environment, and count. Data comes from metrics, not raw spans: rows are not verified samples and have no trace/span ids, timestamps, messages, stacks, durations, or status. Never present contextual traces as matches.
 
-IMPORTANT: This data comes from aggregated metrics, not raw spans. It does not return trace or span IDs, event timestamps, messages, stack traces, durations, status, or exact exception samples. A row identifies a hot aggregate group only; do not infer that any later trace is an exact match for that group.
+For a known `service_name`, call `get_service_profile` first to decide whether span exceptions are likely the answer or a symptom. Use `did_you_mean` if service or environment spelling is uncertain.
 
-**Profile first (service-scoped):** When investigating a specific `service_name`, call `get_service_profile` before using this tool. Use `signal_shape` and `telemetry` for routing — see `last9://reference/investigation`. If results contradict the profile, fall back to discovery tools (profile may be stale; 15min TTL).
-
-Investigation flow — follow this exactly:
-1. Call get_exceptions to identify the hottest service/exception_type group.
-2. To inspect contextual traces, call get_service_traces with:
-   - service_name = exception.service_name
-   - start_time_iso / end_time_iso = the same requested tool window
-   - env = exception.deployment_environment (if present)
-   - These are service-scoped context traces, not verified samples of the aggregate exception row.
-   - If another tool provides a trace_id, use get_service_traces with trace_id instead of service_name.
-     Never use get_traces for trace_id lookups.
-3. Decide whether exceptions are the ANSWER or a SYMPTOM before reporting:
-   - Exceptions here are SPAN-DERIVED. For a well trace-instrumented service they are usually
-     the answer — report findings and stop.
-   - For a log-heavy or severity-less service (per `get_service_profile`
-     `signal_shape` / `telemetry`), span exceptions often show downstream SYMPTOMS
-     (retry storms, connection-pool timeouts) while the ROOT CAUSE exists only in log
-     bodies (e.g. an un-instrumented dependency failing). Do NOT stop — continue to logs.
-   - When continuing to logs, AGGREGATE FIRST: `get_logs` with an aggregate/count
-     pipeline (filter service → parse level → filter severity in (ERROR, FATAL,
-     CRITICAL) → aggregate `$count` grouped by logger): cheap and wide-window-safe.
-     Never raw-fetch lines before that aggregate — an unnarrowed fetch times out
-     over wide windows.
-   - Once the aggregate has isolated the hot logger, READ THE LINES. The root cause
-     is in the log body, not in the count: a logger name and an occurrence count
-     locate the problem but do not explain it. Filter to that logger and always pass
-     a `limit` — a handful of lines is enough to read the error, and an unlimited
-     raw fetch is what times out. Use a non-aggregate `get_logs` pipeline with a
-     small `limit` — not `get_service_logs` during or after exception investigation.
-     Report the actual error text you read.
-   - For HTTP 4xx/5xx log search (a separate task from exception investigation),
-     call `get_service_logs` with `http_status_class` or `http_status_code`.
-     Do not write a `get_logs` pipeline for service status-class questions.
-
-limit: (Optional) The maximum number of exceptions to return. Defaults to 20.
-lookback_minutes: (Recommended) Number of minutes to look back from now. Default: 60 minutes.
-start_time_iso: (Optional) Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes instead.
-end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
-service_name: (Optional) Filter exceptions by service name (e.g. api-service).
-span_name: (Optional) The name of the span to get the data for. This is often the API endpoint name or controller name.
-env: (Optional) Filter exceptions by environment (e.g. production, staging).
-- If unsure of the service_name or env spelling, call "did_you_mean" first.
-
-Time format rules:
-- Prefer lookback_minutes for relative windows.
-- Use start_time_iso/end_time_iso for absolute windows.
-- Legacy format YYYY-MM-DD HH:MM:SS is accepted only for compatibility.
+`limit` defaults to 20. `lookback_minutes` defaults to 60 and is preferred for relative windows. For an absolute window set RFC3339 `start_time_iso` and `end_time_iso`; legacy `YYYY-MM-DD HH:MM:SS` is compatibility-only. Optional filters: `service_name`, `span_name`, and `env`.
 
 ## When to use
-Which service, span and exception type are hottest in a window.
+Find the hottest service, span, and exception type in a window.
 
 ## When not to use
-- Exception text, stack traces or root cause: `get_logs`
+- Exception text, stack traces, or root cause: `get_logs`
 - HTTP status ranking: `get_service_summary`
-- Exact traces: `get_service_traces`
+- Exact or contextual traces: `get_service_traces`
 
 ## Pairs well with
-- `get_service_profile` (answer or symptom)
-- `get_service_traces` (context traces)
-- `get_logs` (read the error lines)
+- `get_service_profile`
+- `get_service_traces`
+- `get_logs`
 
 ## Output shape
-Ranked aggregate rows: exception type, service, span name, span kind, environment and count.
+Ranked aggregate rows with exception type, service, span name/kind, environment and count.
 
 ## Known traps
-Rows come from metrics: no trace IDs or samples, and later traces are context, not matches.
+Read `last9://reference/tool_recipes` before following an exception into traces or logs; rows are aggregates, never exact samples.
+For HTTP `http_status` searches, use `get_service_logs`; Do not write a `get_logs` pipeline.
