@@ -17,7 +17,8 @@ const (
 func searchLogsByWindow(
 	ctx context.Context, client *http.Client, cfg models.Config, req utils.LogSearchRequest,
 ) (map[string]any, error) {
-	if req.EndMs-req.StartMs <= maxLogSearchWindowMs {
+	pipeline, _ := req.Pipeline.([]map[string]interface{})
+	if req.EndMs-req.StartMs <= maxLogSearchWindowMs || utils.PipelineHasAggregateStage(pipeline) {
 		return utils.SearchLogs(ctx, client, cfg, req)
 	}
 
