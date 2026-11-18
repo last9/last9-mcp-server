@@ -82,6 +82,44 @@ func TestFetchServiceLogs_APIMode_SingleCallWithCoverage(t *testing.T) {
 	}
 }
 
+func TestFetchServiceLogs_APIMode_PartialLongWindowNamesFailure(t *testing.T) {
+	var calls int
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls++
+		call := calls
+		mu.Unlock()
+		if call == 2 {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":"window unavailable"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"query_result":{"status":"success","data":{"resultType":"streams","result":[]}},"total_matching_lines":4,"search_stats":{"chunks_planned":1}}`))
+	}))
+	defer srv.Close()
+
+	end := time.Unix(1_800_000_000, 0).UTC()
+	got, err := fetchServiceLogs(context.Background(), srv.Client(), apiModeCfg(srv.URL), "checkout",
+		end.Add(-30*24*time.Hour), end, 20, serviceLogsPipeline(), "")
+	if err != nil {
+		t.Fatalf("fetchServiceLogs: %v", err)
+	}
+	if calls != 3 {
+		t.Fatalf("requests = %d, want 3", calls)
+	}
+	if got.TotalMatchingLines == nil || *got.TotalMatchingLines != 8 {
+		t.Errorf("total_matching_lines = %v, want successful-window sum 8", got.TotalMatchingLines)
+	}
+	if got.SearchStats["windows_queried"] != float64(3) || got.SearchStats["windows_failed"] != float64(1) {
+		t.Errorf("search_stats = %#v, want one of three windows failed", got.SearchStats)
+	}
+	errors, ok := got.SearchStats["errors"].([]any)
+	if !ok || len(errors) != 1 || !strings.Contains(errors[0].(string), "window 2/3") {
+		t.Errorf("search_stats errors = %#v, want failed window 2/3", got.SearchStats["errors"])
+	}
+}
+
 // logs_truncated is what makes the count a floor, so it must travel with it.
 // Forwarding the count alone reports 41 matching lines as if it were a total.
 func TestFetchServiceLogs_APIMode_CarriesTruncationSignal(t *testing.T) {
