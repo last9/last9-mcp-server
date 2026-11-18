@@ -212,8 +212,7 @@ func tagSystemErrors[In, Out any](toolName string, handler mcp.ToolHandlerFor[In
 func alertToolSupportsDisabledState(toolName string) bool {
 	switch toolName {
 	case "get_alerts", "get_alert_config", "get_alert_groups", "get_alert_rule_state",
-		"get_entity_alert_rules", "get_alert_coverage", "get_alert_hygiene",
-		"get_alert_operations_summary":
+		"get_entity_alert_rules", "get_alert_coverage":
 		return true
 	default:
 		return false
@@ -550,12 +549,6 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 	}, alerting.NewGetAlertGroupsHandler(client, cfg)))
 
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
-		Name:        "get_alert_operations_summary",
-		Annotations: readOnlyTool("Get Alert Operations Summary"),
-		Description: prompts.GetAlertOperationsSummaryDescription,
-	}, alerting.NewGetAlertOperationsSummaryHandler(client, cfg)))
-
-	reg(registerIfAllowed(server, gate, &mcp.Tool{
 		Name:        "get_alert_coverage",
 		Annotations: readOnlyTool("Get Alert Coverage"),
 		Description: prompts.GetAlertCoverageDescription,
@@ -611,11 +604,7 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		InputSchema: alerting.AlertRuleStateInputSchema(),
 	}, alerting.NewAlertRuleStateHandler(client, cfg)))
 
-	reg(registerIfAllowed(server, gate, &mcp.Tool{
-		Name:        "get_alert_hygiene",
-		Annotations: readOnlyTool("Get Alert Hygiene"),
-		Description: prompts.GetAlertHygieneDescription,
-	}, alerting.NewGetAlertHygieneHandler(client, cfg)))
+	// get_alert_hygiene and get_alert_operations_summary stay unregistered until their APIs are live in production.
 
 	// Register get traces tool (enhanced with trace query instructions)
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
