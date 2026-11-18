@@ -1,6 +1,7 @@
 package alerting
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -43,6 +44,18 @@ type AlertRulePayload struct {
 	MuteUntil                    *int64                        `json:"mute_until,omitempty" jsonschema:"Unix epoch mute deadline; use patch_alert for lifecycle-only changes"`
 	Properties                   *AlertProperties              `json:"properties,omitempty" jsonschema:"Description, runbook, annotations, and query mode"`
 	GroupTimeseriesNotifications *bool                         `json:"group_timeseries_notifications,omitempty" jsonschema:"Group notifications across matching time series"`
+	OnNoData                     *string                       `json:"on_no_data,omitempty" jsonschema:"alert fires a No data alert when the metric has no samples for 2x eval_window minutes; an empty string turns it off on update_alert; omit it to keep the current value on update_alert or leave it off on create_alert"`
+}
+
+func (r AlertRulePayload) MarshalJSON() ([]byte, error) {
+	type payload AlertRulePayload
+	if r.OnNoData == nil || *r.OnNoData != "" {
+		return json.Marshal(payload(r))
+	}
+	return json.Marshal(struct {
+		payload
+		OnNoData json.RawMessage `json:"on_no_data"`
+	}{payload: payload(r), OnNoData: json.RawMessage("null")})
 }
 
 type AlertRuleMutation struct {
@@ -75,6 +88,9 @@ func validateAlertRulePayload(rule AlertRulePayload) error {
 	}
 	if rule.Severity != nil && *rule.Severity != severityBreach && *rule.Severity != severityThreat {
 		return fmt.Errorf("alert_rule.severity must be breach or threat")
+	}
+	if rule.OnNoData != nil && *rule.OnNoData != "" && *rule.OnNoData != "alert" {
+		return fmt.Errorf("alert_rule.on_no_data must be alert or an empty string")
 	}
 	if rule.Properties != nil && rule.Properties.QueryMode != "" && rule.Properties.QueryMode != "builder" && rule.Properties.QueryMode != "code" {
 		return fmt.Errorf("alert_rule.properties.query_mode must be builder or code")

@@ -41,6 +41,9 @@ func NewUpdateAlertHandler(client *http.Client, cfg models.Config) func(context.
 		if err != nil {
 			return unreadableStoredPropertiesResult(args.ID, err), nil, nil
 		}
+		if args.AlertRule.OnNoData == nil {
+			args.AlertRule.OnNoData = stored.OnNoData
+		}
 		args.AlertRule.Properties = withCreatedViaAnnotations(args.AlertRule.Properties, marker)
 		body, err := entities.UpdateAlertRule(ctx, api,
 			entities.AlertRuleInput{EntityID: args.EntityID, RuleID: args.ID, Body: args.AlertRule})
