@@ -22,8 +22,7 @@ import (
 )
 
 const (
-	getLogsTestArgs      = `{"logjson_query":[{"type":"filter","query":{"$and":[{"$eq":["ServiceName","api"]}]}}],"lookback_minutes":5}`
-	alertSummaryTestArgs = `{"start_time_iso":"2026-10-16T00:00:00Z","end_time_iso":"2026-10-23T00:00:00Z"}`
+	getLogsTestArgs = `{"logjson_query":[{"type":"filter","query":{"$and":[{"$eq":["ServiceName","api"]}]}}],"lookback_minutes":5}`
 )
 
 // Upstream failures carry the system_error tag the SDK reads for mcp.error.type;
@@ -73,12 +72,6 @@ func TestToolErrorsTagUpstreamFailuresAsSystemErrors(t *testing.T) {
 		{"chunked logs body timeout", stalledBody.URL, false, &http.Client{Timeout: 50 * time.Millisecond}, "get_logs", getLogsTestArgs, true},
 		{"trace service unreachable", unreachable.URL, false, http.DefaultClient, "get_exceptions", `{}`, true},
 		{"log search HTTP 400 bad pipeline", statusServer(http.StatusBadRequest).URL, true, http.DefaultClient, "get_logs", getLogsTestArgs, false},
-		{"alert summary HTTP 503", statusServer(http.StatusServiceUnavailable).URL, false, http.DefaultClient, "get_alert_operations_summary", alertSummaryTestArgs, true},
-		{"alert summary HTTP 500", statusServer(http.StatusInternalServerError).URL, false, http.DefaultClient, "get_alert_operations_summary", alertSummaryTestArgs, true},
-		{"alert summary HTTP 408", statusServer(http.StatusRequestTimeout).URL, false, http.DefaultClient, "get_alert_operations_summary", alertSummaryTestArgs, true},
-		{"alert summary HTTP 400", statusServer(http.StatusBadRequest).URL, false, http.DefaultClient, "get_alert_operations_summary", alertSummaryTestArgs, false},
-		{"alert summary HTTP 422", statusServer(http.StatusUnprocessableEntity).URL, false, http.DefaultClient, "get_alert_operations_summary", alertSummaryTestArgs, false},
-		{"alert summary HTTP 404", statusServer(http.StatusNotFound).URL, false, http.DefaultClient, "get_alert_operations_summary", alertSummaryTestArgs, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

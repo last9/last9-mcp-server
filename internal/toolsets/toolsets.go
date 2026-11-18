@@ -72,7 +72,6 @@ var named = map[string][]string{
 		"delete_notification_channel",
 		"recommend_alert_config",
 		"get_alert_groups",
-		"get_alert_operations_summary",
 		"get_alert_coverage",
 		"get_entity_alert_rules",
 		"get_entity_kpis",
@@ -82,7 +81,6 @@ var named = map[string][]string{
 		"describe_alert_chart",
 		"create_alert_from_chart",
 		"get_alert_rule_state",
-		"get_alert_hygiene",
 		"get_change_events",
 		"analyze_change_impact",
 		"get_notification_channels",
@@ -135,7 +133,6 @@ var investigateExtras = []string{
 	"get_service_profile",
 	"list_datasources",
 	"get_entity_kpis",
-	"get_alert_operations_summary",
 	"get_alert_coverage",
 }
 

@@ -31,10 +31,6 @@ func TestAlertToolsReturnAlertingNotEnabledAsValidEmptyState(t *testing.T) {
 		}},
 		{tool: "get_entity_alert_rules", path: "/entities/group-1/alert-rules", args: map[string]any{"entity_id": "group-1"}},
 		{tool: "get_alert_coverage", path: "/alerts/coverage"},
-		{tool: "get_alert_hygiene", path: "/alerts/hygiene"},
-		{tool: "get_alert_operations_summary", path: "/alerts/health_summary", args: map[string]any{
-			"start_time_iso": "2026-11-13T10:00:00Z", "end_time_iso": "2026-11-13T11:00:00Z",
-		}},
 	}
 
 	for _, tt := range tests {
