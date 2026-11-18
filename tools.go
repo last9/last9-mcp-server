@@ -604,8 +604,6 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		InputSchema: alerting.AlertRuleStateInputSchema(),
 	}, alerting.NewAlertRuleStateHandler(client, cfg)))
 
-	// get_alert_hygiene and get_alert_operations_summary stay unregistered until their APIs are live in production.
-
 	// Register get traces tool (enhanced with trace query instructions)
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
 		Name:        "get_traces",
