@@ -1,6 +1,7 @@
 package logs
 
 import (
+	"errors"
 	"testing"
 
 	"last9-mcp/internal/utils"
@@ -50,5 +51,28 @@ func TestMergeLogSearchWindows_MergesStatsByMeaning(t *testing.T) {
 	}
 	if _, present := result["volume_summary"]; present {
 		t.Error("volume_summary describes one window and must be absent after merging")
+	}
+}
+
+func TestMergeLogSearchWindows_OmitsCoveredRangeAcrossFailedWindow(t *testing.T) {
+	results := []utils.ChunkResult[map[string]any]{
+		{Value: map[string]any{
+			"data":         map[string]any{"resultType": "streams", "result": []any{}},
+			"search_stats": map[string]any{"covered_range": []any{float64(200), float64(300)}},
+		}},
+		{Err: errors.New("unavailable")},
+		{Value: map[string]any{
+			"data":         map[string]any{"resultType": "streams", "result": []any{}},
+			"search_stats": map[string]any{"covered_range": []any{float64(0), float64(100)}},
+		}},
+	}
+
+	result, err := mergeLogSearchWindows(results, 100)
+	if err != nil {
+		t.Fatalf("mergeLogSearchWindows: %v", err)
+	}
+	stats := result["search_stats"].(map[string]any)
+	if coveredRange, present := stats["covered_range"]; present {
+		t.Errorf("covered_range = %v, want absent for discontinuous coverage", coveredRange)
 	}
 }
