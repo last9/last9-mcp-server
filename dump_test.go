@@ -719,8 +719,7 @@ func TestDumpToolsLogPatternToolsServeTheirExplicitSchemas(t *testing.T) {
 	}
 }
 
-// The alert write tools are where a confirmed fix is applied, so the
-// description names them when served and never under --read-only.
+// Unavailable alert API tools must not be served in any toolset or mode.
 func TestDumpToolsUnavailableAlertAPIsAreNotServed(t *testing.T) {
 	for _, spec := range []string{"all", "alerts", "investigate"} {
 		allowed, err := toolsets.Parse(spec)
