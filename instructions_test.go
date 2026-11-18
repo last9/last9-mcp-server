@@ -659,6 +659,9 @@ func TestServerInstructionsChangesLineKeepsItsWording(t *testing.T) {
 	}
 }
 
+// Rewording this line ("..., rule state and noisy, flapping, stale or unrouted
+// rules") dropped trace_query eval tq-017 from 30/30 to 10/30 on absolute time
+// bounds.
 func TestServerInstructionsAlertsLineKeepsItsWording(t *testing.T) {
 	tests := []struct {
 		name  string
