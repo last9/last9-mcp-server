@@ -69,6 +69,79 @@ type GetHygieneResponse struct {
 
 // GetHygiene calls GET /alerts/hygiene.
 func GetHygiene(ctx context.Context, c *last9api.Client, in GetHygieneInput) (GetHygieneResponse, error) {
+	var resp GetHygieneResponse
+	err := queryHygiene(ctx, c, in, &resp)
+	if err != nil {
+		return resp, err
+	}
+	// Do accepts an empty 2xx; a missing rules list must not read as "no noisy rules".
+	if resp.Rules == nil {
+		return resp, fmt.Errorf("%s: response has no rules list", opHygiene)
+	}
+	return resp, nil
+}
+
+// Values of HealthMetric.Status, HygieneValue.Status and HygieneCoverageSource.Status.
+const (
+	HygieneStatusAvailable   = "available"
+	HygieneStatusPartial     = "partial"
+	HygieneStatusUnavailable = "unavailable"
+	HygieneStatusComplete    = "complete"
+)
+
+// GetAlertHygieneInput is a half-open [From, To) range; the API caps it at 31 days.
+type GetAlertHygieneInput struct {
+	From, To time.Time
+	Timezone string
+}
+
+type HygienePeriod struct {
+	From     time.Time `json:"from"`
+	To       time.Time `json:"to"`
+	Timezone string    `json:"timezone"`
+}
+
+// HygieneCoverageSource says how much of the period one source observed.
+type HygieneCoverageSource struct {
+	Status string        `json:"status"`
+	Range  *HygieneRange `json:"range,omitempty"`
+	Reason string        `json:"reason,omitempty"`
+}
+
+type HygieneRange struct {
+	From time.Time `json:"from"`
+	To   time.Time `json:"to"`
+}
+
+// HygieneCoverage: lifecycle backs fire, flap and last-fired values; delivery backs routed.
+type HygieneCoverage struct {
+	Lifecycle HygieneCoverageSource `json:"lifecycle"`
+	Delivery  HygieneCoverageSource `json:"delivery"`
+}
+
+// GetAlertHygieneResponse lists rules by fire count; Truncated is set when the API
+// capped the list, so the quietest rules are missing from Rules.
+type GetAlertHygieneResponse struct {
+	Period    HygienePeriod   `json:"period"`
+	Coverage  HygieneCoverage `json:"coverage"`
+	Rules     []HygieneRule   `json:"rules"`
+	Truncated bool            `json:"truncated"`
+}
+
+// GetAlertHygiene calls GET /alerts/hygiene?from&to&timezone.
+func GetAlertHygiene(ctx context.Context, c *last9api.Client, in GetAlertHygieneInput) (*GetAlertHygieneResponse, error) {
+	var out GetAlertHygieneResponse
+	if err := queryHygiene(ctx, c, GetHygieneInput{From: in.From, To: in.To, Timezone: in.Timezone}, &out); err != nil {
+		return nil, err
+	}
+	if out.Rules == nil {
+		return nil, fmt.Errorf("%s: response has no rules list", opHygiene)
+	}
+	return &out, nil
+}
+
+// queryHygiene calls GET /alerts/hygiene.
+func queryHygiene(ctx context.Context, c *last9api.Client, in GetHygieneInput, out any) error {
 	q := url.Values{}
 	q.Set("from", in.From.UTC().Format(time.RFC3339Nano))
 	q.Set("to", in.To.UTC().Format(time.RFC3339Nano))
@@ -87,15 +160,6 @@ func GetHygiene(ctx context.Context, c *last9api.Client, in GetHygieneInput) (Ge
 	if in.GroupBy != "" {
 		q.Set("group_by", in.GroupBy)
 	}
-	var resp GetHygieneResponse
-	err := c.Do(ctx, opHygiene, last9api.Request{Method: http.MethodGet, Path: pathHygiene}, &resp,
+	return c.Do(ctx, opHygiene, last9api.Request{Method: http.MethodGet, Path: pathHygiene}, out,
 		last9api.WithQuery(q), last9api.WithMaxResponseBytes(maxHygieneBytes))
-	if err != nil {
-		return resp, err
-	}
-	// Do accepts an empty 2xx; a missing rules list must not read as "no noisy rules".
-	if resp.Rules == nil {
-		return resp, fmt.Errorf("%s: response has no rules list", opHygiene)
-	}
-	return resp, nil
 }

@@ -38,6 +38,9 @@ var InvestigationReference string
 //go:embed references/alerting.md
 var AlertingReference string
 
+//go:embed references/tool_recipes.md
+var ToolRecipesReference string
+
 //go:embed descriptions/get_service_summary.md
 var GetServiceSummaryDescription string
 
@@ -152,6 +155,9 @@ var GetAlertsDescription string
 //go:embed descriptions/get_alert_rule_state.md
 var GetAlertRuleStateDescription string
 
+//go:embed descriptions/get_alert_hygiene.md
+var GetAlertHygieneDescription string
+
 //go:embed descriptions/describe_alert_chart.md
 var DescribeAlertChartDescription string
 
@@ -226,6 +232,9 @@ var PatchDashboardDescription string
 
 //go:embed descriptions/delete_dashboard.md
 var DeleteDashboardDescription string
+
+//go:embed descriptions/set_dashboard_lock.md
+var SetDashboardLockDescription string
 
 //go:embed descriptions/list_dashboard_snapshots.md
 var ListDashboardSnapshotsDescription string

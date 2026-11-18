@@ -59,6 +59,19 @@ func TestCreateDashboardHandler_POSTsEnvelope(t *testing.T) {
 	}
 }
 
+func TestCreateDashboardHandler_PreservesLiteralHTMLCharacters(t *testing.T) {
+	srv := createDashboardAPI(t, `{"dashboard":{"id":"new-id","name":"a\u003cb\u003e\u0026c"}}`, nil)
+
+	result, _, err := NewCreateDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))(
+		context.Background(), &mcp.CallToolRequest{}, validCreateArgs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := result.Content[0].(*mcp.TextContent).Text; !strings.Contains(text, `"name":"a<b>&c"`) {
+		t.Fatalf("HTML characters were not preserved literally: %s", text)
+	}
+}
+
 func TestCreateDashboardHandler_AppendsRefineNudge(t *testing.T) {
 	const apiBody = `{"dashboard":{"id":"new-id","name":"Created"}}`
 	srv := createDashboardAPI(t, apiBody, nil)

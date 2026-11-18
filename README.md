@@ -232,6 +232,35 @@ The NPM route is easier on Windows — no path management.
 | `OTEL_EXPORTER_OTLP_ENDPOINT`| —                    | OTLP collector endpoint (only when telemetry is enabled) |
 | `OTEL_EXPORTER_OTLP_HEADERS` | —                    | OTLP auth headers (only when telemetry is enabled) |
 
+### Tool phase timing
+
+With internal telemetry enabled, tool spans carry `last9.phase.<phase>.duration_ms`
+(real elapsed milliseconds) and `last9.phase.<phase>.failed` (whether that phase
+returned an error). The same fields are emitted as `tool phase completed` debug
+logs, with `tool` and `phase`, when the configured logger accepts debug records.
+Inputs, query text, credentials and error bodies are not added by these timings.
+
+| Tool | Phases |
+| --- | --- |
+| `get_log_patterns` | `sample`: fetch and decode the sample; `mine`: pattern mining; `deep_link`: resolve the optional index and build the link |
+| `get_logs` | `fetch`: fetch, decode and merge results, including retries and optional count sanity checks; `count_sanity`: the nested optional check; `post_process`: guidance, summary and JSON formatting; `deep_link`: index resolution and link construction |
+| `get_service_profile` | `request`: prepare and send the request through the shared API client and read its complete response, before brief formatting |
+
+Only executed phases are recorded, including failed fetches. Optional helpers
+that suppress errors retain that behavior; `failed: false` does not certify that
+an optional link or count check was available. The nested `count_sanity` duration
+is already included in `fetch`; do not add it twice. Fetch time includes client
+work, so it is not a measurement of backend execution alone. Compare these phases
+on equivalent windows and search paths before tuning sampling or caching.
+
+For a latency investigation, replay the same service, datasource, index, window,
+and limits on the baseline and candidate builds. Record the build SHA, tool total,
+phase durations, `last9.logs.search_path`, retry attributes when present, and
+coverage flags. Compare slow calls as well as typical calls. A slow fetch or
+profile request identifies a network/API phase to investigate; backend execution
+needs its own correlated evidence before assigning the tail to the backend.
+These diagnostics alone do not establish a latency improvement.
+
 ### Read-only mode
 
 `--read-only` (or `LAST9_MCP_READ_ONLY=true`) serves only tools annotated `readOnlyHint: true`, so no tool can create, change or delete alert rules, notification channels, dashboards or drop rules, acknowledge or reassign alerts, or mute groups. A tool without annotations counts as a write tool and is hidden.
@@ -316,7 +345,6 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`get_change_events`** — Deployments, config changes, rollbacks. Correlate incidents with what changed
 - **`analyze_change_impact`** — Did a change break anything? Compares a service and its direct callers before and after a change: golden signals, APM and trace-attribute deviations, new firing alerts, and a verdict (`regression likely` / `no significant change` / `insufficient data`)
 - **`get_alert_groups`** — Configured Compass alert groups with metadata labels, team, tier, and rule counts — including groups with zero rules and groups that are not firing
-- **`get_alert_operations_summary`** — On-call health over a window: alerts raised vs acknowledged, backlog, deliveries and, with `include_rules`, the noisiest, flapping and unrouted rules. Every count carries its `status` (`available` / `partial` / `unavailable`)
 - **`get_alert_coverage`** — What you are not alerting on: uncovered golden signals, fully disabled or unrouted alert groups, and rules muted too long, each with a suggested fix tool. Read-only.
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
 - **`get_entity_kpis`** — Every KPI (id, name, PromQL, unit) on one alert group, including KPIs no rule uses yet — the ids `create_alert` and `validate_alert_expression` need
@@ -346,7 +374,7 @@ Rules, channels and attachments these tools create are marked `created_via: last
 
 ### Custom Dashboards
 
-- **`list_dashboards`** — All custom dashboards in your org: IDs, names, and metadata
+- **`list_dashboards`** — Custom dashboards filtered by name and paged under 32 KB: IDs, names, last-updated times, authors and lock state
 - **`get_dashboard`** — Full dashboard definition by ID, including panels and queries
 - **`preview_dashboard`** — Read-only preview of an unsaved dashboard or patch: resolved queries, bounded per-panel results and a net panel diff; never saves
 - **`validate_dashboard`** — Read-only lint + execute + classify for a saved dashboard id or an inline `dashboard_definition` over a ≤24h window. Never creates or updates dashboards
@@ -354,6 +382,7 @@ Rules, channels and attachments these tools create are marked `created_via: last
 - **`update_dashboard`** — Restructure most of an existing dashboard by ID (full replacement; readonly system dashboards return an error). For individual panel edits use `patch_dashboard`
 - **`patch_dashboard`** — Targeted edits to an existing dashboard by ID (add/update/remove/move panel, set title, set variable); returns a compact diff, not the full dashboard
 - **`delete_dashboard`** — Delete a custom dashboard by ID
+- **`set_dashboard_lock`** — Lock or unlock a custom dashboard by ID (author or org admin only); a locked dashboard refuses update, patch and delete
 - **`list_dashboard_snapshots`** — Frozen point-in-time snapshots for a dashboard (metadata only)
 - **`get_dashboard_snapshot`** — Full frozen snapshot including panel data for RCA / shareable views
 - **`delete_dashboard_snapshot`** — Delete a frozen snapshot by ID
@@ -842,15 +871,6 @@ Configured Compass alert-group inventory for changeboard / label-coverage audits
 
 Returns compact JSON `{"count":N,"groups":[...]}` with `id`, `name`, `type`, `entity_class`, `team`, `tier`, `metadata.labels`, and rule counts. Empty `team` / `labels` means unset.
 
-### get_alert_operations_summary
-
-- `start_time_iso` / `end_time_iso` (string, required): RFC3339 window, at most 31 days.
-- `timezone` (string, optional): IANA name for day boundaries. Default: `UTC`.
-- `severities` / `services` (array, optional): Narrow the summary.
-- `include_rules` (boolean, optional): Also return per-rule hygiene (top 20 by `fire_count`, flapping and unrouted rules, with `truncated` when the API capped its rule list). Default: `false`.
-
-Returns JSON with `alerts_raised`, `acknowledged`, `unacknowledged`, `current_backlog`, `delivered`, `notification_outcomes`, `top_rules`, `needs_attention` and `coverage`. Each metric is `{status, count?, reason?}`; a `partial` count covers only part of the window and is not a lower bound.
-
 ### get_alert_coverage
 
 Answers "what am I not alerting on?" for a service, an environment, one alert group, or the whole organization when no scope is given. Read-only: it never creates, changes, or unmutes anything. Also served in the `investigate` toolset.
@@ -1081,12 +1101,18 @@ Call it before any service-scoped investigation so tool selection matches the se
 
 ### list_dashboards
 
-No parameters. Returns all custom dashboards in the org as a JSON array with `id`, `name`, and metadata.
+- `name` (string, optional): Case-insensitive substring of the dashboard name. Narrows the list and `total`.
+- `limit` (integer, optional): Dashboards per page, 1–200. Default: 100.
+- `cursor` (string, optional): `next_cursor` from the previous page; pass the same `name` with it.
+
+Returns `{"dashboards": [{"id", "name", "updated_at", "created_by", "locked"}], "total", "next_cursor"}`, most recently updated first. `created_by` is omitted when empty; `locked` is omitted when the API does not report `readonly`. `updated_at` is Unix epoch seconds as a string. A page ends early to stay under 32 KB; `next_cursor` is absent on the last page.
 
 ### get_dashboard
 
 - `id` (string, required): Dashboard UUID.
 - `region` (string, optional): Region for panel query population. Defaults to configured datasource region.
+
+The result adds top-level `locked` (`false` when the API omits it) and `created_by` (the author's user id).
 
 To alert on a panel, see `last9://reference/alerting`.
 
@@ -1133,7 +1159,7 @@ Use only to restructure most of a dashboard; for adding, editing, removing or mo
 
 - `id` (string, required): Dashboard UUID to update.
 - `dashboard` (object, required): Full replacement dashboard body (same shape as create).
-- `metadata` (object, optional): Replacement metadata. Readonly system dashboards return a 403 error.
+- `metadata` (object, optional): Replacement metadata. Readonly system dashboards return a recoverable tool error.
 
 ### patch_dashboard
 
@@ -1151,6 +1177,13 @@ Prefer this over `update_dashboard` for small refinements: unchanged panels are 
 ### delete_dashboard
 
 - `id` (string, required): Dashboard UUID to delete. Readonly system dashboards cannot be deleted.
+
+### set_dashboard_lock
+
+- `id` (string, required): Dashboard UUID.
+- `locked` (boolean, required): `true` locks the dashboard, `false` unlocks it.
+
+Write tool; call it only when the user explicitly asks. Only the dashboard's author or an org admin can lock or unlock it, and built-in dashboards are always read-only. Returns `{"id", "locked"}` with the resulting state. While locked, `update_dashboard`, `patch_dashboard` and `delete_dashboard` send no write and return a recoverable tool error starting `dashboard is locked` that names the author and suggests unlocking or copying the dashboard with `create_dashboard`.
 
 ### list_dashboard_snapshots
 

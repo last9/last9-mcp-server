@@ -2,10 +2,24 @@ package logs
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"last9-mcp/internal/utils"
 )
+
+func setDefaultWindowEmptyGuidance(result map[string]interface{}, subject string, minutes int) {
+	guidance, ok := result["l9_guidance"].(map[string]any)
+	if !ok {
+		return
+	}
+	message, _ := guidance["message"].(string)
+	if !strings.HasPrefix(message, "No logs found") {
+		return
+	}
+	guidance["message"] = fmt.Sprintf("No matches in the last %d minutes (default window) for %s", minutes, subject)
+}
 
 type getLogsGuidanceContext struct {
 	startMs        int64
@@ -27,7 +41,7 @@ func addGetLogsGuidance(result map[string]interface{}, args GetLogsArgs, guidanc
 	if err != nil {
 		return false
 	}
-	if len(items) == 0 || countLogEntriesInResultItems(items) == 0 {
+	if len(items) == 0 || (kind == "streams" && countLogEntriesInResultItems(items) == 0) {
 		result["l9_guidance"] = utils.EmptyResultGuidanceMap("logs", logsGuidanceOptions(args, guidance.startMs, guidance.endMs))
 		return false
 	}
@@ -75,6 +89,12 @@ func addServiceLogsGuidance(response *ServiceLogsResponse, args GetServiceLogsAr
 	}
 	if response.Count == 0 {
 		response.Hint = utils.EmptyResultAdvice("logs", opts)
+		if response.WindowSource == "default" {
+			response.Hint = fmt.Sprintf("No matches in the last %d minutes (default window). Try: %s", response.WindowMinutes, utils.NumberedActions([]string{
+				"set lookback_minutes or start_time_iso/end_time_iso to search the intended window",
+				"inspect available fields with `get_log_attributes_for_pipeline`",
+			}))
+		}
 		return
 	}
 	if response.TotalMatchingLines != nil && *response.TotalMatchingLines > response.Count {

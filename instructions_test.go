@@ -659,6 +659,27 @@ func TestServerInstructionsChangesLineKeepsItsWording(t *testing.T) {
 	}
 }
 
+// Rewording this line ("..., rule state and noisy, flapping, stale or unrouted
+// rules") dropped trace_query eval tq-017 from 30/30 to 10/30 on absolute time
+// bounds.
+func TestServerInstructionsAlertsLineKeepsItsWording(t *testing.T) {
+	tests := []struct {
+		name  string
+		tools []string
+		want  string
+	}{
+		{name: "firing alerts and rule state", tools: []string{"get_alerts", "get_alert_rule_state"}, want: "- Firing alerts and rule state: `get_alerts`, `get_alert_rule_state`."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := renderInstructions(t, tt.tools...)
+			if got := lineNaming(instructions, "get_alerts"); got != tt.want {
+				t.Errorf("alerts line = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // "; alerts are created as drafts" on this line repeated the created-disabled
 // write rule and was most of the instruction text #336 added when log_query
 // eval lq-mf-005 fell from 30/30 to 21/30 in snapshot mode, so the line keeps

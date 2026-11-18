@@ -72,7 +72,6 @@ var named = map[string][]string{
 		"delete_notification_channel",
 		"recommend_alert_config",
 		"get_alert_groups",
-		"get_alert_operations_summary",
 		"get_alert_coverage",
 		"get_entity_alert_rules",
 		"get_entity_kpis",
@@ -99,6 +98,7 @@ var named = map[string][]string{
 		"update_dashboard",
 		"patch_dashboard",
 		"delete_dashboard",
+		"set_dashboard_lock",
 		"list_dashboard_snapshots",
 		"get_dashboard_snapshot",
 		"delete_dashboard_snapshot",
@@ -139,7 +139,6 @@ var investigateExtras = []string{
 	"get_service_profile",
 	"list_datasources",
 	"get_entity_kpis",
-	"get_alert_operations_summary",
 	"get_alert_coverage",
 }
 

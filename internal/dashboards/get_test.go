@@ -78,3 +78,130 @@ func TestGetDashboardHandler_UsesConfiguredRegionDefault(t *testing.T) {
 		t.Fatalf("query %q", gotQuery)
 	}
 }
+
+func TestGetDashboardHandler_ReportsGenericForbiddenAsPermissionError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"forbidden"}`))
+	}))
+	defer srv.Close()
+
+	handler := NewGetDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDashboardArgs{ID: "uuid-1"})
+	if err == nil {
+		t.Fatal("expected permission error")
+	}
+	if !strings.Contains(err.Error(), "not permitted to access or modify dashboard") || strings.Contains(err.Error(), "readonly") {
+		t.Fatalf("unexpected permission error: %q", err)
+	}
+}
+
+func TestGetDashboardHandler_ServesLockStateAndAuthor(t *testing.T) {
+	tests := []struct {
+		name       string
+		dashboard  string
+		wantLocked bool
+	}{
+		{"locked", `{"id":"uuid-1","readonly":true,"created_by":"user-7"}`, true},
+		{"unlocked", `{"id":"uuid-1","readonly":false,"created_by":"user-7"}`, false},
+		{"omitted", `{"id":"uuid-1","created_by":"user-7"}`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = fmt.Fprintf(w, `{"dashboard":%s,"metadata":{"_type":"metrics","q":"a<b"}}`, tt.dashboard)
+			}))
+			defer srv.Close()
+
+			handler := NewGetDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))
+			result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDashboardArgs{ID: "uuid-1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := result.Content[0].(*mcp.TextContent).Text
+			var got struct {
+				Locked    *bool           `json:"locked"`
+				CreatedBy string          `json:"created_by"`
+				Dashboard json.RawMessage `json:"dashboard"`
+			}
+			if err := json.Unmarshal([]byte(text), &got); err != nil {
+				t.Fatalf("%v: %s", err, text)
+			}
+			if got.Locked == nil || *got.Locked != tt.wantLocked || got.CreatedBy != "user-7" {
+				t.Fatalf("locked/created_by wrong: %s", text)
+			}
+			if string(got.Dashboard) != tt.dashboard || !strings.Contains(text, `"q":"a<b"`) {
+				t.Fatalf("dashboard body not preserved: %s", text)
+			}
+		})
+	}
+}
+
+func TestGetDashboardHandler_AuthorOmittedIsNull(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"dashboard":{"id":"uuid-1"}}`))
+	}))
+	defer srv.Close()
+
+	handler := NewGetDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDashboardArgs{ID: "uuid-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(text, `"locked":false`) || !strings.Contains(text, `"created_by":null`) {
+		t.Fatalf("text %s", text)
+	}
+}
+
+func TestGetDashboardHandler_NormalizesEscapedHTMLCharacters(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"dashboard":{"id":"uuid-1","name":"QA \u003c\u003e\u0026"}}`))
+	}))
+	defer srv.Close()
+
+	handler := NewGetDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDashboardArgs{ID: "uuid-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(text, `"name":"QA <>&"`) {
+		t.Fatalf("HTML characters were not preserved literally: %s", text)
+	}
+}
+
+func TestGetDashboardHandler_NormalizationRoundTripsOtherText(t *testing.T) {
+	// Literal escape text, quotes, backslashes and non-ASCII must survive the
+	// decode/re-encode that unescapes <, > and &.
+	name := `QA \` + `u003c <>& "q" \ é 🚀`
+	wire, err := json.Marshal(map[string]any{"dashboard": map[string]any{"id": "uuid-1", "name": name}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(wire)
+	}))
+	defer srv.Close()
+
+	handler := NewGetDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDashboardArgs{ID: "uuid-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	var got struct {
+		Dashboard struct {
+			Name string `json:"name"`
+		} `json:"dashboard"`
+	}
+	if err := json.Unmarshal([]byte(text), &got); err != nil {
+		t.Fatalf("output is not valid JSON: %v: %s", err, text)
+	}
+	if got.Dashboard.Name != name {
+		t.Fatalf("name = %q, want %q", got.Dashboard.Name, name)
+	}
+	if strings.Contains(text, `\`+`u0026`) || !strings.Contains(text, `<>&`) {
+		t.Fatalf("HTML characters were not preserved literally: %s", text)
+	}
+}

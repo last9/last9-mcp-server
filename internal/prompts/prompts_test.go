@@ -1,6 +1,8 @@
 package prompts_test
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"regexp"
 	"sort"
@@ -9,6 +11,14 @@ import (
 
 	"last9-mcp/internal/prompts"
 )
+
+func TestGetLogsDescriptionEvalGatedCopy(t *testing.T) {
+	const want = "2cd585a4ef43c8f611a60eed7afc89ea66bd9bef446034a79eceecbb9189996c"
+	got := fmt.Sprintf("%x", sha256.Sum256([]byte(prompts.GetLogsDescription)))
+	if got != want {
+		t.Fatalf("get_logs description changed without an lq-101 gate run: got sha256 %s, want %s", got, want)
+	}
+}
 
 var promptDescriptionFiles = map[string]string{
 	"add_drop_rule.md":                     prompts.AddDropRuleDescription,
@@ -26,6 +36,7 @@ var promptDescriptionFiles = map[string]string{
 	"get_alert_config.md":                  prompts.GetAlertConfigDescription,
 	"get_alert_coverage.md":                prompts.GetAlertCoverageDescription,
 	"get_alert_groups.md":                  prompts.GetAlertGroupsDescription,
+	"get_alert_hygiene.md":                 prompts.GetAlertHygieneDescription,
 	"get_alert_operations_summary.md":      prompts.GetAlertOperationsSummaryDescription,
 	"get_alert_rule_state.md":              prompts.GetAlertRuleStateDescription,
 	"get_alerts.md":                        prompts.GetAlertsDescription,
@@ -93,6 +104,7 @@ var promptDescriptionFiles = map[string]string{
 	"prometheus_range_query_base.md":       prompts.PromqlRangeQueryDetails,
 	"recommend_alert_config.md":            prompts.RecommendAlertConfigDescription,
 	"send_feedback.md":                     prompts.SendFeedbackDescription,
+	"set_dashboard_lock.md":                prompts.SetDashboardLockDescription,
 	"update_alert.md":                      prompts.UpdateAlertDescription,
 	"update_dashboard.md":                  prompts.UpdateDashboardDescription,
 	"validate_alert_expression.md":         prompts.ValidateAlertExpressionDescription,
@@ -376,6 +388,24 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 	}
 }
 
+func TestTraceQueryGuidanceDistinguishesSpansFromTraces(t *testing.T) {
+	checks := map[string]string{
+		"description": prompts.GetTracesDescription,
+		"reference":   prompts.TracejsonReference,
+	}
+	for name, body := range checks {
+		for _, phrase := range []string{
+			"filter-only results contain one row per span",
+			"deduplicate by `TraceId`",
+			"fetch the complete trace with `get_service_traces`",
+		} {
+			if !strings.Contains(body, phrase) {
+				t.Errorf("%s missing %q", name, phrase)
+			}
+		}
+	}
+}
+
 func TestPrometheusQueryDescriptionsUseValidPercentileSources(t *testing.T) {
 	for name, desc := range map[string]string{
 		"instant": prompts.PromqlInstantQueryDetails,
@@ -491,6 +521,17 @@ func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 	}
 }
 
+func TestRawLogDescriptionsReserveRawForExactText(t *testing.T) {
+	for name, desc := range map[string]string{
+		"get_logs":         prompts.GetLogsDescription,
+		"get_service_logs": prompts.GetServiceLogsDescription,
+	} {
+		if !strings.Contains(desc, "`raw` only for exact text") {
+			t.Errorf("%s description must reserve raw mode for exact text", name)
+		}
+	}
+}
+
 func TestLogPatternDescriptionsCriticalRules(t *testing.T) {
 	descriptions := map[string]string{
 		"get_log_patterns":          prompts.GetLogPatternsDescription,
@@ -582,6 +623,15 @@ func TestGetNotificationChannelsDescriptionPointsSendResolvedAtChannel(t *testin
 func TestCreateAlertFromChartDescriptionStatesThresholdFloor(t *testing.T) {
 	if !strings.Contains(prompts.CreateAlertFromChartDescription, "must be 0 or more") {
 		t.Error("create_alert_from_chart does not say threshold must be 0 or more")
+	}
+}
+
+func TestCreateAlertFromChartDescriptionWarnsWhenDisablingFails(t *testing.T) {
+	desc := prompts.CreateAlertFromChartDescription
+	for _, phrase := range []string{"If disabling fails", "rule id", "may be live"} {
+		if !strings.Contains(desc, phrase) {
+			t.Errorf("create_alert_from_chart does not preserve the failed-disable warning %q", phrase)
+		}
 	}
 }
 
@@ -713,6 +763,7 @@ func TestReferenceManualsEmbedded(t *testing.T) {
 		"service_logs": prompts.ServiceLogsReference,
 		"metrics":      prompts.MetricsReference,
 		"alerting":     prompts.AlertingReference,
+		"tool_recipes": prompts.ToolRecipesReference,
 	} {
 		if len(body) < 1000 {
 			t.Errorf("%s reference too short (%d chars) — embed may be wrong", name, len(body))
@@ -1052,6 +1103,14 @@ func TestGetAlertsRoutingStatesDefaultWindow(t *testing.T) {
 	for _, phrase := range []string{"default 15 minutes", "at most 1 hour"} {
 		if !strings.Contains(routing, phrase) {
 			t.Errorf("get_alerts When to use section missing %q:\n%s", phrase, routing)
+		}
+	}
+}
+
+func TestPreviewDashboardDescriptionExplainsLockState(t *testing.T) {
+	for _, phrase := range []string{"locked:false", "dashboard is locked"} {
+		if !strings.Contains(prompts.PreviewDashboardDescription, phrase) {
+			t.Errorf("preview_dashboard description missing %q", phrase)
 		}
 	}
 }

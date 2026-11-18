@@ -145,9 +145,9 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, gate *toolG
 	return nil
 }
 
-// withCallDeadline bounds one tool call as a whole: per-request and per-chunk timeouts
-// alone let a chunk loop run for hours. Read handlers can fold canceled requests into a
-// result, so every read result at the deadline is replaced; a write's may name its verify call.
+// withCallDeadline bounds one tool call as a whole: per-chunk timeouts alone let a chunk loop
+// run for hours. Read handlers can fold canceled requests into a result, so a read result at
+// the deadline is replaced unless it carries timeout guidance; a write's may name its verify call.
 func withCallDeadline[In, Out any](timeout time.Duration, readOnly bool, handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 		ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -157,7 +157,7 @@ func withCallDeadline[In, Out any](timeout time.Duration, readOnly bool, handler
 		if !readOnly && errors.As(err, &unknown) {
 			return last9mcp.SystemErrorResult(fmt.Sprintf("The request may or may not have been applied (%s). Do not retry or resend this request.", unknown.Cause)), out, nil
 		}
-		if !errors.Is(ctx.Err(), context.DeadlineExceeded) || (err == nil && !readOnly) {
+		if !errors.Is(ctx.Err(), context.DeadlineExceeded) || (err == nil && (!readOnly || utils.HasTimeoutGuidance(result))) {
 			return result, out, err
 		}
 		msg := fmt.Sprintf("Stopped at the %s tool-call deadline", timeout)
@@ -188,7 +188,7 @@ func registerTool[In, Out any](server *last9mcp.Last9MCPServer, tool *mcp.Tool, 
 	if normErr := normalizeToolInputSchema[In](tool); normErr != nil {
 		return fmt.Errorf("register %q: %w", tool.Name, normErr)
 	}
-	if regErr := last9mcp.RegisterInstrumentedTool(server, tool, tagSystemErrors(handler)); regErr != nil {
+	if regErr := last9mcp.RegisterInstrumentedTool(server, tool, tagSystemErrors(tool.Name, handler)); regErr != nil {
 		return fmt.Errorf("register %q: %w", tool.Name, regErr)
 	}
 	// Middleware added later runs first, so integer coercion precedes the check.
@@ -203,13 +203,26 @@ func registerTool[In, Out any](server *last9mcp.Last9MCPServer, tool *mcp.Tool, 
 
 // tagSystemErrors returns an upstream failure as a system_error-tagged result itself:
 // the SDK would wrap the error in an untagged result that telemetry counts as user_error.
-func tagSystemErrors[In, Out any](handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
+func tagSystemErrors[In, Out any](toolName string, handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 		result, out, err := handler(ctx, req, in)
+		if message, ok := utils.ExpectedEmptyStateMessage(err); ok && alertToolSupportsDisabledState(toolName) {
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: message}}}, out, nil
+		}
 		if utils.IsSystemError(err) {
 			return utils.ErrorResult(err), out, nil
 		}
 		return result, out, err
+	}
+}
+
+func alertToolSupportsDisabledState(toolName string) bool {
+	switch toolName {
+	case "get_alerts", "get_alert_config", "get_alert_groups", "get_alert_rule_state",
+		"get_entity_alert_rules", "get_alert_coverage":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -551,12 +564,6 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 	}, alerting.NewGetAlertGroupsHandler(client, cfg)))
 
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
-		Name:        "get_alert_operations_summary",
-		Annotations: readOnlyTool("Get Alert Operations Summary"),
-		Description: prompts.GetAlertOperationsSummaryDescription,
-	}, alerting.NewGetAlertOperationsSummaryHandler(client, cfg)))
-
-	reg(registerIfAllowed(server, gate, &mcp.Tool{
 		Name:        "get_alert_coverage",
 		Annotations: readOnlyTool("Get Alert Coverage"),
 		Description: prompts.GetAlertCoverageDescription,
@@ -791,7 +798,7 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Annotations: writeTool("Create Dashboard", false, false),
 		Description: prompts.CreateDashboardDescription,
 		InputSchema: dashboards.GetCreateDashboardInputSchema(),
-	}, "list_dashboards, looking for a dashboard with the name you passed",
+	}, "list_dashboards with name set to the name you passed",
 		dashboards.NewCreateDashboardHandler(client, cfg)))
 
 	reg(registerWriteTool(server, gate, &mcp.Tool{
@@ -813,8 +820,15 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Name:        "delete_dashboard",
 		Annotations: writeTool("Delete Dashboard", true, true),
 		Description: prompts.DeleteDashboardDescription,
-	}, "list_dashboards; id is no longer listed if the delete landed",
+	}, "get_dashboard for id; a not-found error means the delete landed",
 		dashboards.NewDeleteDashboardHandler(client, cfg)))
+
+	reg(registerWriteTool(server, gate, &mcp.Tool{
+		Name:        "set_dashboard_lock",
+		Annotations: writeTool("Set Dashboard Lock", false, true),
+		Description: prompts.SetDashboardLockDescription,
+	}, "get_dashboard for id; its locked field shows the current state",
+		dashboards.NewSetDashboardLockHandler(client, cfg)))
 
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
 		Name:        "list_dashboard_snapshots",

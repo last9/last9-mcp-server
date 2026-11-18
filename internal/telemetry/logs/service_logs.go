@@ -32,7 +32,10 @@ type ServiceLogsResponse struct {
 	TotalMatchingLines *int           `json:"total_matching_lines,omitempty"`
 	LogsTruncated      *bool          `json:"logs_truncated,omitempty"`
 	SearchStats        map[string]any `json:"search_stats,omitempty"`
+	RawLimit           map[string]any `json:"l9_raw_limit,omitempty"`
 	Hint               string         `json:"hint,omitempty"`
+	WindowSource       string         `json:"window_source,omitempty"`
+	WindowMinutes      int            `json:"window_minutes,omitempty"`
 	coverageStatus     string
 }
 
@@ -49,6 +52,7 @@ type LogEntry struct {
 const (
 	defaultServiceLogsRawLimit     = 20
 	defaultServiceLogsSummaryLimit = 100
+	defaultServiceLogsLookback     = 60
 )
 
 // GetServiceLogsArgs represents the input arguments for the get_service_logs tool
@@ -85,6 +89,9 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		if err := validateLogResponseMode(args.ResponseMode); err != nil {
 			return nil, nil, err
 		}
+		if len(args.BodyFilters) > 0 && !hasExplicitLogWindow(args.StartTimeISO, args.LookbackMinutes) {
+			return nil, nil, fmt.Errorf("body_filters requires an explicit window: set lookback_minutes or start_time_iso")
+		}
 
 		// Set default values
 		limit := args.Limit
@@ -97,7 +104,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 
 		lookbackMinutes := args.LookbackMinutes
 		if lookbackMinutes == 0 {
-			lookbackMinutes = 60
+			lookbackMinutes = defaultServiceLogsLookback
 		}
 
 		// Convert args to map for GetTimeRange utility
@@ -141,6 +148,10 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
 		}
 		logs.HTTPStatusField = statusField
+		if args.StartTimeISO == "" && args.EndTimeISO == "" && args.LookbackMinutes == 0 {
+			logs.WindowSource = "default"
+			logs.WindowMinutes = defaultServiceLogsLookback
+		}
 		addServiceLogsGuidance(logs, args, limit)
 
 		bounds := serviceLogsScope{startTime, endTime, normalizedIndex}
@@ -165,14 +176,38 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			meta["last9/coverage"] = coverage
 		}
 
-		return &mcp.CallToolResult{
+		full := &mcp.CallToolResult{
 			Meta: meta,
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(responseJSON),
 				},
 			},
-		}, nil, nil
+		}
+		if response != logs {
+			return full, nil, nil
+		}
+		count := len(logs.Logs)
+		bounded, err := boundRawResult(full, count, cfg.MCPServerInfo, func(n int) (*mcp.CallToolResult, error) {
+			limited := *logs
+			limited.Logs = logs.Logs[:n]
+			limited.Count = n
+			truncated := true
+			limited.LogsTruncated = &truncated
+			limited.RawLimit = map[string]any{"returned_entries": n, "fetched_entries": count, "max_bytes": maxRawResultBytes}
+			limited.Hint = rawLimitHint(n, count, limit)
+			limited.coverageStatus = "partial"
+			encoded, err := json.MarshalIndent(&limited, "", "  ")
+			if err != nil {
+				return nil, err
+			}
+			limitedMeta := mapsClone(meta)
+			if coverage := serviceLogsCoverage(&limited, logjsonQuery, bounds); coverage != nil {
+				limitedMeta["last9/coverage"] = coverage
+			}
+			return &mcp.CallToolResult{Meta: limitedMeta, Content: []mcp.Content{&mcp.TextContent{Text: string(encoded)}}}, nil
+		})
+		return bounded, nil, err
 	}
 }
 
@@ -518,7 +553,7 @@ func fetchServiceLogsViaSearchAPI(
 	ctx context.Context, client *http.Client, cfg models.Config, service string,
 	startTime, endTime time.Time, limit int, logjsonQuery []map[string]interface{}, index string,
 ) (*ServiceLogsResponse, error) {
-	result, err := utils.SearchLogs(ctx, client, cfg, utils.LogSearchRequest{
+	result, err := searchLogsByWindow(ctx, client, cfg, utils.LogSearchRequest{
 		Op:       "service logs query",
 		Pipeline: logjsonQuery,
 		StartMs:  startTime.UnixMilli(),

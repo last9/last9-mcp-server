@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -35,13 +36,20 @@ var writeToolFixtures = map[string]writeToolFixture{
 	"add_drop_rule":      {args: `{"name":"drop debug","filters":[{"key":"attributes[\"level\"]","value":"debug","operator":"equals","conjunction":"and"}]}`},
 	"add_remapping_rule": {args: `{"rule_type":"logs_map","name":"map service","remap_keys":["attributes[\"app\"]"],"target_attribute":"service"}`},
 	"create_dashboard":   {args: `{"dashboard":` + testDashboard + `,"metadata":{"_category":"custom","_type":"metrics"}}`},
-	"update_dashboard":   {args: `{"id":"dash-1","dashboard":` + testDashboard + `}`},
+	"update_dashboard": {
+		args:  `{"id":"dash-1","dashboard":` + testDashboard + `}`,
+		reads: map[string]string{"/dashboards/dash-1": `{"dashboard":` + testDashboard + `}`},
+	},
 	"patch_dashboard": {
 		args:  `{"id":"dash-1","ops":[{"op":"set_title","title":"Checkout v2"}]}`,
 		reads: map[string]string{"/dashboards/dash-1": `{"dashboard":` + testDashboard + `}`},
 	},
-	"delete_dashboard":          {args: `{"id":"dash-1"}`},
+	"delete_dashboard": {
+		args:  `{"id":"dash-1"}`,
+		reads: map[string]string{"/dashboards/dash-1": `{"dashboard":` + testDashboard + `}`},
+	},
 	"delete_dashboard_snapshot": {args: `{"id":"snap-1"}`},
+	"set_dashboard_lock":        {args: `{"id":"dash-1","locked":true}`},
 	"create_alert": {
 		args:  `{"entity_id":"entity-1","alert_rule":` + testAlertRule + `}`,
 		reads: map[string]string{"/entities/entity-1/alert-rules": `{"rules":[]}`},
@@ -249,4 +257,44 @@ func toolResultText(result *mcp.CallToolResult) string {
 		}
 	}
 	return strings.Join(parts, "\n")
+}
+
+// A 2xx whose body names no usable result may still have applied the write, so the agent
+// must check before retrying rather than read a plain failure as "nothing happened".
+func TestWriteToolsReportUnusableSuccessBodyAsUnknownOutcome(t *testing.T) {
+	oversized := strings.Repeat(" ", 5*1024*1024+1)
+	cases := map[string][]string{
+		"create_alert":            {"", "{}", "<html>ok</html>"},
+		"update_alert":            {"", "{}", "<html>ok</html>"},
+		"create_kpi":              {"", "{}"},
+		"create_alert_from_chart": {"", "{}", "<html>ok</html>"},
+		"create_dashboard":        {"", "{}", `{"dashboard":null}`, oversized},
+		"update_dashboard":        {"", "{}", `{"dashboard":null}`, oversized},
+	}
+	for name, bodies := range cases {
+		fixture := writeToolFixtures[name]
+		for i, body := range bodies {
+			t.Run(fmt.Sprintf("%s/%d", name, i), func(t *testing.T) {
+				t.Parallel()
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.Method == http.MethodGet {
+						_, _ = w.Write([]byte(fixture.reads[r.URL.Path]))
+						return
+					}
+					_, _ = w.Write([]byte(body))
+				}))
+				defer srv.Close()
+
+				session := connectTestSession(t, writeToolTestConfig(srv.URL), srv.Client())
+				result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: json.RawMessage(fixture.args)})
+				if err != nil {
+					t.Fatalf("call: %v", err)
+				}
+				text := toolResultText(result)
+				if !result.IsError || !strings.HasPrefix(text, name+" may or may not have been applied (") {
+					t.Fatalf("unusable 2xx body not reported as an unknown outcome:\n%.500s", text)
+				}
+			})
+		}
+	}
 }

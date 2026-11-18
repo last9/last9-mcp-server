@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -183,8 +184,8 @@ func TestDumpTools(t *testing.T) {
 	if strings.Contains(summary.Description, "ErrorRate") {
 		t.Fatal("get_service_summary description still mentions ErrorRate")
 	}
-	if strings.Contains(summary.Description, "last9://reference/") {
-		t.Fatal("get_service_summary must not be a whale with a last9://reference/ pointer")
+	if !strings.Contains(summary.Description, "last9://reference/tool_recipes") {
+		t.Fatal("get_service_summary must point at deferred interpretation recipes")
 	}
 	if !strings.Contains(summary.Description, "http_5xx_count") {
 		t.Fatal("get_service_summary description missing http_5xx_count language map")
@@ -718,6 +719,29 @@ func TestDumpToolsLogPatternToolsServeTheirExplicitSchemas(t *testing.T) {
 	}
 }
 
+// Unavailable alert API tools must not be served in any toolset or mode.
+func TestDumpToolsUnavailableAlertAPIsAreNotServed(t *testing.T) {
+	for _, spec := range []string{"all", "alerts", "investigate"} {
+		allowed, err := toolsets.Parse(spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, readOnly := range []bool{false, true} {
+			t.Run(spec+"/read-only="+strconv.FormatBool(readOnly), func(t *testing.T) {
+				var buf bytes.Buffer
+				if err := dumpTools(&buf, toolsets.Filter{Tools: allowed, ReadOnly: readOnly}); err != nil {
+					t.Fatalf("dumpTools failed: %v", err)
+				}
+				for _, name := range []string{"get_alert_hygiene", "get_alert_operations_summary"} {
+					if strings.Contains(buf.String(), name) {
+						t.Errorf("dump includes unavailable tool %q", name)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestDumpToolsDataToolsetsIncludeNameDiscovery(t *testing.T) {
 	for _, spec := range []string{"traces", "metrics"} {
 		allowed, err := toolsets.Parse(spec)
@@ -751,12 +775,12 @@ func TestDumpToolsInvestigate(t *testing.T) {
 	for _, tool := range out.Tools {
 		byName[tool.Name] = true
 	}
-	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "get_metric_status", "did_you_mean", "get_service_profile", "list_datasources", "get_entity_kpis", "get_alert_operations_summary"} {
+	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "get_metric_status", "did_you_mean", "get_service_profile", "list_datasources", "get_entity_kpis"} {
 		if !byName[want] {
 			t.Errorf("investigate dump missing %q", want)
 		}
 	}
-	for _, deny := range []string{"get_alerts", "get_alert_groups", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard", "create_kpi"} {
+	for _, deny := range []string{"get_alerts", "get_alert_groups", "get_alert_hygiene", "get_alert_operations_summary", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard", "create_kpi"} {
 		if byName[deny] {
 			t.Errorf("investigate dump should exclude %q", deny)
 		}

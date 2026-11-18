@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -45,12 +46,23 @@ var (
 	BuildTime = "unknown" // Set by goreleaser
 )
 
+func serverVersion(version, commit string) string {
+	commit = strings.TrimSpace(commit)
+	if version != "dev" || commit == "" || strings.EqualFold(commit, "unknown") {
+		return version
+	}
+	if len(commit) > 7 {
+		commit = commit[:7]
+	}
+	return version + "+" + commit
+}
+
 // setupConfig initializes and parses the configuration
 func SetupConfig(defaults models.Config) (models.Config, error) {
 	fs := flag.NewFlagSet("last9-mcp", flag.ExitOnError)
 
 	var cfg models.Config
-	fs.StringVar(&cfg.RefreshToken, "refresh_token", os.Getenv("LAST9_REFRESH_TOKEN"), "Last9 refresh token for authentication")
+	fs.StringVar(&cfg.RefreshToken, "refresh_token", "", "Last9 refresh token for authentication")
 	fs.StringVar(&cfg.DatasourceName, "datasource", os.Getenv("LAST9_DATASOURCE"), "Datasource name to use (overrides default datasource)")
 	fs.StringVar(&cfg.APIHost, "api_host", os.Getenv("LAST9_API_HOST"), "API host (defaults to app.last9.io)")
 	fs.BoolVar(&cfg.DisableTelemetry, "disable_telemetry", true, "Disable OpenTelemetry tracing/metrics")
@@ -162,7 +174,9 @@ func toolsetServerBuilder(cfg models.Config) func(toolsets.Set) (*last9mcp.Last9
 // prompts, tools and the instructions that name them, behind middleware.
 // middleware is added last so it runs before the per-tool argument middleware.
 func buildServer(cfg models.Config, middleware ...mcp.Middleware) (*last9mcp.Last9MCPServer, error) {
-	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
+	info := &mcp.Implementation{Name: "last9-mcp", Version: serverVersion(Version, CommitSHA)}
+	cfg.MCPServerInfo = info
+	server, err := last9mcp.NewServerWithOptions(info.Name, info.Version, last9mcp.WithSkipProviderInit())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create MCP server: %w", err)
 	}
@@ -227,7 +241,7 @@ func run() int {
 		return 0
 	}
 
-	log.Printf("Starting Last9 MCP Server v%s", Version)
+	log.Printf("Starting Last9 MCP Server v%s", serverVersion(Version, CommitSHA))
 
 	// Load .env file if it exists (ignore errors if file doesn't exist)
 	if err := godotenv.Load(); err != nil {

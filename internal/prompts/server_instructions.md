@@ -10,7 +10,6 @@
 {{- $serviceProfile := tools "get_service_profile" -}}
 {{- $health := tools "get_service_summary" "get_service_performance_details" "get_service_operations_summary" "get_service_dependency_graph" -}}
 {{- $alerts := tools "get_alerts" "get_alert_rule_state" -}}
-{{- $alertOps := tools "get_alert_operations_summary" -}}
 {{- $coverage := tools "get_alert_coverage" -}}
 {{- $changes := tools "get_change_events" "analyze_change_impact" -}}
 {{- $deviations := tools "get_apm_service_deviations" "get_trace_attribute_deviations" -}}
@@ -67,7 +66,7 @@ Never guess service, environment, attribute, metric or label names, or dashboard
 - Open a dashboard by id with {{.}}.
 {{- end}}{{end}}
 {{- end}}
-{{- if or $serviceProfile $health $alerts $alertOps $coverage $changes $deviations $scoped $databases $profiles}}
+{{- if or $serviceProfile $health $alerts $coverage $changes $deviations $scoped $databases $profiles}}
 
 ## Prefer dedicated tools
 They return computed answers with the right scoping; reach for them before writing a query.
@@ -79,9 +78,6 @@ They return computed answers with the right scoping; reach for them before writi
 {{- end}}
 {{- with $alerts}}
 - Firing alerts and rule state: {{.}}.
-{{- end}}
-{{- with $alertOps}}
-- Alert counts and hygiene: {{.}}.
 {{- end}}
 {{- with $changes}}
 - Deploys and other changes: {{.}}.
@@ -180,6 +176,9 @@ When a Last9 tool errors unexpectedly, returns data that looks wrong, misleads y
 {{- end}}
 {{- with $addDropRule}}
 - {{.}} drops matching future logs: confirm with the user first.
+{{- end}}
+{{- with tools "set_dashboard_lock"}}
+- Lock or unlock a dashboard with {{.}} only when the user explicitly asks; an edit refused with `dashboard is locked` names the author who can unlock it.
 {{- end}}
 {{- with $addRemappingRule}}
 - {{.}} rewrites attributes on future logs or traces: confirm with the user first.
