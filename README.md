@@ -285,7 +285,7 @@ last9-mcp --read-only --allow-write-tools=acknowledge_alert,mute_alert_group
 
 - **`get_workspace_overview`** — Recommended first call when a request names no service or tool (one that does goes straight to its tool): environments, which signals (logs, traces, metrics) were seen in the last hour, service and alert-group counts, firing alerts, and the current time in one cheap call. A signal not seen in that hour can still have older data, so it stays queryable. A failed sub-call leaves its field `null` and adds an `errors[]` entry. Served under every toolset
 - **`get_current_time`** — Current time, plus absolute bounds for `last 2h`, `yesterday` or `since yesterday 9am IST`, in any IANA zone or common abbreviation. Served under every toolset
-- **`send_feedback`** — Lets the agent report a broken tool, a wrong result, a missing capability or a misleading description straight to the Last9 team, with the server version and, when the client reports it, the client's name and version attached (over `--http`, from per-request `_meta` clientInfo or the `Mcp-Session-Id` returned by `initialize`). Served under every named toolset and in `--read-only` mode; left out of `investigate`
+- **`send_feedback`** — Lets the agent report a clear MCP server defect or missing capability straight to the Last9 team after checking the tool's inputs and guidance; routine query errors, empty results and usage uncertainty are not reported. The server version and, when the client reports it, the client's name and version are attached (over `--http`, from per-request `_meta` clientInfo or the `Mcp-Session-Id` returned by `initialize`). Served under every named toolset and in `--read-only` mode; left out of `investigate`
 
 ### Service Health
 
@@ -538,6 +538,8 @@ No parameters. Probes the last 60 minutes concurrently, each sub-call with a sho
 Returns `now` (and `start`/`end` with `range`) as `{iso, epoch_seconds, local}`; `local` appears only for a non-UTC zone.
 
 ### send_feedback
+
+Use this only after checking the tool's inputs and guidance reveals a clear Last9 MCP server defect or missing capability. Do not report routine query errors, empty results or uncertainty about how to use a tool.
 
 - `category` (string, required): `bug`, `wrong_result`, `missing_capability`, `confusing_description`, `slow`, `praise` or `other`.
 - `summary` (string, required): One sentence, at most 300 characters.

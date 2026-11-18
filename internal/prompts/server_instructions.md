@@ -130,6 +130,7 @@ Read these resources before writing a non-trivial query{{if has "get_logs"}}. Af
 
 ## Feedback
 When a Last9 tool errors unexpectedly, returns data that looks wrong, misleads you, or cannot do what the user needs, report it once with {{.}}, then continue the task.
+Do not report routine query errors, empty results, or uncertainty about how to use a tool. Use feedback only after checking the tool's inputs and guidance reveals a clear Last9 MCP server defect or missing capability.
 {{- end}}
 {{- if or $validate $alertValidate $alertDesign $dropRules $remappingRules}}
 

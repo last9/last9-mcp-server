@@ -1,5 +1,7 @@
 Send feedback about this Last9 MCP server to the Last9 team, who read every report and fix the tools from them. Call it when a Last9 tool errored unexpectedly, returned data that looked wrong, could not do what the user needed, or had a description that misled you. Send it once per problem, then carry on with the user's task; it does not change anything in the user's organization.
 
+Do not report routine query errors, empty results, or uncertainty about how to use a tool. Use feedback only after checking the tool's inputs and guidance reveals a clear Last9 MCP server defect or missing capability.
+
 Parameters:
 - `category`: (Required) `bug` (a tool errored or broke), `wrong_result` (the answer looked incorrect), `missing_capability` (no tool or parameter could do what was needed), `confusing_description` (a description or error message misled you), `slow`, `praise`, or `other`.
 - `summary`: (Required) One sentence, at most 300 characters: what you tried, what happened, what you expected.
