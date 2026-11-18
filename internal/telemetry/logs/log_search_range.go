@@ -97,6 +97,7 @@ func mergeLogSearchWindows(results []utils.ChunkResult[map[string]any], limit in
 	}
 	data["result"] = items
 	merged["data"] = data
+	delete(merged, "volume_summary")
 	stats["windows_succeeded"] = float64(succeeded)
 	stats["windows_failed"] = float64(len(results) - succeeded)
 	if len(errors) > 0 {
@@ -117,6 +118,12 @@ func mergeLogSearchStats(merged map[string]any, raw any) {
 		return
 	}
 	for key, value := range stats {
+		if key == "bucket_seconds" {
+			if _, exists := merged[key]; !exists {
+				merged[key] = value
+			}
+			continue
+		}
 		if number, ok := value.(float64); ok {
 			previous, _ := merged[key].(float64)
 			merged[key] = previous + number
