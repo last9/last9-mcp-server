@@ -18,6 +18,7 @@ var writeTools = map[string]struct{ destructive, idempotent bool }{
 	"patch_dashboard":             {destructive: true, idempotent: false},
 	"delete_dashboard":            {destructive: true, idempotent: true},
 	"delete_dashboard_snapshot":   {destructive: true, idempotent: true},
+	"set_dashboard_lock":          {destructive: false, idempotent: true},
 	"create_alert":                {destructive: false, idempotent: false},
 	"update_alert":                {destructive: true, idempotent: true},
 	"patch_alert":                 {destructive: true, idempotent: true},

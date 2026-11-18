@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -96,5 +97,27 @@ func TestUpdateDashboardHandler_PUTsToID(t *testing.T) {
 	refURL, ok := result.Meta["reference_url"].(string)
 	if !ok || refURL != "/v2/organizations/test-org/dashboards/uuid-1" {
 		t.Fatalf("reference_url %q", refURL)
+	}
+}
+
+func TestUpdateDashboardHandler_PreservesLiteralHTMLCharacters(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"dashboard":{"id":"uuid-1","name":"a\u003cb\u003e\u0026c"}}`))
+	}))
+	defer srv.Close()
+
+	handler := NewUpdateDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, UpdateDashboardArgs{
+		ID: "uuid-1",
+		DashboardRequest: DashboardRequest{
+			Dashboard: json.RawMessage(`{"name":"a<b>&c","panels":[]}`),
+			Metadata:  json.RawMessage(`{"_category":"custom","_type":"metrics"}`),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := result.Content[0].(*mcp.TextContent).Text; !strings.Contains(text, `"name":"a<b>&c"`) {
+		t.Fatalf("HTML characters were not preserved literally: %s", text)
 	}
 }

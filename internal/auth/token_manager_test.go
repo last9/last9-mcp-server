@@ -45,9 +45,9 @@ func newTestTokenManager(t *testing.T, accessToken string, expiresAt time.Time, 
 }
 
 // simulateRefreshCompletion mirrors what refreshToken's success path does:
-// update the token fields under mu, then clear refreshing + broadcast under
-// condMu. It lets concurrency tests drive the "refresh completes" signal
-// without hitting the network.
+// update the token fields under mu, then complete the refresh under condMu.
+// It lets concurrency tests drive the "refresh completes" signal without
+// hitting the network.
 func (tm *TokenManager) simulateRefreshCompletion(newToken string, newExpiry time.Time) {
 	tm.mu.Lock()
 	tm.AccessToken = newToken
@@ -55,8 +55,7 @@ func (tm *TokenManager) simulateRefreshCompletion(newToken string, newExpiry tim
 	tm.mu.Unlock()
 
 	tm.condMu.Lock()
-	tm.refreshing = false
-	tm.refreshCond.Broadcast()
+	tm.completeRefreshLocked()
 	tm.condMu.Unlock()
 }
 

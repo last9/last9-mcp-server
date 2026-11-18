@@ -106,19 +106,22 @@ func mapStatusAPIError(err error, forbiddenMsg, notFoundMsg string) error {
 	}
 }
 
+const dashboardForbiddenMsg = "not permitted to access or modify dashboard"
+
 func mapDashboardAPIError(err error) error {
-	return mapStatusAPIError(err, "dashboard is readonly and cannot be modified", "dashboard not found")
+	return mapStatusAPIError(err, dashboardForbiddenMsg, "dashboard not found")
 }
 
 // mapDashboardFetchError names the id on 404 because the shared upstream
 // advice ("capability may be unavailable") misleads for a bad dashboard id.
+// A 403 is the caller's permission: built-in and locked dashboards stay readable.
 func mapDashboardFetchError(id string, err error) error {
 	notFound := fmt.Sprintf("dashboard %q not found; list_dashboards lists dashboard ids", id)
 	var upstream *utils.UpstreamHTTPError
 	if errors.As(err, &upstream) && upstream.StatusCode == http.StatusNotFound {
 		return errors.New(notFound)
 	}
-	return mapStatusAPIError(err, "dashboard is readonly and cannot be modified", notFound)
+	return mapStatusAPIError(err, dashboardForbiddenMsg, notFound)
 }
 
 func mapSnapshotAPIError(err error) error {
@@ -134,6 +137,21 @@ func mapSnapshotAPIError(err error) error {
 		"not permitted to access dashboard snapshots",
 		"dashboard snapshot not found",
 	)
+}
+
+// requireDashboardInResponse refuses a write's 2xx body that carries no dashboard object:
+// the write may have landed, so the agent must check it before retrying.
+func requireDashboardInResponse(body []byte) error {
+	var resp struct {
+		Dashboard json.RawMessage `json:"dashboard"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return utils.MarkUnusableWriteResponse(fmt.Errorf("invalid dashboard API response: %w", err))
+	}
+	if !strings.HasPrefix(string(resp.Dashboard), "{") {
+		return utils.MarkUnusableWriteResponse(errors.New("dashboard API response has no dashboard"))
+	}
+	return nil
 }
 
 func dashboardIDFromResponse(body []byte) string {

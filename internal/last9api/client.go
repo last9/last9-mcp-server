@@ -41,9 +41,12 @@ type options struct {
 	regionQuery      bool
 	requiredBody     bool
 	maxResponseBytes int64
+	successStatus    int
 }
 
 type Option func(*options)
+
+func WithSuccessStatus(status int) Option { return func(o *options) { o.successStatus = status } }
 
 func WithQuery(q url.Values) Option { return func(o *options) { o.query = q } }
 
@@ -96,7 +99,7 @@ func (c *Client) Do(ctx context.Context, op string, r Request, out any, opts ...
 	}
 	defer resp.Body.Close()
 
-	if !isSuccess(resp.StatusCode) {
+	if !isSuccess(resp.StatusCode) || (o.successStatus != 0 && resp.StatusCode != o.successStatus) {
 		return utils.MarkUnknownWriteOutcome(req, resp, utils.NewUpstreamHTTPError(resp, op))
 	}
 	return utils.MarkUnknownWriteOutcome(req, resp, decodeResponse(resp, op, out, o.requiredBody, o.maxResponseBytes))

@@ -65,6 +65,7 @@ func TestNoRawTimeNowInQueryWindows(t *testing.T) {
 	// Wall-clock uses that are not query windows: timeouts, token expiry.
 	allowed := map[string]bool{
 		"clock.go":                      true,
+		"tool_phase.go":                 true, // elapsed-time measurement
 		"validate_dashboard_execute.go": true, // elapsed-time measurement
 		"test_helpers.go":               true, // fixture token expiry
 		"user_token_verifier.go":        true, // token expiry

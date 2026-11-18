@@ -184,8 +184,8 @@ func TestDumpTools(t *testing.T) {
 	if strings.Contains(summary.Description, "ErrorRate") {
 		t.Fatal("get_service_summary description still mentions ErrorRate")
 	}
-	if strings.Contains(summary.Description, "last9://reference/") {
-		t.Fatal("get_service_summary must not be a whale with a last9://reference/ pointer")
+	if !strings.Contains(summary.Description, "last9://reference/tool_recipes") {
+		t.Fatal("get_service_summary must point at deferred interpretation recipes")
 	}
 	if !strings.Contains(summary.Description, "http_5xx_count") {
 		t.Fatal("get_service_summary description missing http_5xx_count language map")

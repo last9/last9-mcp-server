@@ -17,6 +17,7 @@ const (
 	resourceURIMetrics       = "last9://reference/metrics"
 	resourceURIInvestigation = "last9://reference/investigation"
 	resourceURIAlerting      = "last9://reference/alerting"
+	resourceURIToolRecipes   = "last9://reference/tool_recipes"
 )
 
 // registerReferenceResources registers whale tool manuals as MCP resources.
@@ -38,6 +39,7 @@ func registerReferenceResources(server *last9mcp.Last9MCPServer) {
 		{resourceURIMetrics, "metrics", "Prometheus range-query usage guide for prometheus_range_query", prompts.MetricsReference},
 		{resourceURIInvestigation, "investigation", "Service-scoped investigation orchestration: tri-state semantics, severity routing, profile bootstrap", prompts.InvestigationReference},
 		{resourceURIAlerting, "alerting", "Alert authoring: expression grammar, static vs adaptive fields, units, validate_alert_expression behaviour, rule templates, dashboard-panel flow", prompts.AlertingReference},
+		{resourceURIToolRecipes, "tool_recipes", "Worked investigation, interpretation, dashboard and alert-authoring recipes", prompts.ToolRecipesReference},
 	}
 
 	handler := func(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {

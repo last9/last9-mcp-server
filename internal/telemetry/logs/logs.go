@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
-	"strings"
 	"time"
 
 	"last9-mcp/internal/constants"
@@ -52,6 +51,12 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 			return nil, nil, err
 		}
 		args.LogjsonQuery = sanitizedQuery
+		if args.LookbackMinutes < 0 {
+			return nil, nil, fmt.Errorf("lookback_minutes must be at least 1")
+		}
+		if pipelineHasBodySearch(sanitizedQuery) && !hasExplicitLogWindow(args.StartTimeISO, args.LookbackMinutes) {
+			return nil, nil, fmt.Errorf("body searches require an explicit window: set lookback_minutes or start_time_iso")
+		}
 
 		// Handle logjson_query directly
 		result, err := handleLogJSONQuery(ctx, client, cfg, sanitizedQuery, args)
@@ -62,16 +67,90 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 	}
 }
 
+func hasExplicitLogWindow(startTimeISO string, lookbackMinutes int) bool {
+	return startTimeISO != "" || lookbackMinutes != 0
+}
+
+func pipelineHasBodySearch(stages []map[string]interface{}) bool {
+	for _, stage := range stages {
+		if stage["type"] == "filter" && conditionHasFieldOperator(stage["query"], "Body", map[string]struct{}{
+			"$contains": {}, "$containsWords": {}, "$icontains": {}, "$icontainsWords": {},
+			"$notcontains": {}, "$notcontainsWords": {}, "$inotcontains": {}, "$inotcontainsWords": {},
+		}) {
+			return true
+		}
+	}
+	return false
+}
+
+func conditionHasFieldOperator(value any, field string, operators map[string]struct{}) bool {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		for key, child := range typed {
+			if _, ok := operators[key]; ok {
+				args, ok := child.([]interface{})
+				if ok && len(args) > 0 && args[0] == field {
+					return true
+				}
+			}
+			if conditionHasFieldOperator(child, field, operators) {
+				return true
+			}
+		}
+	case []interface{}:
+		for _, child := range typed {
+			if conditionHasFieldOperator(child, field, operators) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, args GetLogsArgs) (*mcp.CallToolResult, error) {
 	// Determine time range from parameters
 	startTime, endTime, err := parseTimeRangeFromArgs(args)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse time range: %v", err)
 	}
-
-	result, err := fetchLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args)
+	normalizedIndex, err := utils.NormalizeLogIndex(args.Index)
 	if err != nil {
 		return nil, err
+	}
+	args.Index = normalizedIndex
+
+	hasExplicitIndex := normalizedIndex != ""
+	var cancelLink context.CancelFunc
+	var resolvedIndexCh chan string
+	if hasExplicitIndex {
+		var linkCtx context.Context
+		linkCtx, cancelLink = context.WithCancel(ctx)
+		defer cancelLink()
+		resolvedIndexCh = make(chan string, 1)
+		go func() {
+			resolvedIndex, _ := utils.ResolveLogIndexDashboardParam(linkCtx, client, cfg, normalizedIndex)
+			resolvedIndexCh <- resolvedIndex
+		}()
+	}
+
+	endFetch := utils.StartToolPhase(ctx, "get_logs", "fetch")
+	result, err := fetchLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args)
+	endFetch(err)
+	if err != nil {
+		if cancelLink != nil {
+			cancelLink()
+			<-resolvedIndexCh
+		}
+		if scanResult := scanErrorResult(err, getLogsScanSteps); scanResult != nil {
+			return scanResult, nil
+		}
+		return nil, err
+	}
+	endProcess := utils.StartToolPhase(ctx, "get_logs", "post_process")
+	defaultWindow := args.StartTimeISO == "" && args.EndTimeISO == "" && args.LookbackMinutes == 0
+	if defaultWindow {
+		result["window_source"] = "default"
+		result["window_minutes"] = defaultGetLogsLookbackMinutes
 	}
 	truncated := addGetLogsGuidance(result, args, getLogsGuidanceContext{
 		startMs:        startTime,
@@ -79,19 +158,22 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		effectiveLimit: effectiveGetLogsResultLimit(cfg, args.Limit),
 		maxLimit:       effectiveGetLogsResultLimit(cfg, 0),
 	})
+	if defaultWindow {
+		setDefaultWindowEmptyGuidance(result, "logs", defaultGetLogsLookbackMinutes)
+	}
 	if args.ResponseMode != logResponseModeRaw {
 		result = summarizeLogResult(result, startTime, endTime, truncated)
 	}
 
+	text := formatJSON(result)
+	endProcess(nil)
+
 	// Build deep link URL
+	endLink := utils.StartToolPhase(ctx, "get_logs", "deep_link")
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 	dashboardIndex := ""
-	hasExplicitIndex := strings.TrimSpace(args.Index) != ""
 	if hasExplicitIndex {
-		resolvedIndex, err := utils.ResolveLogIndexDashboardParam(ctx, client, cfg, args.Index)
-		if err == nil {
-			dashboardIndex = resolvedIndex
-		}
+		dashboardIndex = <-resolvedIndexCh
 	}
 	dashboardURL := dlBuilder.BuildLogsLink(startTime, endTime, logjsonQuery, dashboardIndex)
 	var meta mcp.Meta
@@ -99,12 +181,14 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		meta = deeplink.ToMeta(dashboardURL)
 	}
 
+	endLink(nil)
+
 	// Return the result in MCP format with deep link
 	full := &mcp.CallToolResult{
 		Meta: meta,
 		Content: []mcp.Content{
 			&mcp.TextContent{
-				Text: formatJSON(result),
+				Text: text,
 			},
 		},
 	}
@@ -165,7 +249,9 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 			}
 		}
 		if stages, ok := logjsonQuery.([]map[string]interface{}); ok && !partial {
+			endSanity := utils.StartToolPhase(ctx, "get_logs", "count_sanity")
 			result = utils.AppendCountSanity(ctx, client, cfg, stages, startTime, endTime, result)
+			endSanity(nil)
 		}
 		return result, nil
 	}
@@ -387,7 +473,7 @@ func fetchViaLogSearchAPI(
 		req.Limit = effectiveGetLogsChunkLimit(cfg, args.Limit)
 	}
 
-	result, err := utils.SearchLogs(ctx, client, cfg, req)
+	result, err := searchLogsByWindow(ctx, client, cfg, req)
 	if err != nil {
 		return nil, err
 	}
@@ -403,7 +489,9 @@ func fetchViaLogSearchAPI(
 		}
 	}
 	if hasStages && !partial {
+		endSanity := utils.StartToolPhase(ctx, "get_logs", "count_sanity")
 		result = utils.AppendCountSanity(ctx, client, cfg, stages, startTime, endTime, result)
+		endSanity(nil)
 	}
 	return result, nil
 }
