@@ -118,10 +118,14 @@ func mergeLogSearchStats(merged map[string]any, raw any) {
 		return
 	}
 	for key, value := range stats {
-		if key == "bucket_seconds" {
+		switch key {
+		case "bucket_seconds":
 			if _, exists := merged[key]; !exists {
 				merged[key] = value
 			}
+			continue
+		case "covered_range":
+			mergeLogSearchCoveredRange(merged, value)
 			continue
 		}
 		if number, ok := value.(float64); ok {
@@ -131,4 +135,28 @@ func mergeLogSearchStats(merged map[string]any, raw any) {
 			merged[key] = value
 		}
 	}
+}
+
+func mergeLogSearchCoveredRange(merged map[string]any, value any) {
+	covered, ok := value.([]any)
+	if !ok || len(covered) != 2 {
+		return
+	}
+	start, startOK := covered[0].(float64)
+	end, endOK := covered[1].(float64)
+	if !startOK || !endOK {
+		return
+	}
+	current, ok := merged["covered_range"].([]any)
+	if !ok || len(current) != 2 {
+		merged["covered_range"] = []any{start, end}
+		return
+	}
+	currentStart, startOK := current[0].(float64)
+	currentEnd, endOK := current[1].(float64)
+	if !startOK || !endOK {
+		merged["covered_range"] = []any{start, end}
+		return
+	}
+	merged["covered_range"] = []any{min(currentStart, start), max(currentEnd, end)}
 }
