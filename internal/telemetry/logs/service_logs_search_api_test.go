@@ -85,12 +85,15 @@ func TestFetchServiceLogs_APIMode_SingleCallWithCoverage(t *testing.T) {
 func TestFetchServiceLogs_APIMode_PartialLongWindowNamesFailure(t *testing.T) {
 	var calls int
 	var mu sync.Mutex
+	end := time.Unix(1_800_000_000, 0).UTC()
+	middleStart := end.Add(-28 * 24 * time.Hour).Unix()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
 		mu.Lock()
 		calls++
-		call := calls
 		mu.Unlock()
-		if call == 2 {
+		if int64(body["start"].(float64)) == middleStart {
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte(`{"error":"window unavailable"}`))
 			return
@@ -99,7 +102,6 @@ func TestFetchServiceLogs_APIMode_PartialLongWindowNamesFailure(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	end := time.Unix(1_800_000_000, 0).UTC()
 	got, err := fetchServiceLogs(context.Background(), srv.Client(), apiModeCfg(srv.URL), "checkout",
 		end.Add(-30*24*time.Hour), end, 20, serviceLogsPipeline(), "")
 	if err != nil {

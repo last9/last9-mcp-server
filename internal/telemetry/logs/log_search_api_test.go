@@ -108,7 +108,7 @@ func TestFetchLogJSONQuery_APIMode_SplitsThirtyDayWindow(t *testing.T) {
 		t.Errorf("returned lines = %d, want limit 2", got)
 	}
 	stats := result["search_stats"].(map[string]any)
-	if stats["windows_queried"] != 3 || stats["chunks_planned"] != 3 {
+	if stats["windows_queried"] != float64(3) || stats["chunks_planned"] != float64(3) {
 		t.Errorf("search_stats = %#v, want three windows and summed chunks", stats)
 	}
 }

@@ -473,7 +473,7 @@ func fetchViaLogSearchAPI(
 		req.Limit = effectiveGetLogsChunkLimit(cfg, args.Limit)
 	}
 
-	result, err := utils.SearchLogs(ctx, client, cfg, req)
+	result, err := searchLogsByWindow(ctx, client, cfg, req)
 	if err != nil {
 		return nil, err
 	}
