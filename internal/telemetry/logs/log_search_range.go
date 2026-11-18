@@ -102,6 +102,7 @@ func mergeLogSearchWindows(results []utils.ChunkResult[map[string]any], limit in
 	stats["windows_failed"] = float64(len(results) - succeeded)
 	if len(errors) > 0 {
 		stats["errors"] = errors
+		delete(stats, "covered_range")
 		truncated = true
 	}
 	merged["search_stats"] = stats
