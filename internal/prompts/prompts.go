@@ -14,6 +14,9 @@ var ServerInstructions string
 //go:embed descriptions/get_current_time.md
 var GetCurrentTimeDescription string
 
+//go:embed descriptions/send_feedback.md
+var SendFeedbackDescription string
+
 //go:embed descriptions/get_workspace_overview.md
 var GetWorkspaceOverviewDescription string
 
@@ -34,6 +37,9 @@ var InvestigationReference string
 
 //go:embed references/alerting.md
 var AlertingReference string
+
+//go:embed references/tool_recipes.md
+var ToolRecipesReference string
 
 //go:embed descriptions/get_service_summary.md
 var GetServiceSummaryDescription string

@@ -16,6 +16,7 @@ import (
 	"last9-mcp/internal/changeimpact"
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/dashboards"
+	"last9-mcp/internal/feedback"
 	"last9-mcp/internal/grafana"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/prompts"
@@ -137,7 +138,9 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, gate *toolG
 		return nil
 	}
 	gate.pending = append(gate.pending, func() error {
-		return registerTool(server, tool, withCallDeadline(gate.callTimeout, gate.readOnly[tool.Name], handler), gate.served.Allows)
+		// Feedback is available in read-only mode, but delivery cannot safely be retried.
+		readOnly := gate.readOnly[tool.Name] && tool.Name != "send_feedback"
+		return registerTool(server, tool, withCallDeadline(gate.callTimeout, readOnly, handler), gate.served.Allows)
 	})
 	return nil
 }
@@ -150,6 +153,10 @@ func withCallDeadline[In, Out any](timeout time.Duration, readOnly bool, handler
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		result, out, err := handler(ctx, req, in)
+		var unknown *utils.WriteOutcomeUnknownError
+		if !readOnly && errors.As(err, &unknown) {
+			return last9mcp.SystemErrorResult(fmt.Sprintf("The request may or may not have been applied (%s). Do not retry or resend this request.", unknown.Cause)), out, nil
+		}
 		if !errors.Is(ctx.Err(), context.DeadlineExceeded) || (err == nil && (!readOnly || utils.HasTimeoutGuidance(result))) {
 			return result, out, err
 		}
@@ -181,7 +188,7 @@ func registerTool[In, Out any](server *last9mcp.Last9MCPServer, tool *mcp.Tool, 
 	if normErr := normalizeToolInputSchema[In](tool); normErr != nil {
 		return fmt.Errorf("register %q: %w", tool.Name, normErr)
 	}
-	if regErr := last9mcp.RegisterInstrumentedTool(server, tool, tagSystemErrors(handler)); regErr != nil {
+	if regErr := last9mcp.RegisterInstrumentedTool(server, tool, tagSystemErrors(tool.Name, handler)); regErr != nil {
 		return fmt.Errorf("register %q: %w", tool.Name, regErr)
 	}
 	// Middleware added later runs first, so integer coercion precedes the check.
@@ -196,13 +203,26 @@ func registerTool[In, Out any](server *last9mcp.Last9MCPServer, tool *mcp.Tool, 
 
 // tagSystemErrors returns an upstream failure as a system_error-tagged result itself:
 // the SDK would wrap the error in an untagged result that telemetry counts as user_error.
-func tagSystemErrors[In, Out any](handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
+func tagSystemErrors[In, Out any](toolName string, handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 		result, out, err := handler(ctx, req, in)
+		if message, ok := utils.ExpectedEmptyStateMessage(err); ok && alertToolSupportsDisabledState(toolName) {
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: message}}}, out, nil
+		}
 		if utils.IsSystemError(err) {
 			return utils.ErrorResult(err), out, nil
 		}
 		return result, out, err
+	}
+}
+
+func alertToolSupportsDisabledState(toolName string) bool {
+	switch toolName {
+	case "get_alerts", "get_alert_config", "get_alert_groups", "get_alert_rule_state",
+		"get_entity_alert_rules", "get_alert_coverage":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -271,6 +291,14 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Annotations: readOnlyTool("Get Workspace Overview"),
 		Description: prompts.GetWorkspaceOverviewDescription,
 	}, workspace.NewGetWorkspaceOverviewHandler(client, cfg)))
+
+	// Read-only: feedback changes nothing in the caller's organization, and an agent on
+	// a --read-only server needs a way to report problems too.
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "send_feedback",
+		Annotations: readOnlyTool("Send Feedback"),
+		Description: prompts.SendFeedbackDescription,
+	}, feedback.NewSendFeedbackHandler(client, cfg)))
 
 	// Register exceptions tool
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
@@ -536,12 +564,6 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 	}, alerting.NewGetAlertGroupsHandler(client, cfg)))
 
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
-		Name:        "get_alert_operations_summary",
-		Annotations: readOnlyTool("Get Alert Operations Summary"),
-		Description: prompts.GetAlertOperationsSummaryDescription,
-	}, alerting.NewGetAlertOperationsSummaryHandler(client, cfg)))
-
-	reg(registerIfAllowed(server, gate, &mcp.Tool{
 		Name:        "get_alert_coverage",
 		Annotations: readOnlyTool("Get Alert Coverage"),
 		Description: prompts.GetAlertCoverageDescription,
@@ -596,12 +618,6 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Description: prompts.GetAlertRuleStateDescription,
 		InputSchema: alerting.AlertRuleStateInputSchema(),
 	}, alerting.NewAlertRuleStateHandler(client, cfg)))
-
-	reg(registerIfAllowed(server, gate, &mcp.Tool{
-		Name:        "get_alert_hygiene",
-		Annotations: readOnlyTool("Get Alert Hygiene"),
-		Description: prompts.GetAlertHygieneDescription,
-	}, alerting.NewGetAlertHygieneHandler(client, cfg)))
 
 	// Register get traces tool (enhanced with trace query instructions)
 	reg(registerIfAllowed(server, gate, &mcp.Tool{

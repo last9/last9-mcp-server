@@ -123,7 +123,7 @@ func TestDashboardAuthoringPrompts(t *testing.T) {
 				}
 			}
 			if name == "dashboard_examples" {
-				for _, phrase := range []string{"RED per service", "Latency by endpoint", "Errors by status class", "Host/infra health", "Log-count and trace panels", "matches"} {
+				for _, phrase := range []string{"RED per service", "Latency by endpoint", "Errors by status class", "Host/infra health", "Log-count and trace panels", "Top 10 keys", "columnConfig", "sorting", "matches"} {
 					if !strings.Contains(body.Text, phrase) {
 						t.Errorf("missing example %q", phrase)
 					}
@@ -138,7 +138,7 @@ func TestDashboardAuthoringPrompts(t *testing.T) {
 					}
 					previous = index
 				}
-				for _, phrase := range []string{"12-column", "dashboard_definition", "run each panel's query", "`prometheus_range_query`", "`prometheus_instant_query`", "`get_logs`", "`get_traces`", "query_panel", "#475", "unsupported_execution", "`patch_dashboard`", "add_panel", "update_panel"} {
+				for _, phrase := range []string{"12-column", "dashboard_definition", "run each panel's query", "`prometheus_range_query`", "`prometheus_instant_query`", "`get_logs`", "`get_traces`", "query_panel", "#475", "unsupported_execution", "`patch_dashboard`", "add_panel", "update_panel", "columnConfig", "sorting"} {
 					if !strings.Contains(body.Text, phrase) {
 						t.Errorf("missing guidance %q", phrase)
 					}
@@ -162,6 +162,14 @@ func TestDashboardToolDescriptionsRouteToGuides(t *testing.T) {
 		}
 		if strings.Contains(body, "do not query live logs or traces as previews") {
 			t.Errorf("%s contradicts pre-approval query checks", name)
+		}
+	}
+}
+
+func TestPatchDashboardDescriptionExplainsVisualizationReplacement(t *testing.T) {
+	for _, phrase := range []string{"fields.visualization", "replaces that whole object", "`type`", "full `table_config`"} {
+		if !strings.Contains(prompts.PatchDashboardDescription, phrase) {
+			t.Errorf("patch_dashboard description lacks %q", phrase)
 		}
 	}
 }

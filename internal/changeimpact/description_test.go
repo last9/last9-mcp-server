@@ -68,6 +68,9 @@ func TestDescriptionDocumentsVerdictsAndThresholds(t *testing.T) {
 		"adds `rule_id` and `state`",
 		"with no `env` arg, error rate and throughput sum every env, `\"\"`, while p95 uses `latency_env`",
 		"a new alert still firing at the after window's end (`reason` counts resolved ones)",
+		"error rate and p95 require 100 requests in both windows; throughput requires 100 before and any requests after",
+		"`regressions` contains every verdict trigger",
+		"Evidence lists keep 10 per list",
 	} {
 		if !strings.Contains(description, want) {
 			t.Errorf("description must state %q", want)

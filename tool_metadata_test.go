@@ -22,27 +22,15 @@ const defaultDescriptionBudget = 2500
 // the PR that grows the description, and say why. These and servedSizeBudgets
 // are the only description size budgets; add none elsewhere.
 var descriptionBudgetOverrides = map[string]int{
-	"get_apm_service_deviations":      6300,
-	"get_exceptions":                  4900,
-	"get_service_summary":             4600,
-	"get_alert_config":                5000,
-	"get_trace_attribute_deviations":  4400,
-	"analyze_change_impact":           3600,
 	"get_logs":                        3804,
-	"create_dashboard":                3500,
 	"prometheus_range_query":          3000,
-	"create_alert_from_chart":         3300,
 	"get_log_attributes_for_pipeline": 2800,
 	"get_trace_waterfall":             2700,
 	"get_traces":                      3156,
 	"get_service_logs":                2802,
-	"create_alert":                    3400,
 	"get_service_performance_details": 2800,
 	"get_alerts":                      2600,
 	"get_emerging_log_patterns":       2700,
-	// The write tools a confirmed fix goes through, null_fields, the
-	// retention-covered window and the byte cap, asked for in QA on #353.
-	"get_alert_hygiene": 2800,
 }
 
 // servedSizeBudgets cap description plus compact input schema JSON for tools
@@ -59,7 +47,7 @@ var toolNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 var toolNameVerbs = []string{
 	"get", "list", "create", "update", "patch", "delete", "add", "validate", "search",
-	"describe", "recommend", "acknowledge", "reassign", "mute", "attach", "detach", "analyze", "preview", "set",
+	"describe", "recommend", "acknowledge", "reassign", "mute", "attach", "detach", "analyze", "send", "preview", "set",
 }
 
 // toolNamespaces prefix a verb-first name with the product it reads.
