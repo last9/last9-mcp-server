@@ -30,7 +30,7 @@ func TestHomebrewDispatchIsIndependentAndFailsOnHTTPError(t *testing.T) {
 	for _, want := range []string{
 		"needs: tag-and-release",
 		"if: needs.tag-and-release.outputs.version_changed == 'true'",
-		"curl -fsS",
+		"curl -fsS -o /dev/null",
 		"needs.tag-and-release.outputs.new_version",
 	} {
 		if !strings.Contains(dispatchJob, want) {
@@ -41,5 +41,10 @@ func TestHomebrewDispatchIsIndependentAndFailsOnHTTPError(t *testing.T) {
 	tagJob := jobs["tag-and-release"]
 	if strings.Contains(tagJob, "Trigger homebrew-tap update workflow") {
 		t.Error("tag-and-release must not dispatch homebrew-tap; its failure would block artifact publishing")
+	}
+	for name, job := range jobs {
+		if name != "dispatch-homebrew-tap" && strings.Contains(job, "dispatch-homebrew-tap") {
+			t.Errorf("%s must not depend on dispatch-homebrew-tap", name)
+		}
 	}
 }
