@@ -77,6 +77,22 @@ func TestServerInstructionsKeepExistingWording(t *testing.T) {
 	}
 }
 
+func TestFeedbackCopyDoesNotInviteRoutineInvestigationReports(t *testing.T) {
+	for name, copy := range map[string]string{
+		"server instructions": prompts.ServerInstructions,
+		"tool description":    prompts.SendFeedbackDescription,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if !strings.Contains(copy, "Do not report routine query errors, empty results, or uncertainty about how to use a tool") {
+				t.Fatal("feedback copy does not exclude routine investigation outcomes")
+			}
+			if !strings.Contains(copy, "clear Last9 MCP server defect or missing capability") {
+				t.Fatal("feedback copy does not require evidence of a server defect or missing capability")
+			}
+		})
+	}
+}
+
 func TestInstructionProseLinesIgnoreToolGroups(t *testing.T) {
 	const source = "{{- $metrics := tools \"prometheus_labels\" \"get_metric_status\" -}}\n" +
 		"{{- with $metrics}}\n" +
