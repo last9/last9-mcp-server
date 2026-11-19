@@ -22,6 +22,10 @@ const parityDefinition = `{
 		"field_overrides":[{"matcher":{"type":"regex","value":"status.*"},"properties":{"hidden":true,"thresholds":[{"value":500,"color":"red","colorTarget":"background"}],"data_links":[{"title":"Trace","url":"https://example.test/${__data.fields.trace_id}"}]}}],
 		"transformations":[{"id":"organize","options":{"excludeByName":{"Time":true}}}],
 		"data_links":[{"title":"Details","url":"https://example.test/${__value.raw}"}]
+	},{
+		"id":"table-panel","name":"Top keys","version":1,
+		"visualization":{"type":"table","table_config":{"columnConfig":[{"id":"key","visible":true,"order":0},{"id":"Total","visible":true,"order":1}],"sorting":[{"id":"Total","desc":true}]}},
+		"queries":[{"name":"Total","type":"instant","telemetry":"metrics","query_type":"promql","expr":"topk(10, sum by (key) (requests_total))"}]
 	},{"id":"section-panel","name":"Details","collapsed":true,"visualization":{"type":"section"}}]
 }`
 
