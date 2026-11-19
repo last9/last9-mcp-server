@@ -285,6 +285,7 @@ last9-mcp --read-only --allow-write-tools=acknowledge_alert,mute_alert_group
 
 - **`get_workspace_overview`** — Recommended first call when a request names no service or tool (one that does goes straight to its tool): environments, which signals (logs, traces, metrics) were seen in the last hour, service and alert-group counts, firing alerts, and the current time in one cheap call. A signal not seen in that hour can still have older data, so it stays queryable. A failed sub-call leaves its field `null` and adds an `errors[]` entry. Served under every toolset
 - **`get_current_time`** — Current time, plus absolute bounds for `last 2h`, `yesterday` or `since yesterday 9am IST`, in any IANA zone or common abbreviation. Served under every toolset
+- **`send_feedback`** — Lets the agent report a clear MCP server defect or missing capability straight to the Last9 team after checking the tool's inputs and guidance; routine query errors, empty results and usage uncertainty are not reported. The server version and, when the client reports it, the client's name and version are attached (over `--http`, from per-request `_meta` clientInfo or the `Mcp-Session-Id` returned by `initialize`). Served under every named toolset and in `--read-only` mode; left out of `investigate`
 
 ### Service Health
 
@@ -344,14 +345,12 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`get_change_events`** — Deployments, config changes, rollbacks. Correlate incidents with what changed
 - **`analyze_change_impact`** — Did a change break anything? Compares a service and its direct callers before and after a change: golden signals, APM and trace-attribute deviations, new firing alerts, and a verdict (`regression likely` / `no significant change` / `insufficient data`)
 - **`get_alert_groups`** — Configured Compass alert groups with metadata labels, team, tier, and rule counts — including groups with zero rules and groups that are not firing
-- **`get_alert_operations_summary`** — On-call health over a window: alerts raised vs acknowledged, backlog, deliveries and, with `include_rules`, the noisiest, flapping and unrouted rules. Every count carries its `status` (`available` / `partial` / `unavailable`)
 - **`get_alert_coverage`** — What you are not alerting on: uncovered golden signals, fully disabled or unrouted alert groups, and rules muted too long, each with a suggested fix tool. Read-only.
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
 - **`get_entity_kpis`** — Every KPI (id, name, PromQL, unit) on one alert group, including KPIs no rule uses yet — the ids `create_alert` and `validate_alert_expression` need
 - **`create_kpi`** — Create a KPI (PromQL + unit) on an alert group when no existing KPI fits. Create once and keep the returned id
 - **`get_alerts`** — Currently firing alerts within a time window
 - **`get_alert_rule_state`** — Historical firing state (1/0) per alert rule over a time range, grouped by `rule_id`. Filterable by alert group, rule name, label filters, and state.
-- **`get_alert_hygiene`** — Noisy, flapping, stale and unrouted alert rules over 7 or 30 days, ranked, each with the numbers behind the verdict and a suggested fix. Read-only.
 - **`get_notification_channels`** — Configured notification channels (Slack, PagerDuty, email, etc.). `scope=channels` lists the channels themselves (ids for attaching); the default `attached` lists per-alert-group attachments
 - **`recommend_alert_config`** — Read-only design guidance (lifecycle, validation gates, responder context) before creating an alert rule
 - **`validate_alert_expression`** — Dry-run an alert expression against an alert group's KPIs without saving anything
@@ -457,7 +456,7 @@ Server starts at `http://localhost:8080/mcp`.
 
 ### Test with curl
 
-The Streamable HTTP handler runs in **stateless** mode, so any request is served independently. An `initialize` handshake and an `Mcp-Session-Id` header are optional — clients that send them still work (the header is accepted and ignored), and clients can also skip straight to `tools/list` / `tools/call`. Every tool is an independent request/response query; the server issues no server→client notifications, so `GET /mcp` (the SSE stream) returns `405`.
+The Streamable HTTP handler runs in **stateless** mode, so any request is served independently. An `initialize` handshake and an `Mcp-Session-Id` header are optional — clients that send them still work, and clients can also skip straight to `tools/list` / `tools/call`. `initialize` returns an `Mcp-Session-Id` that encodes the client's `clientInfo` name and version (each cut to 100 characters), so any replica can attribute the client's later requests without shared state. The ID is checked for format only, not signed, so like `clientInfo` the identity it carries is self-reported; a malformed ID is ignored. Every tool is an independent request/response query; the server issues no server→client notifications, so `GET /mcp` (the SSE stream) returns `405`.
 
 ```bash
 # List tools — a session handshake is optional in stateless mode
@@ -537,6 +536,17 @@ No parameters. Probes the last 60 minutes concurrently, each sub-call with a sho
 - `timezone` (string, optional): IANA name or abbreviation (IST = Asia/Kolkata, PST/PDT, EST/EDT, UTC, GMT). Default UTC. Unknown zones are an error, and so is the ambiguous `CST` (pass `America/Chicago` or `Asia/Shanghai`).
 
 Returns `now` (and `start`/`end` with `range`) as `{iso, epoch_seconds, local}`; `local` appears only for a non-UTC zone.
+
+### send_feedback
+
+Use this only after checking the tool's inputs and guidance reveals a clear Last9 MCP server defect or missing capability. Do not report routine query errors, empty results or uncertainty about how to use a tool.
+
+- `category` (string, required): `bug`, `wrong_result`, `missing_capability`, `confusing_description`, `slow`, `praise` or `other`.
+- `summary` (string, required): One sentence, at most 300 characters.
+- `details` (string, optional, omitted by default): At most 4000 characters. Never include secrets or customer data.
+- `tool_name` (string, optional, omitted by default): The Last9 tool the feedback is about, at most 100 characters.
+
+Returns `feedback_id` only after a complete acknowledgement. A failed call may still have delivered the report; do not send the same feedback again. Limited to 20 reports per user per hour.
 
 ### get_exceptions
 
@@ -863,15 +873,6 @@ Configured Compass alert-group inventory for changeboard / label-coverage audits
 
 Returns compact JSON `{"count":N,"groups":[...]}` with `id`, `name`, `type`, `entity_class`, `team`, `tier`, `metadata.labels`, and rule counts. Empty `team` / `labels` means unset.
 
-### get_alert_operations_summary
-
-- `start_time_iso` / `end_time_iso` (string, required): RFC3339 window, at most 31 days.
-- `timezone` (string, optional): IANA name for day boundaries. Default: `UTC`.
-- `severities` / `services` (array, optional): Narrow the summary.
-- `include_rules` (boolean, optional): Also return per-rule hygiene (top 20 by `fire_count`, flapping and unrouted rules, with `truncated` when the API capped its rule list). Default: `false`.
-
-Returns JSON with `alerts_raised`, `acknowledged`, `unacknowledged`, `current_backlog`, `delivered`, `notification_outcomes`, `top_rules`, `needs_attention` and `coverage`. Each metric is `{status, count?, reason?}`; a `partial` count covers only part of the window and is not a lower bound.
-
 ### get_alert_coverage
 
 Answers "what am I not alerting on?" for a service, an environment, one alert group, or the whole organization when no scope is given. Read-only: it never creates, changes, or unmutes anything. Also served in the `investigate` toolset.
@@ -935,17 +936,6 @@ No MCP tool deletes or edits a KPI (use the Last9 UI), so confirm name, query an
 - `state` (string, optional): Filter by state (e.g. `firing`).
 
 Returns a JSON map of `rule_id -> [{timestamp, is_firing}]`. A timestamp at which a rule is absent from the upstream response is reported as `is_firing=0` — this means "not observed as firing", not a confirmed normal state.
-
-### get_alert_hygiene
-
-Read-only audit of enabled alert rules. It never changes anything: each suggested fix is a proposal, applied only once the user explicitly confirms it, through `update_alert` (tuning), `patch_alert` (`is_disabled`), `delete_alert` or `attach_notification_channel` when those are served.
-
-- `window` (string, optional): `7d` or `30d`. Default: `7d`.
-- `limit` (integer, optional): Maximum flagged rules to return, worst first. Default: 20. Range: 1–100.
-
-The window ends now. Categories (a rule may have several): **noisy** (≥ 5 fires/day with < 20% acked; with an unavailable `ack_rate` it is judged on fire rate alone and the reason says so; mute time is not reported), **flapping** (> 4 flaps/day), **stale** (last fired before the window with no firing time in it, or an enabled configured rule with no episode in the window while lifecycle `coverage` is complete and the API's list is not truncated), **unrouted** (no firing in the window reached a channel and the alert group has no channel attached now; when attachments cannot be read the rule counts under `unavailable.routed` instead). Each stat is `{status, count|value, reason}` or null: an unavailable value is never read as zero and skips only the check that needs it, and `unavailable` counts enabled rules per missing value (`fire_count`, `flap_count`, `ack_rate`, `routed`, `rule_config` for rules missing from the alert rules list, whose fixes then carry no current value, and `activity` for configured rules with no episode whose silence the history cannot prove, which are not assessed). `coverage` says how much of the window alert history covered; rates use the covered span, at least one day. `upstream_truncated` is true when the API returned only its loudest 200 rules, so quieter rules were not evaluated. Fixes, built from each rule's configuration in the alert rules list: raise `bad_minutes` (the N in `count_true(result) >= N`) or lengthen `eval_window` (at most 60 minutes); for noisy static thresholds, move the threshold in `condition` (`expr > 100`) or switch the expression to `adaptive_std_cmp(metric, sensitivity, window)`; attach a notification channel; disable or delete stale rules.
-
-Returns compact JSON `{window, from, to, coverage, upstream_truncated, rules_evaluated, flagged_rules, truncated, omitted_for_size, unavailable, rules}`, sized to a 32 KB target: `truncated` is true when flagged rules exceed `limit` or that target, and `omitted_for_size` counts the rules within `limit` cut for size (the worst rule is always kept, so a single rule larger than 32 KB returns alone and exceeds the target); each rule has `findings` (`category`, `reason`, `suggested_fix`, optional `alternative_fix`) and the raw `stats`.
 
 ### get_notification_channels
 
