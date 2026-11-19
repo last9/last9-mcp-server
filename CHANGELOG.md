@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Dashboard authoring guidance now explains that table query names become value-column headers, `table_config.columnConfig` controls the complete rendered column order, and `table_config.sorting` controls row order; its worked top-10 example keeps every outcome and rate column on the same key set (#585).
+
 ## [0.24.0] - 2026-11-19
 
 ### Added
