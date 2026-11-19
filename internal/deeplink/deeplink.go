@@ -27,8 +27,7 @@ const (
 	RouteGrafana              = "grafana"
 )
 
-// grafanaProxyPrefix is the dashboard's Grafana proxy path; the Grafana page
-// reads its url param as /api/gp + a Grafana path.
+// grafanaProxyPrefix starts the Grafana page's url param.
 const grafanaProxyPrefix = "/api/gp"
 
 // Builder helps construct deep links
@@ -96,8 +95,7 @@ func (b *Builder) BuildExceptionsLink(fromMs, toMs int64) string {
 }
 
 // BuildMetricsLink creates a Metrics explorer deep link that opens the query in
-// code mode. The params match the dashboard's Metrics explorer: from/to/cluster
-// (METRICS_URL_PARAMS) plus mode=code and query (BUILDER_URL_PARAMS).
+// code mode over the window.
 func (b *Builder) BuildMetricsLink(fromMs, toMs int64, query string) string {
 	params := url.Values{}
 	params.Set("from", fmt.Sprintf("%d", fromMs/1000))
