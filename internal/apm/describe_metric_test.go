@@ -182,15 +182,25 @@ func TestDescribeMetricTreatsCatalogLessBodyAsReadFailure(t *testing.T) {
 
 func TestDescribeMetricTreatsUndecodableBodyAsReadFailure(t *testing.T) {
 	const marker = "QA_MARKER_7f3a"
-	api := newRecipeAPI(t, http.StatusOK, []byte(`{"recipes": [`+marker))
-	out, err := describeMetric(t, api, "trace_endpoint_count")
-	if err != nil {
-		t.Fatal(err)
+	bodies := map[string]string{
+		"malformed JSON": `{"recipes": [` + marker,
+		// The shape guessed before the backend golden: queries as bare strings.
+		"string queries": `{"recipes":[{"metric":"trace_endpoint_count","recommended_query":"q",` +
+			`"queries":{"chart":"` + marker + `","list":"` + marker + `"}}]}`,
 	}
-	note, _ := out["note"].(string)
-	raw, _ := json.Marshal(out)
-	if out["source"] != "legacy_heuristic" || note == "" || strings.Contains(string(raw), marker) {
-		t.Fatalf("got %s", raw)
+	for name, body := range bodies {
+		t.Run(name, func(t *testing.T) {
+			api := newRecipeAPI(t, http.StatusOK, []byte(body))
+			out, err := describeMetric(t, api, "trace_endpoint_count")
+			if err != nil {
+				t.Fatal(err)
+			}
+			note, _ := out["note"].(string)
+			raw, _ := json.Marshal(out)
+			if out["source"] != "legacy_heuristic" || !strings.Contains(note, "failed") || strings.Contains(string(raw), marker) {
+				t.Fatalf("got %s", raw)
+			}
+		})
 	}
 }
 
