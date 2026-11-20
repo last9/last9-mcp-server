@@ -88,3 +88,23 @@ func TestListMetricRecipesSanitizesErrors(t *testing.T) {
 		t.Fatalf("error leaks upstream body: %v", err)
 	}
 }
+
+// A catalog of exactly the cap decodes in full; one byte more fails rather than decoding a
+// truncated prefix.
+func TestListMetricRecipesResponseCapBoundary(t *testing.T) {
+	fixture, err := os.ReadFile("testdata/discover_services_overview.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, size := range []int{maxMetricRecipesResponseBytes, maxMetricRecipesResponseBytes + 1} {
+		body := append(fixture, strings.Repeat(" ", size-len(fixture))...)
+		c := testClient(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(body) })
+		got, err := ListMetricRecipes(context.Background(), c)
+		switch {
+		case size <= maxMetricRecipesResponseBytes && (err != nil || len(got) != 2):
+			t.Errorf("%d bytes: got %d recipes, err %v; want the full catalog", size, len(got), err)
+		case size > maxMetricRecipesResponseBytes && (err == nil || got != nil):
+			t.Errorf("%d bytes: got %d recipes, err %v; want an error and no recipes", size, len(got), err)
+		}
+	}
+}
