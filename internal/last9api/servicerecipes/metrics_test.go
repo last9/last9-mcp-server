@@ -48,14 +48,20 @@ func TestListMetricRecipesDecodesCatalog(t *testing.T) {
 	if tp.RecommendedQuery != "(sum(trace_endpoint_count{span_kind='SPAN_KIND_SERVER'})) default 0" {
 		t.Fatalf("recommended_query = %q", tp.RecommendedQuery)
 	}
-	if tp.Rollups.Chart != "none" || tp.Rollups.List != "quantile_over_time(0.95)" {
-		t.Fatalf("rollups = %+v", tp.Rollups)
+	if tp.Queries.Chart.Rollup != "none" || tp.Queries.List.Rollup != "quantile_over_time(0.95)" {
+		t.Fatalf("query rollups = %+v", tp.Queries)
 	}
-	if !strings.Contains(tp.Queries.List, "{duration}") || tp.Queries.Chart == "" {
+	if !strings.Contains(tp.Queries.List.PromQL, "[{duration}m]") || !strings.HasPrefix(tp.Queries.Chart.PromQL, "((sum by (service_name, http_status_code)") {
 		t.Fatalf("queries = %+v", tp.Queries)
+	}
+	if strings.Join(tp.Filters, ",") != "span_kind='SPAN_KIND_SERVER'" || tp.QuantileLabel != "" {
+		t.Fatalf("filters = %v, quantile_label = %q", tp.Filters, tp.QuantileLabel)
 	}
 	if strings.Join(tp.ForbiddenFunctions, ",") != "rate,irate,increase,histogram_quantile" {
 		t.Fatalf("forbidden_functions = %v", tp.ForbiddenFunctions)
+	}
+	if p95 := got[1]; p95.QuantileLabel != "p95" || strings.Join(p95.Filters, ",") != "quantile='p95'" {
+		t.Fatalf("p95 filters = %v, quantile_label = %q", p95.Filters, p95.QuantileLabel)
 	}
 }
 

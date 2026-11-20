@@ -86,9 +86,14 @@ func TestDescribeMetricServesDiscoverServicesRecipes(t *testing.T) {
 	if tp["recommended_query"] != "(sum(trace_endpoint_count{span_kind='SPAN_KIND_SERVER'})) default 0" {
 		t.Fatalf("throughput recommended_query = %v", tp["recommended_query"])
 	}
-	rollups := tp["rollups"].(map[string]any)
-	if rollups["chart"] != "none" || rollups["list"] != "quantile_over_time(0.95)" {
-		t.Fatalf("throughput rollups = %v", rollups)
+	tpQueries, _ := tp["queries"].(map[string]any)
+	tpChart, _ := tpQueries["chart"].(map[string]any)
+	tpList, _ := tpQueries["list"].(map[string]any)
+	if tpChart["rollup"] != "none" || tpList["rollup"] != "quantile_over_time(0.95)" {
+		t.Fatalf("throughput queries = %v", tpQueries)
+	}
+	if filters, _ := json.Marshal(tp["filters"]); string(filters) != `["span_kind='SPAN_KIND_SERVER'"]` {
+		t.Fatalf("throughput filters = %s", filters)
 	}
 	forbidden, _ := json.Marshal(tp["forbidden_functions"])
 	if !strings.Contains(string(forbidden), `"rate"`) || !strings.Contains(string(forbidden), `"histogram_quantile"`) {
@@ -101,13 +106,15 @@ func TestDescribeMetricServesDiscoverServicesRecipes(t *testing.T) {
 		t.Fatal(err)
 	}
 	const p95Query = "sum by (quantile)(trace_service_response_time{quantile='p95'})"
-	queries := p95["queries"].(map[string]any)
-	if p95["source"] != "service_recipe" || p95["unit"] != "ms" || p95["recommended_query"] != p95Query || queries["chart"] != p95Query {
+	queries, _ := p95["queries"].(map[string]any)
+	chart, _ := queries["chart"].(map[string]any)
+	if p95["source"] != "service_recipe" || p95["unit"] != "ms" || p95["recommended_query"] != p95Query ||
+		chart["promql"] != p95Query || p95["quantile_label"] != "p95" {
 		t.Fatalf("p95 = %v", p95)
 	}
-	list, _ := queries["list"].(string)
-	if !strings.Contains(list, "{duration}") || !strings.Contains(list, "service_name") {
-		t.Fatalf("p95 list query = %q", list)
+	list, _ := queries["list"].(map[string]any)
+	if promql, _ := list["promql"].(string); !strings.Contains(promql, "[{duration}m]") || !strings.Contains(promql, "service_name") {
+		t.Fatalf("p95 list query = %v", list)
 	}
 	assertAbsent(t, p95, "example_query", "counter_rule_query", "basis")
 }
@@ -127,7 +134,7 @@ func TestDescribeMetricFallsBackToLegacyHeuristicWhenReadFails(t *testing.T) {
 	if basis, _ := tp["basis"].(string); !strings.Contains(basis, "not the Discover Services dashboard query") {
 		t.Fatalf("basis = %q", basis)
 	}
-	assertAbsent(t, tp, "recommended_query", "queries", "rollups", "forbidden_functions")
+	assertAbsent(t, tp, "recommended_query", "queries", "filters", "forbidden_functions")
 
 	p95, err := describeMetric(t, api, "trace_service_response_time")
 	if err != nil {
