@@ -194,6 +194,20 @@ func TestDescribeMetricRejectsDuplicateRecipes(t *testing.T) {
 	}
 }
 
+func TestDescribeMetricRejectsRecipeWithoutRecommendedQuery(t *testing.T) {
+	for name, recipe := range map[string]string{
+		"absent": `{"metric":"trace_endpoint_count","unit":"rpm"}`,
+		"blank":  `{"metric":"trace_endpoint_count","unit":"rpm","recommended_query":"  "}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			api := newRecipeAPI(t, http.StatusOK, []byte(`{"recipes":[`+recipe+`]}`))
+			if _, err := describeMetric(t, api, "trace_endpoint_count"); err == nil || !strings.Contains(err.Error(), "no recommended_query") {
+				t.Fatalf("err = %v, want a missing recommended_query error", err)
+			}
+		})
+	}
+}
+
 func TestDescribeMetricRejectsNonBareNames(t *testing.T) {
 	for _, metric := range []string{"", "  ", `trace_endpoint_count{span_kind="SPAN_KIND_SERVER"}`, "sum(trace_endpoint_count)", "trace_endpoint_count[5m]", "trace endpoint"} {
 		t.Run(metric, func(t *testing.T) {
