@@ -33,6 +33,7 @@ var promptDescriptionFiles = map[string]string{
 	"delete_dashboard_snapshot.md":         prompts.DeleteDashboardSnapshotDescription,
 	"describe_alert_chart.md":              prompts.DescribeAlertChartDescription,
 	"did_you_mean.md":                      prompts.DidYouMeanDescription,
+	"search_docs.md":                       prompts.SearchDocsDescription,
 	"get_alert_config.md":                  prompts.GetAlertConfigDescription,
 	"get_alert_coverage.md":                prompts.GetAlertCoverageDescription,
 	"get_alert_groups.md":                  prompts.GetAlertGroupsDescription,
