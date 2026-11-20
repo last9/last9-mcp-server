@@ -3,6 +3,7 @@ package apm
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -174,6 +175,28 @@ func TestDescribeMetricOversizedCatalogNoteOffersNoNarrowing(t *testing.T) {
 	note, _ := out["note"].(string)
 	if out["source"] != "legacy_heuristic" || !strings.Contains(note, "exceeds 1048576 bytes") || strings.Contains(note, "narrow") {
 		t.Fatalf("oversized catalog = %v", out)
+	}
+}
+
+// The shared client relays 400/422 bodies and asks the agent to fix its arguments, but this
+// tool's request carries no argument the agent could fix.
+func TestDescribeMetricReadFailureNoteNeverRelaysUpstreamBody(t *testing.T) {
+	const marker = "LEAK-MARKER"
+	for _, status := range []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden,
+		http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusInternalServerError, http.StatusBadGateway} {
+		api := newRecipeAPI(t, status, []byte(`{"error":"bad `+marker+`"}`))
+		for _, metric := range []string{"trace_endpoint_count", "trace_service_apdex_score"} {
+			out, err := describeMetric(t, api, metric)
+			if err != nil {
+				t.Fatalf("HTTP %d %s: %v", status, metric, err)
+			}
+			raw, _ := json.Marshal(out)
+			note, _ := out["note"].(string)
+			if strings.Contains(string(raw), marker) || strings.Contains(note, "tool arguments") ||
+				!strings.Contains(note, fmt.Sprintf("HTTP %d", status)) {
+				t.Errorf("HTTP %d %s: %s", status, metric, raw)
+			}
+		}
 	}
 }
 
