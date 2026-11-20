@@ -29,7 +29,7 @@ func TestServedQueryGuardrailDescriptions(t *testing.T) {
 			if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
 				t.Fatal(err)
 			}
-			for _, name := range []string{"get_logs", "get_service_logs", "get_traces", "get_service_traces"} {
+			for _, name := range []string{"get_service_logs", "get_traces", "get_service_traces"} {
 				if domain == "logs" && strings.Contains(name, "traces") || domain == "traces" && strings.Contains(name, "logs") {
 					continue
 				}

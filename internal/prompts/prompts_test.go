@@ -13,7 +13,7 @@ import (
 )
 
 func TestGetLogsDescriptionEvalGatedCopy(t *testing.T) {
-	const want = "bd60fc22106aafe0742e7fcda81a2bf8908c64c4d655d6fad4e28bd0d8b4387b"
+	const want = "2cd585a4ef43c8f611a60eed7afc89ea66bd9bef446034a79eceecbb9189996c"
 	got := fmt.Sprintf("%x", sha256.Sum256([]byte(prompts.GetLogsDescription)))
 	if got != want {
 		t.Fatalf("get_logs description changed without an lq-101 gate run: got sha256 %s, want %s", got, want)
@@ -290,7 +290,7 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"excludes non-matching values from percentile calculations; disclose that exclusion in the answer", "must disclose the numeric filter's effect"},
 		{"Use a discovered normalized route", "must discover normalized route semantics before aggregation"},
 		{"Raw URI: aggregate exact values; never normalize/merge later", "must allow exact raw URI aggregation without unsafe normalization"},
-		{"If `envelope.truncated`, preserve rows and disclose the row limit", "must tie partial disclosure to result metadata"},
+		{"If `l9_result.partial=true`, preserve rows and disclose partial coverage", "must tie partial disclosure to result metadata"},
 		{"Units: report source; never convert", "must prevent inferred latency units"},
 		{"Only report returned P99 values; empty result→say unavailable and stop", "must prevent fallback counts from replacing an empty percentile result"},
 		{"ALL→`$and`; ANY→`$or`", "must document all/any-word Body searches"},
@@ -388,11 +388,11 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 	}
 }
 
-func TestQueryToolDescriptionsNameEnvelopeFields(t *testing.T) {
+func TestQueryToolGuidanceNamesEnvelopeFields(t *testing.T) {
 	// Tail shared by the short form (size-budgeted tools) and prometheus's longer one.
 	const envelope = "`trimmed_items`, `partial`"
 	for name, desc := range map[string]string{
-		"get_logs":               prompts.GetLogsDescription,
+		"get_logs":               prompts.LogjsonReference,
 		"get_traces":             prompts.GetTracesDescription,
 		"get_service_logs":       prompts.GetServiceLogsDescription,
 		"get_service_traces":     prompts.GetServiceTracesDescription,
@@ -400,6 +400,14 @@ func TestQueryToolDescriptionsNameEnvelopeFields(t *testing.T) {
 	} {
 		if !strings.Contains(desc, envelope) || !strings.Contains(desc, "disclose; follow `hints`") {
 			t.Errorf("%s description must name the result envelope fields", name)
+		}
+	}
+}
+
+func TestLogjsonReferenceDocumentsQueryGuardrail(t *testing.T) {
+	for _, want := range []string{"server-configured guardrail", "`off` (default)", "`shadow`", "`enforce`", "reason-coded `hints`", "narrowing the window", "estimate_unavailable"} {
+		if !strings.Contains(prompts.LogjsonReference, want) {
+			t.Errorf("logjson reference missing %q", want)
 		}
 	}
 }

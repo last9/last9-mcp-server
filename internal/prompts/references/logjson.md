@@ -278,6 +278,12 @@ Percentile buckets:
 
 Discover and use a normalized route field before aggregation. If only raw URI exists, group or aggregate exact raw URI values individually; never normalize or merge URI variants afterward. When the result envelope reports `truncated`, preserve returned rows and explicitly disclose that the row limit cut the result. Pass explicit RFC3339 bounds and state their time zone. Report source units exactly; never infer or convert units.
 
+## Query guardrail
+
+Result fields `truncated`, `trimmed_items`, `partial` mean coverage may be incomplete: disclose; follow `hints`.
+
+The server-configured guardrail may be `off` (default), `shadow`, or `enforce`. Shadow mode adds reason-coded `hints` without blocking; enforce mode rejects over-limit queries before execution. Follow hints by narrowing the window or adding a service filter; do not retry an unchanged query. `estimate_unavailable` alone never rejects, but the local unscoped range cap still applies.
+
 ## Field Reference Format:
 
 ### Standard Log Fields:
