@@ -220,12 +220,13 @@ func TestDescribeMetricOversizedCatalogNoteOffersNoNarrowing(t *testing.T) {
 	}
 }
 
-// The shared client relays 400/422 bodies and asks the agent to fix its arguments, but this
-// tool's request carries no argument the agent could fix.
+// The shared client relays 400/422 bodies and, for other statuses, asks the agent to fix its
+// arguments or narrow the time range and filters; this tool's request carries none of those.
 func TestDescribeMetricReadFailureNoteNeverRelaysUpstreamBody(t *testing.T) {
 	const marker = "LEAK-MARKER"
 	for _, status := range []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden,
-		http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusInternalServerError, http.StatusBadGateway} {
+		http.StatusNotFound, http.StatusRequestTimeout, http.StatusConflict, http.StatusUnprocessableEntity,
+		http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway} {
 		api := newRecipeAPI(t, status, []byte(`{"error":"bad `+marker+`"}`))
 		for _, metric := range []string{"trace_endpoint_count", "trace_service_apdex_score"} {
 			out, err := describeMetric(t, api, metric)
@@ -234,7 +235,7 @@ func TestDescribeMetricReadFailureNoteNeverRelaysUpstreamBody(t *testing.T) {
 			}
 			raw, _ := json.Marshal(out)
 			note, _ := out["note"].(string)
-			if strings.Contains(string(raw), marker) || strings.Contains(note, "tool arguments") ||
+			if strings.Contains(string(raw), marker) || strings.Contains(note, "tool arguments") || strings.Contains(note, "narrow") ||
 				!strings.Contains(note, fmt.Sprintf("HTTP %d", status)) {
 				t.Errorf("HTTP %d %s: %s", status, metric, raw)
 			}
