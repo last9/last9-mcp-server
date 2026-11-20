@@ -161,6 +161,22 @@ func TestDescribeMetricFallsBackToLegacyHeuristicWhenReadFails(t *testing.T) {
 	}
 }
 
+// The tool takes only a metric name, so the client's generic "narrow the request" advice is
+// an action the agent cannot take.
+func TestDescribeMetricOversizedCatalogNoteOffersNoNarrowing(t *testing.T) {
+	body := []byte(`{"recipes":[]}` + strings.Repeat(" ", 1<<20))
+	api := newRecipeAPI(t, http.StatusOK, body)
+
+	out, err := describeMetric(t, api, "trace_endpoint_count")
+	if err != nil {
+		t.Fatal(err)
+	}
+	note, _ := out["note"].(string)
+	if out["source"] != "legacy_heuristic" || !strings.Contains(note, "exceeds 1048576 bytes") || strings.Contains(note, "narrow") {
+		t.Fatalf("oversized catalog = %v", out)
+	}
+}
+
 func TestDescribeMetricUncovered(t *testing.T) {
 	t.Run("non trace metric makes no call", func(t *testing.T) {
 		api := newFixtureRecipeAPI(t)
