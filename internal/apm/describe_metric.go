@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -133,6 +134,11 @@ func findMetricRecipe(recipes []servicerecipes.MetricRecipe, metric string) (*se
 
 func readFailedResult(metric string, err error) DescribeMetricResult {
 	note := "Reading the Discover Services recipe catalog failed: " + err.Error()
+	// The client's size error advises narrowing the request, which this tool has no argument for.
+	var tooLarge *last9api.ResponseTooLargeError
+	if errors.As(err, &tooLarge) {
+		note = fmt.Sprintf("Reading the Discover Services recipe catalog failed: the catalog exceeds %d bytes.", tooLarge.MaxBytes)
+	}
 	legacy, ok := legacyMetricExamples[metric]
 	if !ok {
 		return DescribeMetricResult{Metric: metric, Source: recipeSourceUncovered, Note: note}
