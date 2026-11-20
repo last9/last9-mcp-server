@@ -20,6 +20,10 @@ type PromqlInstantQueryArgs struct {
 	Datasource      string  `json:"datasource,omitempty" jsonschema:"Datasource name; omitted uses the default, a near miss its closest match (named in a second content block)."`
 }
 
+// instantQueryLinkWindow is how far before the evaluation time the Metrics
+// explorer link starts, so the chart shows the run-up to the instant value.
+const instantQueryLinkWindow = 15 * 60
+
 func resolveInstantQueryTime(timeISO string, lookbackMinutes float64) (int64, error) {
 	if timeISO != "" {
 		_, endTime, err := utils.GetTimeRange(map[string]interface{}{
@@ -68,6 +72,7 @@ func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(c
 			Query:      query,
 			Timestamp:  timeParam,
 		})
-		return promToolResult(raw, err, choice.note)
+		res, out, err := promToolResult(raw, err, choice.note)
+		return withMetricsLink(res, choice.cfg, metricsLink{StartSec: timeParam - instantQueryLinkWindow, EndSec: timeParam, Query: query}), out, err
 	}
 }

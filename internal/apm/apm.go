@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -192,8 +193,9 @@ func NewServiceEnvironmentsHandler(client *http.Client, cfg models.Config) func(
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
 
-		// Return the environments as the content
+		dashboardURL := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, "", "", "")
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(responseBodyBytes),

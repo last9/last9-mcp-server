@@ -10,8 +10,11 @@ import (
 	"strconv"
 
 	"last9-mcp/internal/constants"
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // maxAPISuccessBodyBytes caps every Grafana API success body. A large
@@ -97,4 +100,9 @@ func doJSONRequest(ctx context.Context, client *http.Client, cfg models.Config, 
 	}
 
 	return respBody, nil
+}
+
+// grafanaLinkMeta links to the embedded Grafana page at a Grafana path.
+func grafanaLinkMeta(cfg models.Config, grafanaPath string) mcp.Meta {
+	return deeplink.ToMeta(deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildGrafanaLink(grafanaPath))
 }

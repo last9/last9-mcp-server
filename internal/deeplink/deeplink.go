@@ -22,7 +22,13 @@ const (
 	RouteDropRules            = "control-plane/%s/drop" // requires clusterId
 	RouteRemapping            = "control-plane/%s/remapping"
 	RouteDashboards           = "dashboards"
+	RouteMetrics              = "metrics"
+	RouteProfiles             = "profiles"
+	RouteGrafana              = "grafana"
 )
+
+// grafanaProxyPrefix starts the Grafana page's url param.
+const grafanaProxyPrefix = "/api/gp"
 
 // Builder helps construct deep links
 type Builder struct {
@@ -86,6 +92,22 @@ func (b *Builder) BuildExceptionsLink(fromMs, toMs int64) string {
 		params.Set("cluster", b.clusterID)
 	}
 	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteExceptions, params.Encode())
+}
+
+// BuildMetricsLink creates a Metrics explorer deep link that opens the query in
+// code mode over the window.
+func (b *Builder) BuildMetricsLink(fromMs, toMs int64, query string) string {
+	params := url.Values{}
+	params.Set("from", fmt.Sprintf("%d", fromMs/1000))
+	params.Set("to", fmt.Sprintf("%d", toMs/1000))
+	if b.clusterID != "" {
+		params.Set("cluster", b.clusterID)
+	}
+	if query != "" {
+		params.Set("mode", "code")
+		params.Set("query", query)
+	}
+	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteMetrics, params.Encode())
 }
 
 // BuildAlertingLink creates an alerting dashboard deep link
@@ -229,6 +251,48 @@ func (b *Builder) BuildDashboardLink(dashboardID string) string {
 // BuildDashboardSnapshotLink creates a deep link to a frozen dashboard snapshot by ID.
 func (b *Builder) BuildDashboardSnapshotLink(snapshotID string) string {
 	return fmt.Sprintf("/v2/organizations/%s/%s/snapshots/%s", b.orgSlug, RouteDashboards, url.PathEscape(snapshotID))
+}
+
+// ProfilesLinkParams are the Profiles page filters. Cluster is the k8s cluster
+// name (resources['k8s.cluster.name']), not the Last9 cluster ID.
+type ProfilesLinkParams struct {
+	Service     string
+	Env         string
+	Cluster     string
+	Namespace   string
+	Runtime     string
+	ProfileType string
+	ProfileTab  string
+}
+
+// BuildProfilesLink creates a deep link to the Profiles page. Only non-empty
+// params are set; the builder's cluster ID is never used here.
+func (b *Builder) BuildProfilesLink(fromMs, toMs int64, p ProfilesLinkParams) string {
+	params := url.Values{}
+	params.Set("from", fmt.Sprintf("%d", fromMs/1000))
+	params.Set("to", fmt.Sprintf("%d", toMs/1000))
+	for key, value := range map[string]string{
+		"service":     p.Service,
+		"env":         p.Env,
+		"cluster":     p.Cluster,
+		"namespace":   p.Namespace,
+		"runtime":     p.Runtime,
+		"profileType": p.ProfileType,
+		"profileTab":  p.ProfileTab,
+	} {
+		if value != "" {
+			params.Set(key, value)
+		}
+	}
+	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteProfiles, params.Encode())
+}
+
+// BuildGrafanaLink creates a deep link to the embedded Grafana page at the
+// given Grafana path (e.g. /dashboards or /d/<uid>).
+func (b *Builder) BuildGrafanaLink(grafanaPath string) string {
+	params := url.Values{}
+	params.Set("url", grafanaProxyPrefix+grafanaPath)
+	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteGrafana, params.Encode())
 }
 
 // ToMeta converts a dashboard URL to MCP Meta format

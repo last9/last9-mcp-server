@@ -126,3 +126,35 @@ func TestGetTraceAttributes_ReturnsToolErrorForMalformedJSON(t *testing.T) {
 		t.Fatalf("unexpected malformed-response error: %s", message)
 	}
 }
+
+func TestGetTraceAttributes_TracesExplorerLink(t *testing.T) {
+	for name, body := range map[string]string{
+		"with attributes": `{"scopes":[{"name":"span","tags":["http.method"]}]}`,
+		"empty":           `{"scopes":[]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, body)
+			}))
+			defer server.Close()
+
+			cfg := newTestCfg(server.URL)
+			cfg.OrgSlug = "acme"
+			cfg.ClusterID = "cluster-1"
+			handler := NewGetTraceAttributesHandler(server.Client(), cfg)
+			res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceAttributesArgs{
+				StartTimeISO: "2026-02-09T15:04:05Z",
+				EndTimeISO:   "2026-02-09T16:04:05Z",
+			})
+			if err != nil {
+				t.Fatalf("handler returned error: %v", err)
+			}
+			raw, _ := res.Meta["reference_url"].(string)
+			want := "/v2/organizations/acme/traces?cluster=cluster-1&from=1770649445&to=1770653045"
+			if raw != want {
+				t.Fatalf("reference_url = %q, want %q", raw, want)
+			}
+		})
+	}
+}

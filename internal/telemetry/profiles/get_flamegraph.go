@@ -67,6 +67,6 @@ func NewGetFlamegraphHandler(client *http.Client, cfg models.Config) func(contex
 			"total_samples": tree.Value,
 			"flamegraph":    tree,
 		})
-		return result, nil, err
+		return withProfilesLink(result, cfg, profilesLinkInput{Start: start, End: end, Filters: filters, RawProfileType: args.ProfileType, Tab: profileTabFlamegraph}), nil, err
 	}
 }
