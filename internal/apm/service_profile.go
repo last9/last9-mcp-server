@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"last9-mcp/internal/constants"
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/last9api"
 	apiservices "last9-mcp/internal/last9api/services"
 	"last9-mcp/internal/models"
@@ -139,7 +140,12 @@ func NewGetServiceProfileHandler(client *http.Client, cfg models.Config) func(co
 			text = formatInvestigationBrief(profile) + "\n\n" + text
 		}
 
+		// The profile has no window or environment argument, so the link opens
+		// the service over the last hour.
+		linkEnd := utils.Now()
+		serviceURL := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildAPMServiceLink(linkEnd.Add(-time.Hour).UnixMilli(), linkEnd.UnixMilli(), service, "", "")
 		return withDatasourceNote(&mcp.CallToolResult{
+			Meta: deeplink.ToMeta(serviceURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: text,

@@ -105,3 +105,123 @@ func TestBuildAPMServiceLink_EnvSanitation(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildMetricsLink(t *testing.T) {
+	b := NewBuilder("acme", "cluster-1")
+	link := b.BuildMetricsLink(1_700_000_000_000, 1_700_000_900_000, `sum(rate(http_requests_total{job="api"}[5m]))`)
+
+	u, err := url.Parse(link)
+	if err != nil {
+		t.Fatalf("parse %q: %v", link, err)
+	}
+	if u.Path != "/v2/organizations/acme/metrics" {
+		t.Fatalf("path = %q, want /v2/organizations/acme/metrics", u.Path)
+	}
+	q := u.Query()
+	want := map[string]string{
+		"from":    "1700000000",
+		"to":      "1700000900",
+		"cluster": "cluster-1",
+		"mode":    "code",
+		"query":   `sum(rate(http_requests_total{job="api"}[5m]))`,
+	}
+	for k, v := range want {
+		if got := q.Get(k); got != v {
+			t.Errorf("%s = %q, want %q", k, got, v)
+		}
+	}
+}
+
+func TestBuildMetricsLink_NoClusterNoQuery(t *testing.T) {
+	link := NewBuilder("acme", "").BuildMetricsLink(1_000, 2_000, "")
+	want := "/v2/organizations/acme/metrics?from=1&to=2"
+	if link != want {
+		t.Fatalf("got %q want %q", link, want)
+	}
+}
+
+func TestBuildAPMServiceLink_Catalog(t *testing.T) {
+	link := NewBuilder("acme", "c1").BuildAPMServiceLink(1_000, 2_000, "", "", "")
+	want := "/v2/organizations/acme/service-catalog?cluster=c1&from=1&live=true&to=2"
+	if link != want {
+		t.Fatalf("got %q want %q", link, want)
+	}
+}
+
+func TestBuildProfilesLink(t *testing.T) {
+	link := NewBuilder("acme", "last9-cluster-id").BuildProfilesLink(1_700_000_000_000, 1_700_003_600_000, ProfilesLinkParams{
+		Service:     "checkout",
+		Env:         "prod",
+		Cluster:     "k8s-east",
+		Namespace:   "payments",
+		Runtime:     "go",
+		ProfileType: "alloc",
+		ProfileTab:  "top-functions",
+	})
+	u, err := url.Parse(link)
+	if err != nil {
+		t.Fatalf("parse %q: %v", link, err)
+	}
+	if u.Path != "/v2/organizations/acme/profiles" {
+		t.Fatalf("path = %q, want /v2/organizations/acme/profiles", u.Path)
+	}
+	q := u.Query()
+	want := map[string]string{
+		"from":        "1700000000",
+		"to":          "1700003600",
+		"service":     "checkout",
+		"env":         "prod",
+		"cluster":     "k8s-east",
+		"namespace":   "payments",
+		"runtime":     "go",
+		"profileType": "alloc",
+		"profileTab":  "top-functions",
+	}
+	for k, v := range want {
+		if got := q.Get(k); got != v {
+			t.Errorf("%s = %q, want %q", k, got, v)
+		}
+	}
+	if len(q) != len(want) {
+		t.Errorf("unexpected params: %v", q)
+	}
+}
+
+func TestBuildProfilesLink_OmitsEmptyAndNeverUsesClusterID(t *testing.T) {
+	link := NewBuilder("acme", "last9-cluster-id").BuildProfilesLink(1_000, 2_000, ProfilesLinkParams{})
+	want := "/v2/organizations/acme/profiles?from=1&to=2"
+	if link != want {
+		t.Fatalf("got %q want %q", link, want)
+	}
+}
+
+func TestBuildGrafanaLink(t *testing.T) {
+	b := NewBuilder("acme", "c1")
+	tests := []struct {
+		path    string
+		wantURL string
+	}{
+		{"/dashboards", "/api/gp/dashboards"},
+		{"/dashboards/f/" + url.PathEscape("folder 1"), "/api/gp/dashboards/f/folder%201"},
+		{"/d/" + url.PathEscape("abc/123"), "/api/gp/d/abc%2F123"},
+	}
+	for _, tt := range tests {
+		link := b.BuildGrafanaLink(tt.path)
+		u, err := url.Parse(link)
+		if err != nil {
+			t.Fatalf("parse %q: %v", link, err)
+		}
+		if u.Path != "/v2/organizations/acme/grafana" {
+			t.Errorf("path = %q", u.Path)
+		}
+		if got := u.Query().Get("url"); got != tt.wantURL {
+			t.Errorf("url = %q, want %q", got, tt.wantURL)
+		}
+		if len(u.Query()) != 1 {
+			t.Errorf("unexpected params: %v", u.Query())
+		}
+	}
+	if got, want := b.BuildGrafanaLink("/dashboards"), "/v2/organizations/acme/grafana?url=%2Fapi%2Fgp%2Fdashboards"; got != want {
+		t.Errorf("got %q want %q", got, want)
+	}
+}

@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/alerts"
 	"last9-mcp/internal/models"
@@ -66,7 +68,15 @@ func NewDescribeAlertChartHandler(client *http.Client, cfg models.Config) func(c
 		if json.Unmarshal(body, &described) == nil {
 			recordDescribedChart(requestSession(req), surface+"/"+chartKey, described.Signals)
 		}
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(out)}}}, nil, nil
+		res := &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(out)}}}
+		// Only discover-service charts live on the service page; other surfaces
+		// get no link.
+		if surface == "discover-service" {
+			linkEnd := utils.Now()
+			serviceURL := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildAPMServiceLink(linkEnd.Add(-time.Hour).UnixMilli(), linkEnd.UnixMilli(), serviceName, deeplink.APMCatalogEnvExact(args.Env), "")
+			res.Meta = deeplink.ToMeta(serviceURL)
+		}
+		return res, nil, nil
 	}
 }
 

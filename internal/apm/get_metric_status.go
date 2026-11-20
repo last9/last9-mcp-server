@@ -47,7 +47,8 @@ func NewGetMetricStatusHandler(client *http.Client, cfg models.Config) func(cont
 		if choice.candidates != nil {
 			return ambiguousDatasourceResult(args.Datasource, choice), nil, nil
 		}
-		status, err := computeGetMetricStatus(ctx, client, choice.cfg, args)
+		endTime := utils.Now().UTC().Unix()
+		status, err := computeGetMetricStatus(ctx, client, choice.cfg, metricStatusRequest{Args: args, EndTime: endTime})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -58,9 +59,15 @@ func NewGetMetricStatusHandler(client *http.Client, cfg models.Config) func(cont
 		if err := enc.Encode(status); err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal get_metric_status response: %w", err)
 		}
-		return withDatasourceNote(&mcp.CallToolResult{
+		startTime := endTime - int64(math.Round(args.WindowMinutes*60))
+		res := withDatasourceNote(&mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: strings.TrimSuffix(payload.String(), "\n")}},
-		}, choice.note), nil, nil
+		}, choice.note)
+		return withMetricsLink(res, choice.cfg, metricsLink{
+			StartSec: startTime,
+			EndSec:   endTime,
+			Query:    metricSelector(strings.TrimSpace(args.Metric)),
+		}), nil, nil
 	}
 }
 
@@ -74,9 +81,16 @@ func validateGetMetricStatusArgs(args GetMetricStatusArgs) error {
 	return nil
 }
 
-func computeGetMetricStatus(ctx context.Context, client *http.Client, queryCfg models.Config, args GetMetricStatusArgs) (GetMetricStatusResult, error) {
+// metricStatusRequest is one get_metric_status evaluation: the tool arguments
+// and the end time every probe (and the result link) shares.
+type metricStatusRequest struct {
+	Args    GetMetricStatusArgs
+	EndTime int64
+}
+
+func computeGetMetricStatus(ctx context.Context, client *http.Client, queryCfg models.Config, req metricStatusRequest) (GetMetricStatusResult, error) {
+	args, endTime := req.Args, req.EndTime
 	metric := strings.TrimSpace(args.Metric)
-	endTime := utils.Now().UTC().Unix()
 	dur := promDurationFromMinutes(args.WindowMinutes)
 	sel := metricSelector(metric)
 

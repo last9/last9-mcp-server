@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"last9-mcp/internal/constants"
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -139,8 +140,10 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(c
 			return nil, nil, err
 		}
 
+		meta := deeplink.ToMeta(deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildTracesLink(startTimeValue.UnixMilli(), endTimeValue.UnixMilli(), nil, "", ""))
 		if len(names) == 0 {
 			return &mcp.CallToolResult{
+				Meta: meta,
 				Content: []mcp.Content{
 					&mcp.TextContent{Text: "No trace attributes found in the specified time window"},
 				},
@@ -157,6 +160,7 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(c
 			return nil, nil, fmt.Errorf("failed to marshal trace attributes: %v", err)
 		}
 		return &mcp.CallToolResult{
+			Meta:    meta,
 			Content: []mcp.Content{&mcp.TextContent{Text: string(out)}},
 		}, nil, nil
 	}
