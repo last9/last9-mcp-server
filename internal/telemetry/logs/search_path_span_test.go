@@ -49,7 +49,7 @@ func TestGetLogsSpan_LogSearchAPIPath(t *testing.T) {
 	srv := statusServer(t, http.StatusOK, searchBodyWithStrategy)
 	ctx, ended := utils.RecordedSpanContext(t)
 
-	if _, err := fetchLogJSONQuery(ctx, srv.Client(), apiModeCfg(srv.URL),
+	if _, _, err := fetchLogJSONQuery(ctx, srv.Client(), apiModeCfg(srv.URL),
 		[]map[string]interface{}{{"type": "filter"}},
 		1_700_000_000_000, 1_700_000_600_000, GetLogsArgs{}); err != nil {
 		t.Fatalf("fetchLogJSONQuery: %v", err)
@@ -65,7 +65,7 @@ func TestGetLogsSpan_LogSearchAPIUpstreamError(t *testing.T) {
 	srv := statusServer(t, http.StatusInternalServerError, `{"error":"boom"}`)
 	ctx, ended := utils.RecordedSpanContext(t)
 
-	if _, err := fetchLogJSONQuery(ctx, srv.Client(), apiModeCfg(srv.URL),
+	if _, _, err := fetchLogJSONQuery(ctx, srv.Client(), apiModeCfg(srv.URL),
 		[]map[string]interface{}{{"type": "filter"}},
 		1_700_000_000_000, 1_700_000_600_000, GetLogsArgs{}); err == nil {
 		t.Fatal("a 500 must fail the call")
@@ -85,7 +85,7 @@ func TestGetLogsSpan_ChunkedPath(t *testing.T) {
 	cfg.UseLogSearchAPI = false
 	ctx, ended := utils.RecordedSpanContext(t)
 
-	if _, err := fetchLogJSONQuery(ctx, srv.Client(), cfg,
+	if _, _, err := fetchLogJSONQuery(ctx, srv.Client(), cfg,
 		[]map[string]interface{}{{"type": "filter"}},
 		1_700_000_000_000, 1_700_000_600_000, GetLogsArgs{}); err != nil {
 		t.Fatalf("fetchLogJSONQuery: %v", err)
@@ -102,7 +102,7 @@ func TestGetLogsSpan_ChunkedUpstreamError(t *testing.T) {
 	cfg.UseLogSearchAPI = false
 	ctx, ended := utils.RecordedSpanContext(t)
 
-	if _, err := fetchLogJSONQuery(ctx, srv.Client(), cfg,
+	if _, _, err := fetchLogJSONQuery(ctx, srv.Client(), cfg,
 		[]map[string]interface{}{{"type": "filter"}},
 		1_700_000_000_000, 1_700_000_600_000, GetLogsArgs{}); err == nil {
 		t.Fatal("a 502 on every chunk must fail the call")

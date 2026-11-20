@@ -82,9 +82,9 @@ func TestGetTracesLimitParameter(t *testing.T) {
 					}
 				}
 
-				// Verify the limit matches expected
-				if receivedLimit != tt.expectedLimit {
-					t.Errorf("Expected limit %d in request, got %d", tt.expectedLimit, receivedLimit)
+				// The request asks for one row past the limit to detect truncation.
+				if receivedLimit != tt.expectedLimit+1 {
+					t.Errorf("Expected limit %d+1 in request, got %d", tt.expectedLimit, receivedLimit)
 				}
 
 				w.WriteHeader(http.StatusOK)

@@ -153,9 +153,9 @@ func TestRawDefaultFiveThousandLines(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	encoded, err := json.Marshal(result)
-	if err != nil || len(encoded) > maxRawResultBytes || result.IsError {
-		t.Fatalf("invalid bounded result: %d bytes, %v", len(encoded), err)
+	entryPayload, err := json.Marshal(rawBudgetPayload(result))
+	if err != nil || len(entryPayload)+sdkResultTypeBytes > maxRawResultBytes || result.IsError {
+		t.Fatalf("invalid bounded result: %d entry bytes, %v", len(entryPayload), err)
 	}
 	var out map[string]any
 	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &out); err != nil {

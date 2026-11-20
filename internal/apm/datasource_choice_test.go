@@ -121,6 +121,12 @@ func TestDatasourceToolsResolveDatasource(t *testing.T) {
 				if strings.HasPrefix(tool, "prometheus_") && texts[0] != "[]" {
 					t.Errorf("%s: first block = %q, want the upstream body", tool, texts[0])
 				}
+				if tool == "prometheus_range_query" {
+					if len(texts) < 2 || !strings.HasPrefix(texts[1], "envelope: ") {
+						t.Fatalf("%s: missing empty-result envelope: %q", tool, texts)
+					}
+					texts = append(texts[:1], texts[2:]...)
+				}
 				var note string
 				if len(texts) > 1 {
 					note = texts[1]
