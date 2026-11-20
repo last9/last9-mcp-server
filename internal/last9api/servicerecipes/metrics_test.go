@@ -66,21 +66,13 @@ func TestListMetricRecipesDecodesCatalog(t *testing.T) {
 }
 
 func TestListMetricRecipesRejectsBodiesWithoutCatalog(t *testing.T) {
-	for _, body := range []string{"", "null", "{}", `{"recipes":null}`} {
+	for _, body := range []string{"", "null", "{}", `{"recipes":null}`, `{"recipes":[]}`} {
 		t.Run(body, func(t *testing.T) {
 			c := testClient(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) })
 			if _, err := ListMetricRecipes(context.Background(), c); err == nil {
 				t.Fatal("want an error for a body without a recipe catalog")
 			}
 		})
-	}
-}
-
-func TestListMetricRecipesAcceptsEmptyCatalog(t *testing.T) {
-	c := testClient(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`{"recipes":[]}`)) })
-	got, err := ListMetricRecipes(context.Background(), c)
-	if err != nil || len(got) != 0 {
-		t.Fatalf("got %v, %v; want an empty catalog", got, err)
 	}
 }
 

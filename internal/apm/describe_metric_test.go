@@ -162,6 +162,24 @@ func TestDescribeMetricFallsBackToLegacyHeuristicWhenReadFails(t *testing.T) {
 	}
 }
 
+// The catalog always lists the overview recipes, so a 2xx without any is a broken read, never
+// "no recipe for this metric".
+func TestDescribeMetricTreatsCatalogLessBodyAsReadFailure(t *testing.T) {
+	for _, body := range []string{"", "null", "{}", `{"recipes":null}`, `{"recipes":[]}`} {
+		t.Run(body, func(t *testing.T) {
+			api := newRecipeAPI(t, http.StatusOK, []byte(body))
+			out, err := describeMetric(t, api, "trace_endpoint_count")
+			if err != nil {
+				t.Fatal(err)
+			}
+			note, _ := out["note"].(string)
+			if out["source"] != "legacy_heuristic" || !strings.Contains(note, "no recipe catalog") {
+				t.Fatalf("got %v", out)
+			}
+		})
+	}
+}
+
 // The tool takes only a metric name, so the client's generic "narrow the request" advice is
 // an action the agent cannot take.
 func TestDescribeMetricOversizedCatalogNoteOffersNoNarrowing(t *testing.T) {
