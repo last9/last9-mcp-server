@@ -50,8 +50,9 @@ type DescribeMetricResult struct {
 	Source             string                        `json:"source"`
 	Indicator          string                        `json:"indicator,omitempty"`
 	Unit               string                        `json:"unit,omitempty"`
+	Filters            []string                      `json:"filters,omitempty"`
+	QuantileLabel      string                        `json:"quantile_label,omitempty"`
 	RecommendedQuery   string                        `json:"recommended_query,omitempty"`
-	Rollups            *servicerecipes.RecipeRollups `json:"rollups,omitempty"`
 	Queries            *servicerecipes.RecipeQueries `json:"queries,omitempty"`
 	ForbiddenFunctions []string                      `json:"forbidden_functions,omitempty"`
 	ExampleQuery       string                        `json:"example_query,omitempty"`
@@ -104,8 +105,9 @@ func resolveMetricRecipe(ctx context.Context, c *last9api.Client, metric string)
 		Source:             recipeSourceServiceRecipe,
 		Indicator:          recipe.Indicator,
 		Unit:               recipe.Unit,
+		Filters:            recipe.Filters,
+		QuantileLabel:      recipe.QuantileLabel,
 		RecommendedQuery:   recipe.RecommendedQuery,
-		Rollups:            &recipe.Rollups,
 		Queries:            &recipe.Queries,
 		ForbiddenFunctions: recipe.ForbiddenFunctions,
 	}, nil

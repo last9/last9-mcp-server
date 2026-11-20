@@ -14,23 +14,25 @@ const opMetricRecipes = "metric recipes"
 
 const maxMetricRecipesResponseBytes = 1 << 20
 
-type RecipeRollups struct {
-	Chart string `json:"chart"`
-	List  string `json:"list"`
+// RecipeQuery is one PromQL shape and the window rollup it applies ("none" plots it as returned).
+// List queries keep a literal {duration} placeholder, in minutes.
+type RecipeQuery struct {
+	Rollup string `json:"rollup"`
+	PromQL string `json:"promql"`
 }
 
-// List may hold a {duration} placeholder, in minutes.
 type RecipeQueries struct {
-	Chart string `json:"chart"`
-	List  string `json:"list"`
+	Chart RecipeQuery `json:"chart"`
+	List  RecipeQuery `json:"list"`
 }
 
 type MetricRecipe struct {
 	Metric             string        `json:"metric"`
 	Indicator          string        `json:"indicator"`
 	Unit               string        `json:"unit"`
+	Filters            []string      `json:"filters"`
+	QuantileLabel      string        `json:"quantile_label,omitempty"`
 	RecommendedQuery   string        `json:"recommended_query"`
-	Rollups            RecipeRollups `json:"rollups"`
 	Queries            RecipeQueries `json:"queries"`
 	ForbiddenFunctions []string      `json:"forbidden_functions"`
 }

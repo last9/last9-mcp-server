@@ -6,7 +6,7 @@ Parameters:
 - metric: (Required) Bare metric name, e.g. `trace_endpoint_count`. A PromQL selector or expression is rejected. Only `trace_*` names are looked up; any other name returns `uncovered` without calling the API.
 
 Returns JSON with `metric` and `source`:
-- `service_recipe`: the catalog has this metric. Fields: `indicator`, `unit` (e.g. `rpm`, `ms`), `recommended_query` (run this), `rollups.chart` / `rollups.list` (window rollup per consumer; `none` means use the series as-is), `queries.chart` / `queries.list` (list queries may contain `{duration}`, in minutes; substitute it before running), `forbidden_functions`.
+- `service_recipe`: the catalog has this metric. Fields: `indicator`, `unit` (e.g. `rpm`, `ms`), `recommended_query` (run this), `filters` (matchers the recipe always carries), `quantile_label` (latency only), `queries.chart` / `queries.list` (each `{rollup, promql}`; rollup `none` means use the series as-is; list `promql` contains `{duration}`, in minutes; substitute it before running), `forbidden_functions`.
 - `legacy_heuristic`: the catalog could not be read; only for `trace_endpoint_count` and `trace_service_response_time`. Fields: `unit`, `example_query`, optional `counter_rule_query`, `basis`, `note`. This is the old manual example, not the dashboard query; say so if you use it.
 - `uncovered`: no recipe for this metric (non-`trace_*`, not in the catalog, or catalog unreadable). No query; `note` says why.
 
