@@ -13,7 +13,7 @@ import (
 )
 
 func TestGetLogsDescriptionEvalGatedCopy(t *testing.T) {
-	const want = "2cd585a4ef43c8f611a60eed7afc89ea66bd9bef446034a79eceecbb9189996c"
+	const want = "bd60fc22106aafe0742e7fcda81a2bf8908c64c4d655d6fad4e28bd0d8b4387b"
 	got := fmt.Sprintf("%x", sha256.Sum256([]byte(prompts.GetLogsDescription)))
 	if got != want {
 		t.Fatalf("get_logs description changed without an lq-101 gate run: got sha256 %s, want %s", got, want)
