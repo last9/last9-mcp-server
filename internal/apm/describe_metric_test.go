@@ -180,6 +180,20 @@ func TestDescribeMetricTreatsCatalogLessBodyAsReadFailure(t *testing.T) {
 	}
 }
 
+func TestDescribeMetricTreatsUndecodableBodyAsReadFailure(t *testing.T) {
+	const marker = "QA_MARKER_7f3a"
+	api := newRecipeAPI(t, http.StatusOK, []byte(`{"recipes": [`+marker))
+	out, err := describeMetric(t, api, "trace_endpoint_count")
+	if err != nil {
+		t.Fatal(err)
+	}
+	note, _ := out["note"].(string)
+	raw, _ := json.Marshal(out)
+	if out["source"] != "legacy_heuristic" || note == "" || strings.Contains(string(raw), marker) {
+		t.Fatalf("got %s", raw)
+	}
+}
+
 // The tool takes only a metric name, so the client's generic "narrow the request" advice is
 // an action the agent cannot take.
 func TestDescribeMetricOversizedCatalogNoteOffersNoNarrowing(t *testing.T) {
