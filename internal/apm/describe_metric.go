@@ -13,6 +13,7 @@ import (
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/servicerecipes"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -134,10 +135,15 @@ func findMetricRecipe(recipes []servicerecipes.MetricRecipe, metric string) (*se
 
 func readFailedResult(metric string, err error) DescribeMetricResult {
 	note := "Reading the Discover Services recipe catalog failed: " + err.Error()
-	// The client's size error advises narrowing the request, which this tool has no argument for.
+	// The client's size and 400/422 errors advise narrowing the request or fixing arguments, which
+	// this tool has no argument for; 400/422 messages also relay the upstream body.
 	var tooLarge *last9api.ResponseTooLargeError
-	if errors.As(err, &tooLarge) {
+	var upstream *utils.UpstreamHTTPError
+	switch {
+	case errors.As(err, &tooLarge):
 		note = fmt.Sprintf("Reading the Discover Services recipe catalog failed: the catalog exceeds %d bytes.", tooLarge.MaxBytes)
+	case errors.As(err, &upstream) && (upstream.StatusCode == http.StatusBadRequest || upstream.StatusCode == http.StatusUnprocessableEntity):
+		note = fmt.Sprintf("Reading the Discover Services recipe catalog failed with HTTP %d.", upstream.StatusCode)
 	}
 	legacy, ok := legacyMetricExamples[metric]
 	if !ok {
