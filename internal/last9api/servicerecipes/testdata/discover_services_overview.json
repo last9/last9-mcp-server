@@ -1,0 +1,34 @@
+{
+  "recipes": [
+    {
+      "metric": "trace_endpoint_count",
+      "indicator": "throughput",
+      "unit": "rpm",
+      "recommended_query": "(sum(trace_endpoint_count{span_kind='SPAN_KIND_SERVER'})) default 0",
+      "rollups": {
+        "chart": "none",
+        "list": "quantile_over_time(0.95)"
+      },
+      "queries": {
+        "chart": "(sum(trace_endpoint_count{span_kind='SPAN_KIND_SERVER'})) default 0",
+        "list": "quantile_over_time(0.95, (sum by (service_name)(trace_endpoint_count{span_kind='SPAN_KIND_SERVER'}))[{duration}m:1m])"
+      },
+      "forbidden_functions": ["rate", "irate", "increase", "histogram_quantile"]
+    },
+    {
+      "metric": "trace_service_response_time",
+      "indicator": "response_time_p95",
+      "unit": "ms",
+      "recommended_query": "sum by (quantile)(trace_service_response_time{quantile='p95'})",
+      "rollups": {
+        "chart": "none",
+        "list": "quantile_over_time(0.95)"
+      },
+      "queries": {
+        "chart": "sum by (quantile)(trace_service_response_time{quantile='p95'})",
+        "list": "quantile_over_time(0.95, (sum by (service_name)(trace_service_response_time{quantile='p95'}))[{duration}m:1m])"
+      },
+      "forbidden_functions": ["rate", "irate", "increase", "histogram_quantile"]
+    }
+  ]
+}
