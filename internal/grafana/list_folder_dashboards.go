@@ -52,6 +52,7 @@ func NewListFolderDashboardsHandler(client *http.Client, cfg models.Config) func
 			return nil, nil, err
 		}
 		return &mcp.CallToolResult{
+			Meta:    grafanaLinkMeta(cfg, "/dashboards/f/"+url.PathEscape(args.FolderUID)),
 			Content: []mcp.Content{&mcp.TextContent{Text: string(out)}},
 		}, nil, nil
 	}

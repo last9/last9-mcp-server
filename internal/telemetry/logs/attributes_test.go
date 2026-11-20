@@ -101,3 +101,25 @@ func TestGetLogAttributesHandler_ShortWindowStillUsesLabels(t *testing.T) {
 		t.Errorf("short window must not fall back to series/json, got: %s", capturedPath)
 	}
 }
+
+func TestGetLogAttributesHandler_LogsExplorerLink(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"success","data":["severity"]}`))
+	}))
+	defer server.Close()
+
+	handler := NewGetLogAttributesHandler(server.Client(), testAttrConfig(server.URL))
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesArgs{
+		StartTimeISO: "2026-02-09T15:34:05Z",
+		EndTimeISO:   "2026-02-09T16:04:05Z",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	raw, _ := res.Meta["reference_url"].(string)
+	want := "/v2/organizations/last9/logs?cluster=cluster-1&from=1770651245&to=1770653045"
+	if raw != want {
+		t.Fatalf("reference_url = %q, want %q", raw, want)
+	}
+}

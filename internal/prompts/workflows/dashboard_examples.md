@@ -61,3 +61,46 @@ A scoped logjson window_aggregate counts all log entries per five-minute bucket;
 ```
 
 Before approval, follow `create_dashboard_guide`: validate the full dashboard object and run every query with resolved variables over the requested window using `prometheus_range_query`, `prometheus_instant_query`, `get_logs` or `get_traces`. The trace check is required even if `validate_dashboard` reports unsupported_execution. Verify units, cardinality, nonempty defaults and percentage bounds. Then create once, retain the id and use `patch_dashboard` for small edits; read the saved result with `get_dashboard`.
+
+## Top 10 keys table
+
+This multi-query table names each instant query after the value column the user sees. Every derived column is joined to the same top-10 set selected by Total; the `or 0 * topk(...)` branch retains a key with no matching outcome series as zero. Rate columns divide by that same Total vector and round percentages to two decimal places. `columnConfig` lists the rendered label key and every query name in the requested order, and `sorting` orders rows by Total descending. Adapt the metric, label and outcome values only after discovery.
+
+```json
+{
+  "dashboard": {
+    "name": "Top 10 keys",
+    "variables": [],
+    "panels": [
+      {
+        "name": "Top 10 keys by request outcome",
+        "version": 1,
+        "layout": {"x": 0, "y": 0, "w": 12, "h": 8},
+        "visualization": {
+          "type": "table",
+          "table_config": {
+            "columnConfig": [
+              {"id": "key", "visible": true, "order": 0},
+              {"id": "Total", "visible": true, "order": 1},
+              {"id": "OK", "visible": true, "order": 2},
+              {"id": "OK Rate", "visible": true, "order": 3},
+              {"id": "Error", "visible": true, "order": 4},
+              {"id": "Error Rate", "visible": true, "order": 5}
+            ],
+            "sorting": [{"id": "Total", "desc": true}]
+          }
+        },
+        "unit": "short",
+        "queries": [
+          {"name": "Total", "type": "instant", "query_type": "promql", "telemetry": "metrics", "expr": "topk(10, sum by (key) (requests_total))", "legend": {"type": "auto", "value": ""}},
+          {"name": "OK", "type": "instant", "query_type": "promql", "telemetry": "metrics", "expr": "(sum by (key) (requests_total{outcome=\"ok\"}) and topk(10, sum by (key) (requests_total))) or 0 * topk(10, sum by (key) (requests_total))", "legend": {"type": "auto", "value": ""}},
+          {"name": "OK Rate", "type": "instant", "query_type": "promql", "telemetry": "metrics", "expr": "round(100 * ((sum by (key) (requests_total{outcome=\"ok\"}) and topk(10, sum by (key) (requests_total))) or 0 * topk(10, sum by (key) (requests_total))) / topk(10, sum by (key) (requests_total)), 0.01)", "legend": {"type": "auto", "value": ""}},
+          {"name": "Error", "type": "instant", "query_type": "promql", "telemetry": "metrics", "expr": "(sum by (key) (requests_total{outcome=\"error\"}) and topk(10, sum by (key) (requests_total))) or 0 * topk(10, sum by (key) (requests_total))", "legend": {"type": "auto", "value": ""}},
+          {"name": "Error Rate", "type": "instant", "query_type": "promql", "telemetry": "metrics", "expr": "round(100 * ((sum by (key) (requests_total{outcome=\"error\"}) and topk(10, sum by (key) (requests_total))) or 0 * topk(10, sum by (key) (requests_total))) / topk(10, sum by (key) (requests_total)), 0.01)", "legend": {"type": "auto", "value": ""}}
+        ]
+      }
+    ]
+  },
+  "metadata": {"_category": "custom", "_type": "metrics"}
+}
+```

@@ -9,6 +9,7 @@ import (
 	"net/url"
 
 	"last9-mcp/internal/constants"
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -141,7 +142,16 @@ func NewGetTraceAttributeValuesHandler(client *http.Client, cfg models.Config) f
 			return nil, nil, fmt.Errorf("failed to marshal result: %v", err)
 		}
 
+		// A nil slice in an interface is non-nil, so pass untyped nil when the
+		// caller gave no pipeline.
+		var linkPipeline any
+		if len(args.Pipeline) > 0 {
+			linkPipeline = args.Pipeline
+		}
+		dashboardURL := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildTracesLink(startTime.UnixMilli(), endTime.UnixMilli(), linkPipeline, "", "")
+
 		return &mcp.CallToolResult{
+			Meta:    deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{&mcp.TextContent{Text: string(out)}},
 		}, nil, nil
 	}

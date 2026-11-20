@@ -72,7 +72,6 @@ var named = map[string][]string{
 		"delete_notification_channel",
 		"recommend_alert_config",
 		"get_alert_groups",
-		"get_alert_operations_summary",
 		"get_alert_coverage",
 		"get_entity_alert_rules",
 		"get_entity_kpis",
@@ -82,7 +81,6 @@ var named = map[string][]string{
 		"describe_alert_chart",
 		"create_alert_from_chart",
 		"get_alert_rule_state",
-		"get_alert_hygiene",
 		"get_change_events",
 		"analyze_change_impact",
 		"get_notification_channels",
@@ -128,6 +126,12 @@ var core = []string{
 	"search_docs",
 }
 
+// feedback tools join every named toolset so any agent can report a problem. The
+// investigate composite leaves them out: its surface and instructions are eval-budgeted.
+var feedback = []string{
+	"send_feedback",
+}
+
 // discovery tools included in the investigate composite (R9a).
 // get_alert_coverage joins them so an investigation can ask what is not alerted on
 // without pulling in the rest of the alerts toolset.
@@ -136,7 +140,6 @@ var investigateExtras = []string{
 	"get_service_profile",
 	"list_datasources",
 	"get_entity_kpis",
-	"get_alert_operations_summary",
 	"get_alert_coverage",
 }
 
@@ -225,6 +228,9 @@ func Parse(spec string) (Set, error) {
 				return nil, fmt.Errorf("unknown toolset %q; valid names: %s", t, strings.Join(ValidNames(), ", "))
 			}
 			for _, tool := range tools {
+				out[tool] = struct{}{}
+			}
+			for _, tool := range feedback {
 				out[tool] = struct{}{}
 			}
 		}

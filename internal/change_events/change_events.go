@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -110,7 +111,12 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 			return nil, nil, fmt.Errorf("failed to marshal result: %w", err)
 		}
 
+		// The dashboard has no page that lists change events for a time range
+		// (changeboards need a board id), so link the exact query in the
+		// Metrics explorer: it lists each event series with its labels.
+		dashboardURL := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildMetricsLink(startTimeParam*1000, endTimeParam*1000, promql)
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(resultJSON),

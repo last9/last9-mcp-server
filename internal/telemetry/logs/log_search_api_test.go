@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -69,6 +70,49 @@ func TestFetchLogJSONQuery_APIMode_RawSendsLimit(t *testing.T) {
 	}
 }
 
+func TestFetchLogJSONQuery_APIMode_SplitsThirtyDayWindow(t *testing.T) {
+	var mu sync.Mutex
+	var windows [][2]int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		start, end := int64(body["start"].(float64)), int64(body["end"].(float64))
+		mu.Lock()
+		windows = append(windows, [2]int64{start, end})
+		mu.Unlock()
+		_, _ = fmt.Fprintf(w, `{"query_result":{"status":"success","data":{"resultType":"streams","result":[{"stream":{},"values":[["%d","line"]]}]}},"total_matching_lines":2,"search_stats":{"chunks_planned":1}}`, start*int64(time.Second))
+	}))
+	defer srv.Close()
+
+	end := time.Unix(1_800_000_000, 0).UnixMilli()
+	result, err := fetchLogJSONQuery(context.Background(), srv.Client(), apiModeCfg(srv.URL),
+		[]map[string]interface{}{{"type": "filter"}}, end-int64(30*24*time.Hour/time.Millisecond), end, GetLogsArgs{Limit: 2})
+	if err != nil {
+		t.Fatalf("fetchLogJSONQuery: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(windows) != 3 {
+		t.Fatalf("requests = %d, want 3", len(windows))
+	}
+	for i, window := range windows {
+		if duration := window[1] - window[0]; duration <= 0 || duration > int64((14*24*time.Hour)/time.Second) {
+			t.Errorf("window %d duration = %ds, want 0 < duration <= 336h", i, duration)
+		}
+	}
+	if got := result["total_matching_lines"]; got != 6 {
+		t.Errorf("total_matching_lines = %v, want 6", got)
+	}
+	items := result["data"].(map[string]any)["result"].([]any)
+	if got := countLogEntriesInResultItems(items); got != 2 {
+		t.Errorf("returned lines = %d, want limit 2", got)
+	}
+	stats := result["search_stats"].(map[string]any)
+	if stats["windows_queried"] != float64(3) || stats["chunks_planned"] != float64(3) {
+		t.Errorf("search_stats = %#v, want three windows and summed chunks", stats)
+	}
+}
+
 func TestFetchLogJSONQuery_APIMode_AggregateOmitsLimit(t *testing.T) {
 	var body map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -91,6 +135,29 @@ func TestFetchLogJSONQuery_APIMode_AggregateOmitsLimit(t *testing.T) {
 	}
 	if _, present := body["limit"]; present {
 		t.Errorf("limit must be omitted for an aggregate pipeline, got %v", body["limit"])
+	}
+}
+
+func TestFetchLogJSONQuery_APIMode_LongAggregateStaysSingleRequest(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		_, _ = w.Write([]byte(`{
+			"query_result":{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"service":"checkout","count":12},"values":[]}]}},
+			"search_stats":{"strategy":"direct"}
+		}`))
+	}))
+	defer srv.Close()
+
+	end := time.Unix(1_800_000_000, 0).UnixMilli()
+	pipeline := []map[string]interface{}{{"type": "aggregate"}}
+	_, err := fetchLogJSONQuery(context.Background(), srv.Client(), apiModeCfg(srv.URL), pipeline,
+		end-int64(30*24*time.Hour/time.Millisecond), end, GetLogsArgs{Limit: 100})
+	if err != nil {
+		t.Fatalf("fetchLogJSONQuery: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("requests = %d, want 1 for aggregate pipeline", calls)
 	}
 }
 
