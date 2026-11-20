@@ -135,14 +135,14 @@ func findMetricRecipe(recipes []servicerecipes.MetricRecipe, metric string) (*se
 
 func readFailedResult(metric string, err error) DescribeMetricResult {
 	note := "Reading the Discover Services recipe catalog failed: " + err.Error()
-	// The client's size and 400/422 errors advise narrowing the request or fixing arguments, which
-	// this tool has no argument for; 400/422 messages also relay the upstream body.
+	// The client's size error and most 4xx errors advise narrowing the request or fixing arguments,
+	// which this tool has no argument for; 400/422 messages also relay the upstream body.
 	var tooLarge *last9api.ResponseTooLargeError
 	var upstream *utils.UpstreamHTTPError
 	switch {
 	case errors.As(err, &tooLarge):
 		note = fmt.Sprintf("Reading the Discover Services recipe catalog failed: the catalog exceeds %d bytes.", tooLarge.MaxBytes)
-	case errors.As(err, &upstream) && (upstream.StatusCode == http.StatusBadRequest || upstream.StatusCode == http.StatusUnprocessableEntity):
+	case errors.As(err, &upstream) && !upstreamAdviceApplies(upstream.StatusCode):
 		note = fmt.Sprintf("Reading the Discover Services recipe catalog failed with HTTP %d.", upstream.StatusCode)
 	}
 	legacy, ok := legacyMetricExamples[metric]
@@ -154,4 +154,14 @@ func readFailedResult(metric string, err error) DescribeMetricResult {
 	legacy.Basis = legacyBasis
 	legacy.Note = note
 	return legacy
+}
+
+// upstreamAdviceApplies allowlists the statuses whose shared-client advice (check credentials,
+// capability unavailable, retry later) names no argument and relays no body.
+func upstreamAdviceApplies(status int) bool {
+	switch status {
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
+		return true
+	}
+	return status >= http.StatusInternalServerError
 }
