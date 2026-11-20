@@ -38,7 +38,7 @@ type MetricRecipe struct {
 }
 
 type ListMetricRecipesResponse struct {
-	Recipes *[]MetricRecipe `json:"recipes"`
+	Recipes []MetricRecipe `json:"recipes"`
 }
 
 // ListMetricRecipes calls GET /recipes/metrics.
@@ -52,9 +52,10 @@ func ListMetricRecipes(ctx context.Context, c *last9api.Client) ([]MetricRecipe,
 	if err != nil {
 		return nil, err
 	}
-	// An empty or recipe-less body would otherwise read as a catalog that covers nothing.
-	if out == nil || out.Recipes == nil {
+	// The overview catalog always lists its recipes; an empty or recipe-less body would
+	// otherwise read as a catalog that covers nothing.
+	if out == nil || len(out.Recipes) == 0 {
 		return nil, errors.New(opMetricRecipes + ": response held no recipe catalog")
 	}
-	return *out.Recipes, nil
+	return out.Recipes, nil
 }
