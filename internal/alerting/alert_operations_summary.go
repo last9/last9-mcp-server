@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/alerts"
 	"last9-mcp/internal/models"
@@ -114,7 +115,11 @@ func NewGetAlertOperationsSummaryHandler(client *http.Client, cfg models.Config)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to encode alert operations summary: %w", err)
 		}
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(body)}}}, nil, nil
+		alertingURL := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildAlertingLink(in.From.UnixMilli(), in.To.UnixMilli(), "", "")
+		return &mcp.CallToolResult{
+			Meta:    deeplink.ToMeta(alertingURL),
+			Content: []mcp.Content{&mcp.TextContent{Text: string(body)}},
+		}, nil, nil
 	}
 }
 
@@ -189,6 +194,9 @@ func nonEmptyTrimmed(values []string) []string {
 }
 
 func opsSummaryErrorResult(err error) (*mcp.CallToolResult, any, error) {
+	if _, ok := utils.ExpectedEmptyStateMessage(err); ok {
+		return nil, nil, err
+	}
 	var apiErr *utils.UpstreamHTTPError
 	if !errors.As(err, &apiErr) {
 		return nil, nil, err

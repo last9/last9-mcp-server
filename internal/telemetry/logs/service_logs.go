@@ -598,7 +598,7 @@ func fetchServiceLogsViaSearchAPI(
 	ctx context.Context, client *http.Client, cfg models.Config, service string,
 	startTime, endTime time.Time, limit int, logjsonQuery []map[string]interface{}, index string,
 ) (*ServiceLogsResponse, error) {
-	result, err := utils.SearchLogs(ctx, client, cfg, utils.LogSearchRequest{
+	result, err := searchLogsByWindow(ctx, client, cfg, utils.LogSearchRequest{
 		Op:       "service logs query",
 		Pipeline: logjsonQuery,
 		StartMs:  startTime.UnixMilli(),

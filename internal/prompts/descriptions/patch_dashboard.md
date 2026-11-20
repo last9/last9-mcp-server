@@ -1,8 +1,8 @@
-Apply targeted edits to an existing custom dashboard by ID and get back a compact diff of what changed, not the full dashboard. Prefer this over update_dashboard for small refinements: unchanged panels are never re-sent. Use create_dashboard only for a net-new dashboard; once it has an id, refine it here or with update_dashboard.
+Apply targeted edits to a custom dashboard by ID. Prefer this over update_dashboard for small refinements: unchanged panels are not re-sent. Use create_dashboard only for a net-new dashboard; after creation, refine it here or with update_dashboard.
 
-`ops` run in order against the current dashboard; if any op is invalid, nothing is written and the error names it as `ops[i]`. Panel ids come from get_dashboard. A query's `query_type` must fit its `telemetry`: `promql` for metrics; `log_json`, `log_ql` or `log_raw` for logs; `trace_json` or `trace_ql` for traces.
+`ops` run in order; if one is invalid, nothing is written and the error names `ops[i]`. Panel ids come from get_dashboard. A query's `query_type` must fit its `telemetry`: `promql` for metrics; `log_json`, `log_ql` or `log_raw` for logs; `trace_json` or `trace_ql` for traces.
 - `add_panel`: `panel` (full panel object, same shape as create_dashboard; `version` defaults to 1), optional `index` (0-based insert position, default append).
-- `update_panel`: `panel_id`, `fields` (top-level panel keys to replace, e.g. `name`, `queries`, `layout`, `visualization`; `null` removes a key; `id` cannot change).
+- `update_panel`: `panel_id`, `fields` (top-level panel keys to replace, e.g. `name`, `queries`, `layout`, `visualization`; `null` removes a key; `id` cannot change). `fields.visualization` replaces that whole object, so include its `type` and the full `table_config` when editing a table.
 - `remove_panel`: `panel_id`.
 - `move_panel`: `panel_id`, `index` (0-based position in `panels` after the move).
 - `set_title`: `title` (the dashboard name).

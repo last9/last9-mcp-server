@@ -79,7 +79,7 @@ func NewGetProfileSummaryHandler(client *http.Client, cfg models.Config) func(co
 			"summary":       summary,
 			"top_functions": top,
 		})
-		return result, nil, err
+		return withProfilesLink(result, cfg, profilesLinkInput{Start: start, End: end, Filters: filters, RawProfileType: args.ProfileType}), nil, err
 	}
 }
 

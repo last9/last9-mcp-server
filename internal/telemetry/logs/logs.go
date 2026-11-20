@@ -508,7 +508,7 @@ func fetchViaLogSearchAPI(
 		req.Limit = rawLimit + 1
 	}
 
-	result, err := utils.SearchLogs(ctx, client, cfg, req)
+	result, err := searchLogsByWindow(ctx, client, cfg, req)
 	if err != nil {
 		return nil, env, err
 	}

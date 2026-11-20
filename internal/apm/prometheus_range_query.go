@@ -48,9 +48,11 @@ func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(con
 			Window:     endTimeParam - startTimeParam,
 		})
 		if err != nil {
-			return promToolResult(raw, err, choice.note)
+			res, out, err := promToolResult(raw, err, choice.note)
+			return withMetricsLink(res, choice.cfg, metricsLink{StartSec: startTimeParam, EndSec: endTimeParam, Query: query}), out, err
 		}
-		return withDatasourceNote(promRangeQueryResult(raw), choice.note), nil, nil
+		res := withDatasourceNote(promRangeQueryResult(raw), choice.note)
+		return withMetricsLink(res, choice.cfg, metricsLink{StartSec: startTimeParam, EndSec: endTimeParam, Query: query}), nil, nil
 	}
 }
 

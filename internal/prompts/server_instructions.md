@@ -9,8 +9,7 @@
 {{- $dashboardReads := tools "get_dashboard" "get_dashboard_snapshot" "grafana_get_dashboard" -}}
 {{- $serviceProfile := tools "get_service_profile" -}}
 {{- $health := tools "get_service_summary" "get_service_performance_details" "get_service_operations_summary" "get_service_dependency_graph" -}}
-{{- $alerts := tools "get_alerts" "get_alert_rule_state" "get_alert_hygiene" -}}
-{{- $alertOps := tools "get_alert_operations_summary" -}}
+{{- $alerts := tools "get_alerts" "get_alert_rule_state" -}}
 {{- $coverage := tools "get_alert_coverage" -}}
 {{- $changes := tools "get_change_events" "analyze_change_impact" -}}
 {{- $deviations := tools "get_apm_service_deviations" "get_trace_attribute_deviations" -}}
@@ -67,7 +66,7 @@ Never guess service, environment, attribute, metric or label names, or dashboard
 - Open a dashboard by id with {{.}}.
 {{- end}}{{end}}
 {{- end}}
-{{- if or $serviceProfile $health $alerts $alertOps $coverage $changes $deviations $scoped $databases $profiles}}
+{{- if or $serviceProfile $health $alerts $coverage $changes $deviations $scoped $databases $profiles}}
 
 ## Prefer dedicated tools
 They return computed answers with the right scoping; reach for them before writing a query.
@@ -79,9 +78,6 @@ They return computed answers with the right scoping; reach for them before writi
 {{- end}}
 {{- with $alerts}}
 - Firing alerts and rule state: {{.}}.
-{{- end}}
-{{- with $alertOps}}
-- Alert counts and hygiene: {{.}}.
 {{- end}}
 {{- with $changes}}
 - Deploys and other changes: {{.}}.
@@ -129,6 +125,12 @@ Read these resources before writing a non-trivial query{{if has "get_logs"}}. Af
 {{- if has "get_service_profile"}}
 - Service investigations: `last9://reference/investigation`
 {{- end}}
+{{- end}}
+{{- with tools "send_feedback"}}
+
+## Feedback
+When a Last9 tool errors unexpectedly, returns data that looks wrong, misleads you, or cannot do what the user needs, report it once with {{.}}, then continue the task.
+Do not report routine query errors, empty results, or uncertainty about how to use a tool. Use feedback only after checking the tool's inputs and guidance reveals a clear Last9 MCP server defect or missing capability.
 {{- end}}
 {{- if or $validate $alertValidate $alertDesign $dropRules $remappingRules}}
 
