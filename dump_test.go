@@ -48,8 +48,8 @@ func TestServedQueryToolSchemas(t *testing.T) {
 		"get_service_traces": {valid: map[string]any{"trace_id": "0123456789abcdef0123456789abcdef"}, invalid: []map[string]any{
 			{"service_name": "api", "unexpected": true}, {"trace_id": 1},
 		}},
-		"prometheus_range_query": {valid: map[string]any{"query": "up", "lookback_minutes": 5.5}, invalid: []map[string]any{
-			{"query": "up", "step": "1m"}, {}, {"query": 1},
+		"prometheus_range_query": {valid: map[string]any{"query": "up", "lookback_minutes": 5.5, "step": 120}, invalid: []map[string]any{
+			{"query": "up", "step": "1m"}, {"query": "up", "step": 1.5}, {"query": "up", "unexpected": true}, {}, {"query": 1},
 		}, requiredFields: []string{"query"}},
 		"prometheus_instant_query": {valid: map[string]any{"query": "up", "lookback_minutes": 5.5}, invalid: []map[string]any{
 			{"promql": "up"}, {}, {"query": 1},
