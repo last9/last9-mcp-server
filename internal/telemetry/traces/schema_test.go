@@ -164,6 +164,16 @@ func TestGetTracesInputSchema_DocumentsSelectTimestampFormat(t *testing.T) {
 	}
 }
 
+func TestGetTracesWindowAggregateSchemaListsDayUnits(t *testing.T) {
+	window := windowAggregateStageSchema()["properties"].(map[string]interface{})["window"].(map[string]interface{})
+	description := window["description"].(string)
+	for _, unit := range []string{"seconds", "minutes", "hours", "days"} {
+		if !strings.Contains(description, unit) {
+			t.Errorf("window description %q does not list unit %q", description, unit)
+		}
+	}
+}
+
 // TestGetTracesArgs_SchemaCompatibility ensures the generated JSON Schema for
 // GetTracesArgs does not contain "items": true for the tracejson_query field.
 //

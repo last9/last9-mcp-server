@@ -250,6 +250,16 @@ func TestGetLogsInputSchema_Structure(t *testing.T) {
 	}
 }
 
+func TestGetLogsWindowAggregateSchemaListsDayUnits(t *testing.T) {
+	window := logWindowAggregateStageSchema()["properties"].(map[string]interface{})["window"].(map[string]interface{})
+	description := window["description"].(string)
+	for _, unit := range []string{"seconds", "minutes", "hours", "days"} {
+		if !strings.Contains(description, unit) {
+			t.Errorf("window description %q does not list unit %q", description, unit)
+		}
+	}
+}
+
 func TestGetLogsInputSchema_RejectsUnknownTopLevelKeys(t *testing.T) {
 	raw, err := json.Marshal(GetLogsInputSchema())
 	if err != nil {
