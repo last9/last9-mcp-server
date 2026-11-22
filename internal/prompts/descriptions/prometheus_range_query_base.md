@@ -22,13 +22,12 @@
 			...
 		]
 	}]
-	The response will contain the metrics data for the specified query.
 	Parameters:
 	- query: (Required) The Prometheus query to execute.
 	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
 	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
 	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
-	- step: (Optional) Integer seconds between returned samples (e.g. 120 for one every two minutes). Omitted or 0 uses the default resolution. At most the window, and at most 11000 points.
+	- step: (Optional) Integer seconds between returned samples (e.g. 120 for one every two minutes). Omitted or 0 uses the default resolution. At most the window and 11000 points; each point grows the response, so use the coarsest step that answers the question.
 	- datasource: (Optional) Datasource name; omitted uses the default, a typo its closest match; looser or ambiguous names list candidates, no query. An additional block names it unless the name was exact.
 
 	**Time:** Prefer `lookback_minutes` for relative windows; `start_time_iso`+`end_time_iso` (RFC3339) override lookback. On lookback validation errors, retry with explicit ISO bounds instead of `lookback_minutes`.
