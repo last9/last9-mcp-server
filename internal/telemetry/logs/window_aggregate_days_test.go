@@ -9,6 +9,9 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"time"
+
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -82,6 +85,54 @@ func TestGetLogsWholeDayWindowMatchesHourWindow(t *testing.T) {
 			t.Errorf("%v result differs from %v:\n%s\n%s", tc.days, tc.hours, dayText, hourText)
 		}
 	}
+}
+
+func TestGetLogsWholeDayWindowMatchesHourWindow_Integration(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
+	handler := NewGetLogsHandler(http.DefaultClient, *cfg)
+	end := time.Now().UTC().Truncate(24 * time.Hour)
+	start := end.Add(-24 * time.Hour)
+
+	run := func(window []interface{}) interface{} {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		began := time.Now()
+		result, _, err := handler(ctx, &mcp.CallToolRequest{}, GetLogsArgs{
+			LogjsonQuery: []map[string]interface{}{
+				{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "last9-mcp"}}},
+				{"type": "window_aggregate", "function": map[string]interface{}{"$count": []interface{}{}}, "as": "count", "window": window},
+			},
+			StartTimeISO: start.Format(time.RFC3339),
+			EndTimeISO:   end.Format(time.RFC3339),
+		})
+		if err != nil {
+			t.Fatalf("%v: %v", window, err)
+		}
+		var body struct {
+			Data interface{} `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(utils.GetTextContent(t, result)), &body); err != nil {
+			t.Fatalf("%v: decode result: %v", window, err)
+		}
+		t.Logf("%v over %s..%s: %d series in %s: %v", window, start.Format(time.RFC3339), end.Format(time.RFC3339), seriesCount(body.Data), time.Since(began), body.Data)
+		return body.Data
+	}
+
+	hours := run([]interface{}{"24", "hours"})
+	days := run([]interface{}{"1", "days"})
+	if !reflect.DeepEqual(days, hours) {
+		t.Errorf("1 days returned %v, want the 24 hours result %v", days, hours)
+	}
+	if seriesCount(hours) == 0 {
+		t.Log("no last9-mcp logs in the window; day/hour equality is vacuous")
+	}
+}
+
+func seriesCount(data interface{}) int {
+	m, _ := data.(map[string]interface{})
+	result, _ := m["result"].([]interface{})
+	return len(result)
 }
 
 func TestGetLogsRejectsDayWindowsThatCannotBecomeHours(t *testing.T) {
