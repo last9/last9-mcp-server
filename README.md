@@ -644,6 +644,7 @@ Returns a per-series summary by default: `points`, `missing_points` (availabilit
 - `query` (string, required): The PromQL query.
 - `start_time_iso` / `end_time_iso` (string, optional): Defaults to last 60 min.
 - `lookback_minutes` (float, optional): Default: 60.
+- `step` (integer seconds, optional): Spacing between returned samples, e.g. `120` for one every two minutes. Omitted or `0` keeps the default resolution; must be at most the window and leave at most 11000 points.
 
 ### prometheus_instant_query
 

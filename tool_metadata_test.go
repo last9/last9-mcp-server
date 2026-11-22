@@ -23,7 +23,7 @@ const defaultDescriptionBudget = 2500
 // are the only description size budgets; add none elsewhere.
 var descriptionBudgetOverrides = map[string]int{
 	"get_logs":                        3804,
-	"prometheus_range_query":          3000,
+	"prometheus_range_query":          3150,
 	"get_log_attributes_for_pipeline": 2800,
 	"get_trace_waterfall":             2700,
 	"get_traces":                      3156,
