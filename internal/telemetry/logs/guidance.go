@@ -124,8 +124,13 @@ func addServiceLogsGuidance(response *ServiceLogsResponse, args GetServiceLogsAr
 }
 
 func logsGuidanceOptions(args GetLogsArgs, startMs, endMs int64) utils.ResultGuidanceOptions {
+	start, end := time.UnixMilli(startMs).UTC(), time.UnixMilli(endMs).UTC()
+	window := utils.WindowFromRange(start, end)
+	if args.StartTimeISO != "" || args.EndTimeISO != "" {
+		window = fmt.Sprintf("the range %s to %s", start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano))
+	}
 	return utils.ResultGuidanceOptions{
-		Window:      utils.WindowFromRange(time.UnixMilli(startMs).UTC(), time.UnixMilli(endMs).UTC()),
+		Window:      window,
 		ServiceName: utils.FindStringFilter(args.LogjsonQuery, "ServiceName", "service_name", "service"),
 		Environment: utils.FindStringFilter(
 			args.LogjsonQuery,

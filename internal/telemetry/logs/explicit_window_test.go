@@ -39,24 +39,37 @@ func TestGetLogsDefaultWindowIsExplicitInResult(t *testing.T) {
 	}
 }
 
-func TestGetLogsEndTimeOnlyDoesNotClaimDefaultWindow(t *testing.T) {
-	srv, _ := streamSearchServer(t, nil)
-	query := []map[string]interface{}{{
-		"type":  "filter",
-		"query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "checkout"}},
-	}}
-	result, _, err := NewGetLogsHandler(srv.Client(), apiModeCfg(srv.URL))(
-		context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
-			LogjsonQuery: query,
-			EndTimeISO:   "2026-11-12T14:00:00Z",
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := result.Content[0].(*mcp.TextContent).Text
-	if strings.Contains(text, "default window") || strings.Contains(text, `"window_source"`) {
-		t.Fatalf("response claims a default window: %s", text)
+func TestGetLogsExplicitWindowEmptyGuidance(t *testing.T) {
+	const start = "2024-04-10T12:00:00.125Z"
+	const end = "2024-04-10T12:05:00.125Z"
+	for _, tc := range []struct{ name, start, end, mode string }{
+		{"both", "2024-04-10T17:30:00.125+05:30", end, ""},
+		{"start only", start, "", "raw"},
+		{"end only", "", end, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, _ := streamSearchServer(t, nil)
+			result, _, err := NewGetLogsHandler(srv.Client(), apiModeCfg(srv.URL))(
+				context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+					LogjsonQuery: []map[string]interface{}{{
+						"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "checkout"}},
+					}},
+					StartTimeISO: tc.start, EndTimeISO: tc.end, ResponseMode: tc.mode,
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response := parseToolJSONResult(t, result)
+			guidance, _ := response["l9_guidance"].(map[string]any)
+			message, _ := guidance["message"].(string)
+			if !strings.Contains(message, start) || !strings.Contains(message, end) || strings.Contains(message, "last ") {
+				t.Errorf("empty guidance message = %q, want %s to %s", message, start, end)
+			}
+			if _, ok := response["window_source"]; ok || strings.Contains(message, "default window") {
+				t.Errorf("explicit range claims a default window: %v", response)
+			}
+		})
 	}
 }
 
