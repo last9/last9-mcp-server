@@ -145,7 +145,7 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 			return utils.ToolErrorResult(fmt.Sprintf("time range and step result in too many points. Maximum is %d samples; set step to at least %d seconds or narrow the range", alertRuleStateMaxPoints, minStep)), nil, nil
 		}
 		points := span/args.Step + 1
-		if msg := futureSampleError(startTime+(points-1)*args.Step, utils.Now().Unix()); msg != "" {
+		if msg := futureSampleError(startTime, startTime+(points-1)*args.Step, utils.Now().Unix()); msg != "" {
 			return utils.ToolErrorResult(msg), nil, nil
 		}
 
@@ -246,12 +246,17 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 
 // futureSampleError checks the last scheduled sample, not end_time: an end_time
 // past now is fine while no sample lands after it.
-func futureSampleError(lastSample, now int64) string {
+func futureSampleError(start, lastSample, now int64) string {
 	if lastSample <= now {
 		return ""
 	}
-	return fmt.Sprintf("sample at %d (%s) is in the future: the current time is %d (%s). The upstream only answers for past instants; set end_time to %d or earlier, or call get_current_time and use its value as end_time.",
-		lastSample, formatUnixUTC(lastSample), now, formatUnixUTC(now), now)
+	remedy := fmt.Sprintf("set end_time to %d or earlier, or call get_current_time and use its value as end_time", now)
+	if start >= now {
+		// Moving end_time alone would put it at or before start_time.
+		remedy = fmt.Sprintf("set start_time before %d and end_time to %d or earlier, or call get_current_time and end the window at its value", now, now)
+	}
+	return fmt.Sprintf("sample at %d (%s) is in the future: the current time is %d (%s). The upstream only answers for past instants; %s.",
+		lastSample, formatUnixUTC(lastSample), now, formatUnixUTC(now), remedy)
 }
 
 func formatUnixUTC(sec int64) string {

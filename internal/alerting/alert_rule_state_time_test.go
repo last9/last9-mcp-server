@@ -215,6 +215,37 @@ func TestAlertRuleStateHandler_RejectsFutureSampleBeforePolling(t *testing.T) {
 	}
 }
 
+// Moving only end_time back to now would leave end_time <= start_time, so the
+// remedy must move start_time as well.
+func TestAlertRuleStateHandler_FutureStartRemedyMovesStartTime(t *testing.T) {
+	now := time.Date(2024, 6, 10, 12, 0, 0, 0, time.UTC)
+	pinAlertRuleStateClock(t, now)
+
+	var hits int64
+	upstream := countUpstream(&hits)
+	defer upstream.Close()
+	handler := NewAlertRuleStateHandler(upstream.Client(), newAlertRuleStateTestConfig(upstream.URL))
+	for name, start := range map[string]time.Time{
+		"start at now":    now,
+		"start after now": now.Add(time.Minute),
+	} {
+		t.Run(name, func(t *testing.T) {
+			end := start.Add(2 * time.Minute)
+			result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, AlertRuleStateRequest{StartTime: ts(start.Unix()), EndTime: ts(end.Unix()), Step: 60})
+			if err != nil || !result.IsError {
+				t.Fatalf("expected IsError result, got err=%v result=%+v", err, result)
+			}
+			text := result.Content[0].(*mcp.TextContent).Text
+			if want := "set start_time before 1718020800 and end_time to 1718020800 or earlier"; !strings.Contains(text, want) {
+				t.Errorf("message %q lacks %q", text, want)
+			}
+		})
+	}
+	if got := atomic.LoadInt64(&hits); got != 0 {
+		t.Errorf("made %d upstream calls for a future window, want 0", got)
+	}
+}
+
 func TestAlertRuleStateHandler_AcceptsFutureEndWhenLastSampleIsNow(t *testing.T) {
 	now := time.Date(2024, 6, 10, 12, 0, 0, 0, time.UTC)
 	pinAlertRuleStateClock(t, now)
