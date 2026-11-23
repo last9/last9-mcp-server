@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"last9-mcp/internal/utils"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -151,6 +153,74 @@ func TestAlertRuleStateInputSchema_AcceptsIntegerOrString(t *testing.T) {
 	}
 	if schema.AdditionalProperties == nil {
 		t.Error("schema lost additionalProperties: false")
+	}
+}
+
+func pinAlertRuleStateClock(t *testing.T, now time.Time) {
+	t.Helper()
+	t.Cleanup(func() { t.Setenv(utils.FakeNowEnv, ""); _, _ = utils.InitClock() })
+	t.Setenv(utils.FakeNowEnv, now.Format(time.RFC3339))
+	if _, err := utils.InitClock(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAlertRuleStateHandler_RejectsFutureSampleBeforePolling(t *testing.T) {
+	now := time.Date(2024, 6, 10, 12, 0, 0, 0, time.UTC)
+	pinAlertRuleStateClock(t, now)
+
+	// Another call holds all of its polling slots; the rejection must not wait on any.
+	busy := hangingUpstream(t)
+	busyCtx, stopBusy := context.WithCancel(context.Background())
+	busyDone := make(chan struct{})
+	go func() {
+		defer close(busyDone)
+		NewAlertRuleStateHandler(busy.Client(), newAlertRuleStateTestConfig(busy.URL))(busyCtx, &mcp.CallToolRequest{},
+			AlertRuleStateRequest{StartTime: ts(1718000000), EndTime: ts(1718000000 + 19*60), Step: 60})
+	}()
+	t.Cleanup(func() { stopBusy(); <-busyDone })
+
+	var hits int64
+	upstream := countUpstream(&hits)
+	defer upstream.Close()
+	handler := NewAlertRuleStateHandler(upstream.Client(), newAlertRuleStateTestConfig(upstream.URL))
+	start, end := now.Add(-time.Minute).Unix(), now.Add(time.Minute).Unix()
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, AlertRuleStateRequest{StartTime: ts(start), EndTime: ts(end), Step: 60})
+	if err != nil {
+		t.Fatalf("expected IsError result, got error: %v", err)
+	}
+	if !result.IsError {
+		t.Fatalf("expected IsError, got %+v", result.Content)
+	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	for _, want := range []string{
+		"sample at 1718020860 (2024-06-10T12:01:00Z) is in the future",
+		"current time is 1718020800 (2024-06-10T12:00:00Z)",
+		"set end_time to 1718020800 or earlier",
+		"get_current_time",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("message %q lacks %q", text, want)
+		}
+	}
+	if got := atomic.LoadInt64(&hits); got != 0 {
+		t.Errorf("made %d upstream calls for a future sample, want 0", got)
+	}
+}
+
+func TestAlertRuleStateHandler_AcceptsFutureEndWhenLastSampleIsNow(t *testing.T) {
+	now := time.Date(2024, 6, 10, 12, 0, 0, 0, time.UTC)
+	pinAlertRuleStateClock(t, now)
+
+	srv, seen := sampledTimestamps(t)
+	handler := NewAlertRuleStateHandler(srv.Client(), newAlertRuleStateTestConfig(srv.URL))
+	start, end := now.Add(-time.Minute).Unix(), now.Add(30*time.Second).Unix()
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, AlertRuleStateRequest{StartTime: ts(start), EndTime: ts(end), Step: 60})
+	if err != nil || result.IsError {
+		t.Fatalf("unexpected failure: err=%v result=%+v", err, result)
+	}
+	if got, want := seen(), []string{"1718020740", "1718020800"}; !slices.Equal(got, want) {
+		t.Errorf("sampled timestamps = %v, want %v", got, want)
 	}
 }
 
