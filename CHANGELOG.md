@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added the read-only `search_docs` tool to every toolset: it searches a cached public Last9 documentation index with BM25 ranking and query synonyms, returning one canonical anchored URL and bounded section excerpt per page instead of requiring agents to guess documentation links (#571).
 - More tools now return a Last9 dashboard deep link in `_meta.reference_url`: Metrics for `prometheus_range_query`, `prometheus_instant_query`, `get_metric_status` and `get_change_events`; Logs for `get_log_attributes`; Traces for `get_trace_attributes`, `get_trace_attribute_values` and `get_trace_attribute_deviations`; Discover Services for `get_service_environments`, `get_service_profile` and `describe_alert_chart`; Discover Databases for `get_database_server_metrics`; Alert Groups for `get_alert_rule_state`; Profiles for `get_profile_services`, `get_profile_summary`, `get_flamegraph` and `get_top_functions`; and Grafana for `grafana_search_dashboards`, `grafana_list_folders`, `grafana_list_folder_dashboards` and `grafana_get_dashboard`. Metrics links use the cluster of the datasource the query ran on (#572).
 
+### Fixed
+- Empty `get_logs` results for an explicit time range now show both resolved UTC bounds. The guidance previously described historical intervals as a lookback from the present (#600).
+
 ### Changed
 - Dashboard authoring guidance now explains that table query names become value-column headers, `table_config.columnConfig` controls the complete rendered column order, and `table_config.sorting` controls row order; its worked top-10 example keeps every outcome and rate column on the same key set (#585).
 
