@@ -28,11 +28,18 @@ func rangeLimitResult(err error, pipeline []map[string]interface{}, window utils
 		return nil
 	}
 
-	requested := fmt.Sprintf("The requested %s range (%s to %s)",
-		formatRangeDuration(time.Duration(window.EndMs-window.StartMs)*time.Millisecond),
+	span := time.Duration(window.EndMs-window.StartMs) * time.Millisecond
+	requested := fmt.Sprintf("The requested %s range (%s to %s)", formatRangeDuration(span),
 		time.UnixMilli(window.StartMs).UTC().Format(time.RFC3339), time.UnixMilli(window.EndMs).UTC().Format(time.RFC3339))
+	limit, limitOK := reportedRangeLimit(upstream.Body)
+	// A limit the range already fits cannot explain the rejection, so no shorter
+	// range derived from it would be accepted.
+	if limitOK && span <= limit {
+		return utils.ToolErrorResult(fmt.Sprintf("get_logs aggregate query rejected: %s was rejected as too long, but it is within the reported %s limit, so that limit does not say how much shorter to go. Do not retry unchanged or guess a shorter range: report the rejection to the user.",
+			requested, formatRangeDuration(limit)))
+	}
 	var msg string
-	if limit, ok := reportedRangeLimit(upstream.Body); ok {
+	if limitOK {
 		msg = fmt.Sprintf("%s exceeds the reported %s limit. Choose lookback_minutes of %d (%s) or less, or move start_time_iso and end_time_iso to span at most %s.",
 			requested, formatRangeDuration(limit), int64(limit/time.Minute), formatRangeSpan(limit), formatRangeSpan(limit))
 	} else {
