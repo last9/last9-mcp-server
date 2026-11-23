@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	rangeLimitRejectionPattern = regexp.MustCompile(`(?i)\b(?:time\s+range|range|duration|window)\b.*\bexceeds?\b.*\b(?:limit|max|maximum)\b`)
+	rangeLimitRejectionPattern = regexp.MustCompile(`(?i)\b(?:time\s+range|range|duration|window)\b.*\bexceed(?:s|ed)?\b.*\b(?:limit|max|maximum)\b`)
 	rangeLimitValuePattern     = regexp.MustCompile(`(?i)\b(?:limit|max|maximum)\b\D{0,30}?(\d{1,6})\s*(hours?|days?|h|d)(?:[^a-z]|$)`)
 )
 
