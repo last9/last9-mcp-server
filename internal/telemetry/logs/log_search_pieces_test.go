@@ -182,6 +182,38 @@ func TestMergeLogSearchWindows_UpstreamTruncatedPieceIsPartial(t *testing.T) {
 	})
 }
 
+func TestMergeLogSearchWindows_EmptyPieceAfterLimitRemainsComplete(t *testing.T) {
+	piece := func(entries int) map[string]any {
+		values := make([]any, entries)
+		for i := range values {
+			values[i] = []any{fmt.Sprint(i), "line"}
+		}
+		result := []any{}
+		if entries > 0 {
+			result = append(result, map[string]any{"stream": map[string]any{"service": "checkout"}, "values": values})
+		}
+		return map[string]any{
+			"data":           map[string]any{"resultType": "streams", "result": result},
+			"logs_truncated": false,
+		}
+	}
+	results := []utils.ChunkResult[map[string]any]{
+		{Chunk: utils.TimeChunk{StartMs: 3000, EndMs: 4000}, Value: piece(7)},
+		{Chunk: utils.TimeChunk{StartMs: 2000, EndMs: 3000}, Index: 1, Value: piece(7)},
+		{Chunk: utils.TimeChunk{StartMs: 1000, EndMs: 2000}, Index: 2, Value: piece(0)},
+	}
+
+	result, err := mergeLogSearchWindows(results, 10)
+	if err != nil {
+		t.Fatalf("mergeLogSearchWindows: %v", err)
+	}
+	assertLogSearchPieces(t, result["search_stats"].(map[string]any), []wantPiece{
+		{start: time.UnixMilli(3000).UTC(), end: time.UnixMilli(4000).UTC(), status: "complete"},
+		{start: time.UnixMilli(2000).UTC(), end: time.UnixMilli(3000).UTC(), status: "partial"},
+		{start: time.UnixMilli(1000).UTC(), end: time.UnixMilli(2000).UTC(), status: "complete"},
+	})
+}
+
 func TestFetchLogJSONQuery_APIMode_AggregateOverWindowLimitIsRefused(t *testing.T) {
 	end := time.Unix(1_800_000_000, 0).UTC()
 	aggregate := []map[string]interface{}{{"type": "aggregate"}}
