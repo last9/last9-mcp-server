@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -29,7 +30,9 @@ func NormalizeWindowAggregateDays(pipeline []map[string]interface{}) error {
 		}
 		days, ok := wholeDays(window[0])
 		if !ok {
-			return fmt.Errorf("window_aggregate at stage %d: window %v must be a whole number of days from 1 to %d; use hours or minutes for shorter buckets", i, window, int64(maxWindowDays))
+			// JSON keeps quotes and spaces visible, e.g. [" 7 ","days"].
+			quoted, _ := json.Marshal(window)
+			return fmt.Errorf("window_aggregate at stage %d: window %s must be a whole number of days from 1 to %d; use hours or minutes for shorter buckets", i, quoted, maxWindowDays)
 		}
 		stage["window"] = []interface{}{strconv.FormatInt(days*24, 10), "hours"}
 	}

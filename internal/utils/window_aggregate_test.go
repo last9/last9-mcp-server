@@ -2,6 +2,7 @@ package utils
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -36,6 +37,14 @@ func TestNormalizeWindowAggregateDaysRejectsInvalidDayCounts(t *testing.T) {
 		if err := NormalizeWindowAggregateDays(pipeline); err == nil {
 			t.Errorf("%#v days: want error, window became %v", amount, pipeline[0]["window"])
 		}
+	}
+}
+
+func TestNormalizeWindowAggregateDaysErrorQuotesTheWindow(t *testing.T) {
+	pipeline := []map[string]interface{}{{"type": "window_aggregate", "window": []interface{}{" 7 ", "days"}}}
+	err := NormalizeWindowAggregateDays(pipeline)
+	if err == nil || !strings.Contains(err.Error(), `window [" 7 ","days"]`) {
+		t.Errorf("got %v, want the window quoted as JSON", err)
 	}
 }
 
