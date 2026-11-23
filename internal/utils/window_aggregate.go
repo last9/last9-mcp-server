@@ -5,9 +5,12 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 )
 
-const maxWindowDays = math.MaxInt64 / 24
+// maxWindowDays is the widest day window whose width in hours still fits a
+// time.Duration; wider windows overflow and the query API rejects them.
+const maxWindowDays = math.MaxInt64 / int64(24*time.Hour)
 
 // NormalizeWindowAggregateDays rewrites window_aggregate windows given in days
 // as the same width in hours, because the query API rejects the day unit.
@@ -43,7 +46,7 @@ func wholeDays(raw interface{}) (int64, bool) {
 		}
 		days = n
 	case float64:
-		if v != math.Trunc(v) || v < 1 || v > maxWindowDays {
+		if v != math.Trunc(v) || v < 1 || v > float64(maxWindowDays) {
 			return 0, false
 		}
 		days = int64(v)

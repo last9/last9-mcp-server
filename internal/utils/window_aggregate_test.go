@@ -13,7 +13,7 @@ func TestNormalizeWindowAggregateDays(t *testing.T) {
 		{window: []interface{}{"7", "days"}, want: []interface{}{"168", "hours"}},
 		{window: []interface{}{"2", "Day"}, want: []interface{}{"48", "hours"}},
 		{window: []interface{}{float64(3), "days"}, want: []interface{}{"72", "hours"}},
-		{window: []interface{}{"384307168202282325", "days"}, want: []interface{}{"9223372036854775800", "hours"}},
+		{window: []interface{}{"106751", "days"}, want: []interface{}{"2562024", "hours"}},
 		{window: []interface{}{"5", "minutes"}, want: []interface{}{"5", "minutes"}},
 		{window: []interface{}{"24", "hours"}, want: []interface{}{"24", "hours"}},
 	} {
@@ -29,8 +29,8 @@ func TestNormalizeWindowAggregateDays(t *testing.T) {
 
 func TestNormalizeWindowAggregateDaysRejectsInvalidDayCounts(t *testing.T) {
 	for _, amount := range []interface{}{
-		"384307168202282326", "9223372036854775808", "0", "-1", "1.5", " 1", "", "one",
-		float64(0), float64(1.5), float64(1e19), nil, true,
+		"106752", "384307168202282325", "9223372036854775808", "0", "-1", "1.5", " 1", "", "one",
+		float64(0), float64(1.5), float64(106752), float64(1e19), nil, true,
 	} {
 		pipeline := []map[string]interface{}{{"type": "window_aggregate", "window": []interface{}{amount, "days"}}}
 		if err := NormalizeWindowAggregateDays(pipeline); err == nil {
