@@ -34,4 +34,4 @@ JSON map of rule_id to `[{timestamp, is_firing}]`.
 If an alert_group_id, rule_name or alert_group_name filter matches no rules across all samples, returns a tool error with recovery guidance. This does not prove the group or rule is nonexistent. Without these filters, no matches returns `{}`.
 
 ## Known traps
-`start_time` and `end_time` are absolute times, never durations or offsets like `now-1h`; values before 2000 are rejected. At most 100 samples per call; fewer samples answer faster.
+`start_time` and `end_time` are absolute times, never durations or offsets like `now-1h`; values before 2000 are rejected. Keep end_time at or before now: a call is rejected before polling if any sample (start_time + n·step) lands after now. At most 100 samples per call; fewer samples answer faster.

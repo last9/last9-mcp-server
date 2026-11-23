@@ -67,14 +67,16 @@ func TestGetLogsAggregateRangeLimitRejection(t *testing.T) {
 		wantAbsent []string
 	}{
 		{
-			name:      "aggregate relative range over a 14-day limit",
+			// The search-API path refuses aggregates over 336 hours locally, so
+			// only a workspace limit below that reaches this rejection there.
+			name:      "aggregate relative range over a 7-day limit",
 			searchAPI: true,
 			pipeline:  rangeLimitAggregatePipeline,
-			args:      map[string]any{"lookback_minutes": 43200},
-			body:      `{"error":"requested time range exceeds the duration limit of 336 hours"}`,
+			args:      map[string]any{"lookback_minutes": 14400},
+			body:      `{"error":"requested time range exceeds the duration limit of 168 hours"}`,
 			want: []string{
-				"The requested 30-day range (2026-10-24T04:00:00Z to 2026-11-23T04:00:00Z) exceeds the reported 14-day limit.",
-				"lookback_minutes of 20160 (14 days) or less",
+				"The requested 10-day range (2026-11-13T04:00:00Z to 2026-11-23T04:00:00Z) exceeds the reported 7-day limit.",
+				"lookback_minutes of 10080 (7 days) or less",
 				"start_time_iso and end_time_iso",
 				"A shorter range gives a total for that shorter period",
 				"confirm with the user",
@@ -95,10 +97,10 @@ func TestGetLogsAggregateRangeLimitRejection(t *testing.T) {
 			name:      "limit not reported is not invented",
 			searchAPI: true,
 			pipeline:  rangeLimitAggregatePipeline,
-			args:      map[string]any{"lookback_minutes": 43200},
+			args:      map[string]any{"lookback_minutes": 14400},
 			body:      `{"error":"time range exceeds the maximum allowed duration","trace":"SECRET-DETAIL"}`,
 			want: []string{
-				"The requested 30-day range (2026-10-24T04:00:00Z to 2026-11-23T04:00:00Z) exceeds the maximum range the log backend accepts; the response gave no limit.",
+				"The requested 10-day range (2026-11-13T04:00:00Z to 2026-11-23T04:00:00Z) exceeds the maximum range the log backend accepts; the response gave no limit.",
 				"A shorter range gives a total for that shorter period",
 			},
 			wantAbsent: []string{"SECRET-DETAIL", "maximum allowed duration", "reported"},
