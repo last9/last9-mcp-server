@@ -108,7 +108,9 @@ func mergeLogSearchWindows(results []utils.ChunkResult[map[string]any], limit in
 		truncated = truncated || windowTruncated
 		entries := countLogEntriesInResultItems(windowItems)
 		status := logSearchPieceComplete
-		if windowTruncated || (limit > 0 && entriesBefore+entries > limit) {
+		// The merged limit only cuts this piece's coverage if it drops one of its rows.
+		limitDropsRows := limit > 0 && entries > 0 && entriesBefore+entries > limit
+		if windowTruncated || limitDropsRows {
 			status = logSearchPiecePartial
 		}
 		entriesBefore += entries
