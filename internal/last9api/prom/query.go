@@ -18,6 +18,8 @@ type QueryInput struct {
 	// End of the window, Unix seconds; Window is its length in seconds.
 	Timestamp int64 `json:"timestamp"`
 	Window    int64 `json:"window"`
+	// Seconds between samples; zero leaves the resolution to the backend.
+	Step int64 `json:"step,omitempty"`
 }
 
 // Query calls POST /prom_query.

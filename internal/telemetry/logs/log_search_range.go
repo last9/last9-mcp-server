@@ -4,22 +4,41 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 )
 
 const (
-	maxLogSearchWindowMs        = int64(336 * 60 * 60 * 1000)
+	maxLogSearchWindowHours     = 336
+	maxLogSearchWindowMs        = int64(maxLogSearchWindowHours * time.Hour / time.Millisecond)
 	maxParallelLogSearchWindows = 3
 )
+
+const (
+	logSearchPieceComplete = "complete"
+	logSearchPiecePartial  = "partial"
+	logSearchPieceFailed   = "failed"
+)
+
+// Counts or sums could be added across pieces, but percentiles, averages and
+// top-N cannot, and the pipeline does not say which one it is.
+var errAggregateOverLogSearchWindow = fmt.Errorf(
+	"aggregate log queries can read at most %d hours (14 days) at once, and their results are not combined across reads: "+
+		"narrow the time range to %d hours or less, or run one query per window of at most %d hours "+
+		"and add the results yourself only when the aggregate is a count or sum",
+	maxLogSearchWindowHours, maxLogSearchWindowHours, maxLogSearchWindowHours)
 
 func searchLogsByWindow(
 	ctx context.Context, client *http.Client, cfg models.Config, req utils.LogSearchRequest,
 ) (map[string]any, error) {
 	pipeline, _ := req.Pipeline.([]map[string]interface{})
-	if req.EndMs-req.StartMs <= maxLogSearchWindowMs || utils.PipelineHasAggregateStage(pipeline) {
+	if req.EndMs-req.StartMs <= maxLogSearchWindowMs {
 		return utils.SearchLogs(ctx, client, cfg, req)
+	}
+	if utils.PipelineHasAggregateStage(pipeline) {
+		return nil, errAggregateOverLogSearchWindow
 	}
 
 	windows := splitLogSearchWindows(req.StartMs, req.EndMs)
@@ -48,6 +67,8 @@ func mergeLogSearchWindows(results []utils.ChunkResult[map[string]any], limit in
 	var items []any
 	stats := map[string]any{"windows_queried": float64(len(results))}
 	errors := make([]any, 0)
+	pieces := make([]any, 0, len(results))
+	entriesBefore := 0
 	total := 0
 	hasTotal := false
 	truncated := false
@@ -61,6 +82,7 @@ func mergeLogSearchWindows(results []utils.ChunkResult[map[string]any], limit in
 			}
 			errors = append(errors, fmt.Sprintf("window %d/%d failed (start_ms=%d end_ms=%d): %v",
 				result.Index+1, len(results), result.Chunk.StartMs, result.Chunk.EndMs, result.Err))
+			pieces = append(pieces, failedLogSearchPiece(result.Chunk, result.Err))
 			continue
 		}
 		if merged == nil {
@@ -73,6 +95,7 @@ func mergeLogSearchWindows(results []utils.ChunkResult[map[string]any], limit in
 			}
 			errors = append(errors, fmt.Sprintf("window %d/%d failed (start_ms=%d end_ms=%d): %v",
 				result.Index+1, len(results), result.Chunk.StartMs, result.Chunk.EndMs, err))
+			pieces = append(pieces, failedLogSearchPiece(result.Chunk, err))
 			continue
 		}
 		succeeded++
@@ -81,9 +104,17 @@ func mergeLogSearchWindows(results []utils.ChunkResult[map[string]any], limit in
 			total += windowTotal
 			hasTotal = true
 		}
-		if windowTruncated, ok := result.Value["logs_truncated"].(bool); ok {
-			truncated = truncated || windowTruncated
+		windowTruncated, _ := result.Value["logs_truncated"].(bool)
+		truncated = truncated || windowTruncated
+		entries := countLogEntriesInResultItems(windowItems)
+		status := logSearchPieceComplete
+		// The merged limit only cuts this piece's coverage if it drops one of its rows.
+		limitDropsRows := limit > 0 && entries > 0 && entriesBefore+entries > limit
+		if windowTruncated || limitDropsRows {
+			status = logSearchPiecePartial
 		}
+		entriesBefore += entries
+		pieces = append(pieces, logSearchPiece(result.Chunk, status))
 		mergeLogSearchStats(stats, result.Value["search_stats"])
 	}
 
@@ -100,6 +131,7 @@ func mergeLogSearchWindows(results []utils.ChunkResult[map[string]any], limit in
 	delete(merged, "volume_summary")
 	stats["windows_succeeded"] = float64(succeeded)
 	stats["windows_failed"] = float64(len(results) - succeeded)
+	stats["pieces"] = pieces
 	if len(errors) > 0 {
 		stats["errors"] = errors
 		delete(stats, "covered_range")
@@ -111,6 +143,20 @@ func mergeLogSearchWindows(results []utils.ChunkResult[map[string]any], limit in
 	}
 	merged["logs_truncated"] = truncated
 	return merged, nil
+}
+
+func logSearchPiece(chunk utils.TimeChunk, status string) map[string]any {
+	return map[string]any{
+		"start":  time.UnixMilli(chunk.StartMs).UTC().Format(time.RFC3339Nano),
+		"end":    time.UnixMilli(chunk.EndMs).UTC().Format(time.RFC3339Nano),
+		"status": status,
+	}
+}
+
+func failedLogSearchPiece(chunk utils.TimeChunk, err error) map[string]any {
+	piece := logSearchPiece(chunk, logSearchPieceFailed)
+	piece["error"] = err.Error()
+	return piece
 }
 
 func mergeLogSearchStats(merged map[string]any, raw any) {
