@@ -167,6 +167,23 @@ func TestGetLogsAggregateUnrelated400KeepsPipelineDiagnostics(t *testing.T) {
 	}
 }
 
+func TestGetLogsRawSearchRangeLimit400KeepsExistingDiagnostics(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"requested time range exceeds the duration limit of 336 hours"}`))
+	}))
+	t.Cleanup(srv.Close)
+	cfg := testLogsConfig(srv.URL)
+	cfg.UseLogSearchAPI = true
+	result := callRegisteredGetLogs(t, cfg, srv.Client(), map[string]any{
+		"logjson_query": rangeLimitAggregatePipeline[:1], "lookback_minutes": 60,
+	})
+	text := result.Content[0].(*mcp.TextContent).Text
+	if !result.IsError || !strings.Contains(text, "Pipeline stage schema") || strings.Contains(text, "exceeds the reported") {
+		t.Errorf("raw search 400 should keep existing diagnostics, got %s", text)
+	}
+}
+
 func TestGetLogsAggregateInRangeStillSucceeds(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"query_result":{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[[1,"42"]]}]}}}`))

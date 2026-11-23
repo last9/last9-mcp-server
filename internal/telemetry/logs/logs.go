@@ -141,6 +141,11 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 			cancelLink()
 			<-resolvedIndexCh
 		}
+		if stages, ok := logjsonQuery.([]map[string]interface{}); ok {
+			if rangeResult := rangeLimitResult(err, stages, utils.TimeChunk{StartMs: startTime, EndMs: endTime}); rangeResult != nil {
+				return rangeResult, nil
+			}
+		}
 		if scanResult := scanErrorResult(err, getLogsScanSteps); scanResult != nil {
 			return scanResult, nil
 		}
