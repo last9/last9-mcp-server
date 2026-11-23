@@ -115,6 +115,27 @@ func TestGetLogsAggregateRangeLimitRejection(t *testing.T) {
 				"The requested 30-day range (2026-10-24T04:00:00Z to 2026-11-23T04:00:00Z) exceeds the reported 14-day limit.",
 			},
 		},
+		{
+			name:      "reported limit not below the range gives no shortening advice",
+			searchAPI: true,
+			pipeline:  rangeLimitAggregatePipeline,
+			args:      map[string]any{"lookback_minutes": 14400},
+			body:      `{"error":"requested range exceeds the limit of 30 days"}`,
+			want: []string{
+				"The requested 10-day range (2026-11-13T04:00:00Z to 2026-11-23T04:00:00Z) was rejected as too long, but it is within the reported 30-day limit",
+				"Do not retry unchanged or guess a shorter range",
+			},
+			wantAbsent: []string{"exceeds the reported", "lookback_minutes of", "A shorter range gives"},
+		},
+		{
+			name:       "reported limit equal to the range gives no shortening advice",
+			searchAPI:  false,
+			pipeline:   rangeLimitAggregatePipeline,
+			args:       map[string]any{"lookback_minutes": 20160},
+			body:       `{"error":"query window exceeded the maximum of 14 days"}`,
+			want:       []string{"was rejected as too long, but it is within the reported 14-day limit"},
+			wantAbsent: []string{"exceeds the reported", "lookback_minutes of"},
+		},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
