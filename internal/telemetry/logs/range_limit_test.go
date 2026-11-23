@@ -103,6 +103,16 @@ func TestGetLogsAggregateRangeLimitRejection(t *testing.T) {
 			},
 			wantAbsent: []string{"SECRET-DETAIL", "maximum allowed duration", "reported"},
 		},
+		{
+			name:      "past-tense rejection wording with a day limit",
+			searchAPI: false,
+			pipeline:  rangeLimitAggregatePipeline,
+			args:      map[string]any{"lookback_minutes": 43200},
+			body:      `{"error":"query window exceeded the maximum of 14 days"}`,
+			want: []string{
+				"The requested 30-day range (2026-10-24T04:00:00Z to 2026-11-23T04:00:00Z) exceeds the reported 14-day limit.",
+			},
+		},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
