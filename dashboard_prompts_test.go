@@ -115,6 +115,15 @@ func TestDashboardAuthoringPrompts(t *testing.T) {
 			if len(resource.Contents) != 1 || resource.Contents[0].Text != body.Text {
 				t.Fatal("resource and prompt must share their source")
 			}
+			if name == "query_guide" || name == "create_dashboard_guide" {
+				// Panel checks must sample on the panel's grid, not the backend default.
+				if strings.Contains(body.Text, "no step") {
+					t.Error("guide still says prometheus_range_query has no step")
+				}
+				if !strings.Contains(body.Text, "pass the panel's resolved interval as `step` in seconds") {
+					t.Error("guide must tell agents to pass the panel's resolved interval as step")
+				}
+			}
 			if name == "query_guide" {
 				for _, phrase := range []string{"instant", "range", "rate window", "step", "0–100", "trace_*", "nanoseconds", "window_aggregate", "unsupported_execution"} {
 					if !strings.Contains(body.Text, phrase) {
