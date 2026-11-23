@@ -170,7 +170,7 @@ func TestAlertRuleStateHandler_RejectsFutureSampleBeforePolling(t *testing.T) {
 	pinAlertRuleStateClock(t, now)
 
 	// Another call holds all of its polling slots; the rejection must not wait on any.
-	busy := hangingUpstream(t)
+	busy, arrived := hangingUpstream(t)
 	busyCtx, stopBusy := context.WithCancel(context.Background())
 	busyDone := make(chan struct{})
 	go func() {
@@ -179,6 +179,13 @@ func TestAlertRuleStateHandler_RejectsFutureSampleBeforePolling(t *testing.T) {
 			AlertRuleStateRequest{StartTime: ts(1718000000), EndTime: ts(1718000000 + 19*60), Step: 60})
 	}()
 	t.Cleanup(func() { stopBusy(); <-busyDone })
+	for range alertRuleStateConcurrency {
+		select {
+		case <-arrived:
+		case <-time.After(5 * time.Second):
+			t.Fatal("busy call never filled its polling slots")
+		}
+	}
 
 	var hits int64
 	upstream := countUpstream(&hits)
