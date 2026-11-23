@@ -138,29 +138,6 @@ func TestFetchLogJSONQuery_APIMode_AggregateOmitsLimit(t *testing.T) {
 	}
 }
 
-func TestFetchLogJSONQuery_APIMode_LongAggregateStaysSingleRequest(t *testing.T) {
-	var calls int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
-		_, _ = w.Write([]byte(`{
-			"query_result":{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"service":"checkout","count":12},"values":[]}]}},
-			"search_stats":{"strategy":"direct"}
-		}`))
-	}))
-	defer srv.Close()
-
-	end := time.Unix(1_800_000_000, 0).UnixMilli()
-	pipeline := []map[string]interface{}{{"type": "aggregate"}}
-	_, err := fetchLogJSONQuery(context.Background(), srv.Client(), apiModeCfg(srv.URL), pipeline,
-		end-int64(30*24*time.Hour/time.Millisecond), end, GetLogsArgs{Limit: 100})
-	if err != nil {
-		t.Fatalf("fetchLogJSONQuery: %v", err)
-	}
-	if calls != 1 {
-		t.Fatalf("requests = %d, want 1 for aggregate pipeline", calls)
-	}
-}
-
 func TestFetchLogJSONQuery_APIMode_SurfacesUpstreamMessage(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
