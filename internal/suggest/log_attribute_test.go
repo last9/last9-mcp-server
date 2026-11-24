@@ -147,8 +147,25 @@ func TestDidYouMeanLogAttribute_NoResemblingAttribute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(text, `No log attributes resemble "transaction id"`) {
-		t.Errorf("unexpected response:\n%s", text)
+	want := `No log attributes of service "checkout" resemble "transaction id" in this window. Widen the window, or check the service name.`
+	if text != want {
+		t.Errorf("response mismatch\ngot:\n%s\nwant:\n%s", text, want)
+	}
+}
+
+// did_you_mean is served in toolsets that lack the log attribute tools, so the
+// no-service miss names the service argument, not another tool.
+func TestDidYouMeanLogAttribute_NoResemblingIndexedAttribute(t *testing.T) {
+	srv := (&fakeLogAttributeAPI{}).serve(t, []string{"udf1", "udf2"})
+	defer srv.Close()
+
+	text, err := runLogAttributeDidYouMean(t, srv, DidYouMeanArgs{Query: "transaction id", Type: "log_attribute"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := `No indexed log attributes resemble "transaction id" in this window. Pass service to include that service's body-derived attributes, or widen the window.`
+	if text != want {
+		t.Errorf("response mismatch\ngot:\n%s\nwant:\n%s", text, want)
 	}
 }
 

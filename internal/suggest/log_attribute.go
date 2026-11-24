@@ -37,8 +37,9 @@ func checkLogAttributeScope(args DidYouMeanArgs) error {
 
 func suggestLogAttributes(ctx context.Context, client *http.Client, cfg models.Config, args DidYouMeanArgs) (*mcp.CallToolResult, error) {
 	query := args.Query
+	service := strings.TrimSpace(args.Service)
 	attrs, err := logs.DiscoverLogAttributes(ctx, client, cfg, logs.LogAttributeScope{
-		Service:         strings.TrimSpace(args.Service),
+		Service:         service,
 		LookbackMinutes: args.LookbackMinutes,
 		StartTimeISO:    args.StartTimeISO,
 		EndTimeISO:      args.EndTimeISO,
@@ -49,7 +50,7 @@ func suggestLogAttributes(ctx context.Context, client *http.Client, cfg models.C
 
 	ranked := rankLogAttributes(query, attrs)
 	if len(ranked) == 0 {
-		return textResult(fmt.Sprintf("No log attributes resemble %q in this scope. List them with get_log_attributes_for_pipeline, or widen the window.", query)), nil
+		return textResult(noResemblingAttributeText(query, service)), nil
 	}
 
 	var sb strings.Builder
@@ -63,6 +64,15 @@ func suggestLogAttributes(ctx context.Context, client *http.Client, cfg models.C
 			s.attr.Name, s.percent, logAttributeType, s.attr.FilterField, source)
 	}
 	return textResult(sb.String()), nil
+}
+
+// noResemblingAttributeText names only did_you_mean's own arguments: the tool
+// is also served in toolsets without the log attribute tools.
+func noResemblingAttributeText(query, service string) string {
+	if service == "" {
+		return fmt.Sprintf("No indexed log attributes resemble %q in this window. Pass service to include that service's body-derived attributes, or widen the window.", query)
+	}
+	return fmt.Sprintf("No log attributes of service %q resemble %q in this window. Widen the window, or check the service name.", service, query)
 }
 
 func rankLogAttributes(query string, attrs []logs.LogAttribute) []attributeSuggestion {
