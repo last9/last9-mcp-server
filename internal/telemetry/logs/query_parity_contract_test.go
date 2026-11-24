@@ -3,6 +3,7 @@ package logs
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -105,8 +106,14 @@ func TestLogDiscoveryHintsSelectLiteralBodyKeys(t *testing.T) {
 				t.Fatalf("incomplete parse/filter hint: %s", attr.Hint)
 			}
 			labels, _ := stages[0]["labels"].(map[string]any)
-			if _, ok := labels[tt.source]; !ok {
-				t.Fatalf("hint must read top-level key %q, got %v", tt.source, labels)
+			if labels[tt.source] != tt.name {
+				t.Fatalf("hint must read top-level key %q into alias %q, got %v", tt.source, tt.name, labels)
+			}
+			// The filter must read the unquoted alias; a quoted one would target another field.
+			filter, _ := stages[1]["query"].(map[string]any)
+			wantFilter := map[string]any{"$eq": []any{fmt.Sprintf("attributes['%s']", tt.name), "<value>"}}
+			if !reflect.DeepEqual(filter, wantFilter) {
+				t.Fatalf("hint filter must read alias %q, got %v", tt.name, stages[1]["query"])
 			}
 			if _, err := prepareLogJSONQuery(append([]map[string]any{scope}, stages...), "logjson_query"); err != nil {
 				t.Fatalf("discovery returned an unusable hint: %v", err)
