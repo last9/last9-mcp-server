@@ -154,6 +154,12 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		}
 		return nil, err
 	}
+	if stages, ok := logjsonQuery.([]map[string]interface{}); ok {
+		endParseCheck := utils.StartToolPhase(ctx, "get_logs", "parse_check")
+		scope := parseCheckScope{client: client, cfg: cfg, startMs: startTime, endMs: endTime, index: args.Index}
+		appendParseCheck(ctx, scope, stages, result)
+		endParseCheck(nil)
+	}
 	endProcess := utils.StartToolPhase(ctx, "get_logs", "post_process")
 	defaultWindow := args.StartTimeISO == "" && args.EndTimeISO == "" && args.LookbackMinutes == 0
 	if defaultWindow {
