@@ -150,7 +150,9 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, gate *toolG
 // run for hours. Read handlers can fold canceled requests into a result, so a read result at
 // this deadline is replaced unless it carries timeout guidance; a write's may name its verify call.
 func withCallDeadline[In, Out any](timeout time.Duration, readOnly bool, handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
-	return func(parent context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+	return func(caller context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+		parent, stop := stopWithRequest(caller)
+		defer stop()
 		ctx, cancel := context.WithTimeout(parent, timeout)
 		defer cancel()
 		result, out, err := handler(ctx, req, in)
