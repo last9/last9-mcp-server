@@ -50,6 +50,9 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 		if err != nil {
 			return nil, nil, err
 		}
+		if err := utils.NormalizeWindowAggregateDays(sanitizedQuery); err != nil {
+			return nil, nil, err
+		}
 		args.LogjsonQuery = sanitizedQuery
 		if args.LookbackMinutes < 0 {
 			return nil, nil, fmt.Errorf("lookback_minutes must be at least 1")
