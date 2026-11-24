@@ -20,7 +20,6 @@ import (
 
 type fakeLogAttributeAPI struct {
 	sampleBody string
-	// rejectBody, when set, is the body of a 400 from the labels and series endpoints.
 	rejectBody string
 	mu         sync.Mutex
 	paths      []string
