@@ -16,6 +16,9 @@ func PrepareGetLogsArguments(raw json.RawMessage) (json.RawMessage, error) {
 	if !ok {
 		return raw, nil
 	}
+	if !bytes.HasPrefix(bytes.TrimSpace(alias), []byte("[")) {
+		return nil, errors.New("argument \"pipeline\" must be an array of stages")
+	}
 	if canonical, exists := fields["logjson_query"]; exists {
 		if !equalPipelineInputs(canonical, alias) {
 			return nil, errors.New("conflicting arguments \"pipeline\" and \"logjson_query\": supply the same stage array or use only logjson_query")
