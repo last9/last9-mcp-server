@@ -773,28 +773,9 @@ func NewGetLogAttributesForPipelineHandler(client *http.Client, cfg models.Confi
 			return nil, nil, err
 		}
 
-		params := make(map[string]interface{})
-		if args.LookbackMinutes > 0 {
-			params["lookback_minutes"] = args.LookbackMinutes
-		}
-		if args.StartTimeISO != "" {
-			params["start_time_iso"] = args.StartTimeISO
-		}
-		if args.EndTimeISO != "" {
-			params["end_time_iso"] = args.EndTimeISO
-		}
-
-		const defaultLogAttributesLookback = 15
-		startTimeParsed, endTimeParsed, err := utils.GetTimeRange(params, defaultLogAttributesLookback)
+		startTime, endTime, err := logAttributeWindow(args.LookbackMinutes, args.StartTimeISO, args.EndTimeISO)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to parse time range: %w", err)
-		}
-		endTime := endTimeParsed.Unix()
-		startTime := startTimeParsed.Unix()
-		// Cap the window magnitude to keep server cost bounded, matching get_log_attributes.
-		maxWindowSeconds := int64(utils.MaxLogAttributeLookbackMinutes * 60)
-		if endTime-startTime > maxWindowSeconds {
-			startTime = endTime - maxWindowSeconds
+			return nil, nil, err
 		}
 
 		region := cfg.Region
