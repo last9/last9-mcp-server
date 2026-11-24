@@ -20,9 +20,9 @@ If discovery finds no status-like field, or more than one, the tool errors and a
 
 ## Named attributes
 
-`attribute_filters` is an array of `{field, value}` equality matches compiled into logjson `$eq`. `field` must use logjson syntax: `attributes['user_id']`, `resources['k8s.namespace.name']`, or a simple name that this tool wraps as `attributes['name']`.
+`attribute_filters` is an array of `{field, value}` equality matches compiled into logjson `$eq`. `field` must use logjson syntax: `attributes['user_id']`, `resources['k8s.namespace.name']`, a flat resource name such as `resource_host.name` that this tool converts to `resources['host.name']`, or a simple name that this tool wraps as `attributes['name']`.
 
-Invalid syntax (double quotes, `resource_` prefixes) is a local error. An unknown org field is not rejected — it is forwarded and may match nothing.
+Invalid syntax (double quotes) is a local error. An unknown org field is not rejected — it is forwarded and may match nothing.
 
 Do not invent org-specific attribute names. Discover fields with `get_log_attributes` / `get_log_attributes_for_pipeline` if you are unsure of the key. Entries marked `source: "body"` live inside the log `Body` and need a parse stage; prefer `get_logs` with the hint pipeline for those.
 

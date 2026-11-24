@@ -76,15 +76,15 @@ func compileServiceLogsStructuredFilters(ctx context.Context, client *http.Clien
 func compileServiceLogAttributeField(field, path string) (string, error) {
 	trimmed := strings.TrimSpace(field)
 	// get_service_logs accepts a short attribute name and wraps it; fail-closed
-	// sanitize then checks the bracket form. Leave resource_ / trace-only / quoted
-	// syntax for sanitize to reject with its existing tips.
+	// sanitize then checks the bracket form. Leave resource_ fields for sanitize to
+	// resolve, and trace-only / quoted syntax for it to reject with its tips.
 	if logSimpleFieldRefPattern.MatchString(trimmed) &&
 		!isCanonicalLogFieldRef(trimmed) &&
 		!isTraceOnlyLogField(trimmed) &&
 		!strings.HasPrefix(trimmed, "resource_") {
 		trimmed = fmt.Sprintf("attributes['%s']", trimmed)
 	}
-	next, err := sanitizeLogFieldRef(trimmed, path)
+	next, err := resourceFieldOutputs(nil).fieldRef(trimmed, path)
 	if err != nil {
 		return "", err
 	}
