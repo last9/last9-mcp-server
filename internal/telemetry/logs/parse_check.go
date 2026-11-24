@@ -7,6 +7,8 @@ import (
 	"math"
 	"net/http"
 	"slices"
+	"strconv"
+	"strings"
 
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
@@ -20,9 +22,9 @@ type parseCheckScope struct {
 }
 
 // parseCheckPlan accepts only filter* → parse+ → one $count aggregate: a filter
-// after the parse drops rows on purpose, so only there must every filtered row
-// reach the count.
-func parseCheckPlan(stages []map[string]interface{}) (control []map[string]interface{}, countAlias, parser string, ok bool) {
+// after the parse drops rows on purpose. The recount spans every parse stage, so
+// all their parsers are returned: any of them may have dropped the rows.
+func parseCheckPlan(stages []map[string]interface{}) (control []map[string]interface{}, countAlias string, parsers []string, ok bool) {
 	firstParse := 0
 	for firstParse < len(stages) && stageType(stages[firstParse]) == "filter" {
 		firstParse++
@@ -32,11 +34,11 @@ func parseCheckPlan(stages []map[string]interface{}) (control []map[string]inter
 		last++
 	}
 	if last == firstParse || last != len(stages)-1 || stageType(stages[last]) != "aggregate" {
-		return nil, "", "", false
+		return nil, "", nil, false
 	}
 	aliases := slices.Sorted(maps.Keys(utils.ExtractCountAliases(stages[last:])))
 	if len(aliases) == 0 {
-		return nil, "", "", false
+		return nil, "", nil, false
 	}
 	countAlias = aliases[0]
 
@@ -47,8 +49,11 @@ func parseCheckPlan(stages []map[string]interface{}) (control []map[string]inter
 			map[string]interface{}{"function": map[string]interface{}{"$count": []interface{}{}}, "as": countAlias},
 		},
 	})
-	parser, _ = stages[firstParse]["parser"].(string)
-	return control, countAlias, parser, true
+	for _, stage := range stages[firstParse:last] {
+		parser, _ := stage["parser"].(string)
+		parsers = append(parsers, parser)
+	}
+	return control, countAlias, parsers, true
 }
 
 func stageType(stage map[string]interface{}) string {
@@ -59,7 +64,7 @@ func stageType(stage map[string]interface{}) string {
 // The backend drops rows its parser cannot read without saying so, so the
 // filtered rows are recounted without the parse to expose the gap.
 func appendParseCheck(ctx context.Context, scope parseCheckScope, stages []map[string]interface{}, result map[string]interface{}) {
-	control, countAlias, parser, ok := parseCheckPlan(stages)
+	control, countAlias, parsers, ok := parseCheckPlan(stages)
 	if !ok {
 		return
 	}
@@ -78,7 +83,7 @@ func appendParseCheck(ctx context.Context, scope parseCheckScope, stages []map[s
 	}
 	if !counted {
 		result["l9_parse_check"] = map[string]interface{}{
-			"parser":           parser,
+			"parsers":          parsers,
 			"rows_after_parse": int64(math.Round(afterParse)),
 			"error":            "could not count the rows matched before the parse stage; rows_after_parse may exclude rows the parser dropped",
 		}
@@ -90,13 +95,24 @@ func appendParseCheck(ctx context.Context, scope parseCheckScope, stages []map[s
 
 	unparsed := int64(math.Round(beforeParse - afterParse))
 	result["l9_parse_check"] = map[string]interface{}{
-		"parser":            parser,
+		"parsers":           parsers,
 		"rows_before_parse": int64(math.Round(beforeParse)),
 		"rows_after_parse":  int64(math.Round(afterParse)),
 		"unparsed_rows":     unparsed,
-		"note": fmt.Sprintf("%d rows matched the filters but are missing after the %q parse stage, which drops bodies it cannot parse (for example multi-line or header-prefixed key=value text). "+
-			"Report the gap. To count those rows, match their bodies with a `regexp` parse using named groups and compare, or count them without the parse stage.", unparsed, parser),
+		"note": fmt.Sprintf("%d rows matched the filters but are missing after the %s, which drops bodies it cannot parse (for example multi-line or header-prefixed key=value text). "+
+			"Report the gap. To count those rows, match their bodies with a `regexp` parse using named groups and compare, or count them without parsing.", unparsed, describeParseStages(parsers)),
 	}
+}
+
+func describeParseStages(parsers []string) string {
+	quoted := make([]string, len(parsers))
+	for i, parser := range parsers {
+		quoted[i] = strconv.Quote(parser)
+	}
+	if len(quoted) == 1 {
+		return quoted[0] + " parse stage"
+	}
+	return strings.Join(quoted, ", ") + " parse stages, any of which"
 }
 
 func countAggregateRows(result map[string]interface{}, countAlias string) (float64, bool) {

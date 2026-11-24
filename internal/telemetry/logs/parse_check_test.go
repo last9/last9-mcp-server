@@ -149,8 +149,8 @@ func TestGetLogsReportsRowsDroppedByParseStage(t *testing.T) {
 			t.Errorf("%s = %v, want %v", key, check[key], value)
 		}
 	}
-	if check["parser"] != "logfmt" {
-		t.Errorf("parser = %v, want logfmt", check["parser"])
+	if parsers, _ := check["parsers"].([]any); len(parsers) != 1 || parsers[0] != "logfmt" {
+		t.Errorf("parsers = %v, want [logfmt]", check["parsers"])
 	}
 	if note, _ := check["note"].(string); !strings.Contains(note, "regexp") {
 		t.Errorf("note should point at a regexp parse, got %q", note)
@@ -173,6 +173,30 @@ func TestGetLogsReportsRowsDroppedByParseStageOnLogSearchAPI(t *testing.T) {
 	}
 	if got := requests.Load(); got != 2 {
 		t.Errorf("expected the search plus one pre-parse count, got %d requests", got)
+	}
+}
+
+// The pre-parse count spans every parse stage, so any of them may have dropped
+// the rows: the check must name all of them, not only the first.
+func TestGetLogsParseCheckNamesEveryParseStage(t *testing.T) {
+	server, _ := newParseCheckServer(t, false)
+	pipeline := logfmtCountPipeline()
+	jsonParse := map[string]interface{}{"type": "parse", "parser": "json", "field": "Body"}
+	pipeline = append(pipeline[:1], append([]map[string]interface{}{jsonParse}, pipeline[1:]...)...)
+	out := runParseCheckQuery(t, server, pipeline)
+
+	check, ok := out["l9_parse_check"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected l9_parse_check, got %v", out)
+	}
+	if _, ok := check["parser"]; ok {
+		t.Errorf("a single parser must not be blamed for a multi-stage gap, got parser = %v", check["parser"])
+	}
+	if got := fmt.Sprint(check["parsers"]); got != "[json logfmt]" {
+		t.Errorf("parsers = %s, want [json logfmt]", got)
+	}
+	if note, _ := check["note"].(string); !strings.Contains(note, `"json"`) || !strings.Contains(note, `"logfmt"`) {
+		t.Errorf("note should name both parse stages, got %q", note)
 	}
 }
 
