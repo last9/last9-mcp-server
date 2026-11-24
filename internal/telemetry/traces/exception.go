@@ -38,10 +38,10 @@ type exceptionAggregate struct {
 type GetExceptionsArgs struct {
 	Limit           float64 `json:"limit,omitempty" jsonschema:"Maximum number of exceptions to return (optional, default: 20)"`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from current time (default: 60, minimum: 1)"`
-	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
+	StartTimeISO    *string `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)"`
 	ServiceName     string  `json:"service_name,omitempty" jsonschema:"Filter exceptions by service name (e.g. api-service)"`
-	SpanName        string  `json:"span_name,omitempty" jsonschema:"Filter exceptions by span name (e.g. user_service)"`
+	SpanName        *string `json:"span_name,omitempty" jsonschema:"Filter exceptions by span name (e.g. user_service)"`
 	Env             string  `json:"env,omitempty" jsonschema:"Environment to filter exceptions by (e.g. production, staging)"`
 }
 
@@ -63,8 +63,8 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 
 		// Prepare arguments map for GetTimeRange function
 		arguments := make(map[string]interface{})
-		if args.StartTimeISO != "" {
-			arguments["start_time_iso"] = args.StartTimeISO
+		if args.StartTimeISO != nil {
+			arguments["start_time_iso"] = *args.StartTimeISO
 		}
 		if args.EndTimeISO != "" {
 			arguments["end_time_iso"] = args.EndTimeISO
@@ -203,8 +203,8 @@ func buildExceptionBaseFilter(args GetExceptionsArgs) string {
 		matchers = append(matchers, fmt.Sprintf("service_name=~'%s'", escapePromQLLabelValue(args.ServiceName)))
 	}
 
-	if args.SpanName != "" {
-		matchers = append(matchers, fmt.Sprintf("span_name=~'%s'", escapePromQLLabelValue(args.SpanName)))
+	if args.SpanName != nil && *args.SpanName != "" {
+		matchers = append(matchers, fmt.Sprintf("span_name=~'%s'", escapePromQLLabelValue(*args.SpanName)))
 	}
 
 	if args.Env != "" {
