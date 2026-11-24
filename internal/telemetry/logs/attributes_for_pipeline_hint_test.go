@@ -33,6 +33,11 @@ func runBodyHint(t *testing.T, attr LogAttribute, lines []string) {
 
 	parse := stages[0]
 	parser, _ := parse["parser"].(string)
+	switch parser {
+	case "json", "logfmt", "regexp":
+	default:
+		t.Fatalf("%s: unknown parser in hint: %s", attr.Name, attr.Hint)
+	}
 	if parser == "json" || parser == "logfmt" {
 		labels, _ := parse["labels"].(map[string]interface{})
 		if labels[attr.Name] != attr.Name {
@@ -41,15 +46,16 @@ func runBodyHint(t *testing.T, attr LogAttribute, lines []string) {
 	}
 
 	for _, line := range lines {
-		if hintParseValue(t, parse, attr.Name, line) != "" {
+		if hintParseValue(parse, attr.Name, line) != "" {
 			return
 		}
 	}
 	t.Errorf("%s: hint yields no value on any sample line; hint: %s", attr.Name, attr.Hint)
 }
 
-func hintParseValue(t *testing.T, parse map[string]interface{}, key, line string) string {
-	t.Helper()
+// hintParseValue applies a json, logfmt or regexp parse stage to one line and
+// returns the value it extracts for key, or "" when there is none.
+func hintParseValue(parse map[string]interface{}, key, line string) string {
 	switch parse["parser"] {
 	case "json":
 		var obj map[string]interface{}
@@ -73,7 +79,6 @@ func hintParseValue(t *testing.T, parse map[string]interface{}, key, line string
 		}
 		return m[re.SubexpIndex(key)]
 	}
-	t.Fatalf("unknown parser in hint: %v", parse["parser"])
 	return ""
 }
 

@@ -458,7 +458,8 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 				sampleBody, sampleNotes = fallback[0], fallbackNotes
 			}
 		}
-		attr := bodyAttribute("level", regexpBodyDerivedHint(pattern, "level", "<value>"), count, formats)
+		attr := bodyAttribute("level", count, formats)
+		attr.Hint = regexpBodyDerivedHint(pattern, "level", "<value>")
 		if sampleBody != "" {
 			attr.SampleBodies = []string{sampleBody}
 			attr.SampleNotes = sampleNotes
@@ -510,15 +511,17 @@ func rankedBodyAttributes(freq map[string]int, parser string, formats map[string
 
 	out := make([]LogAttribute, 0, len(keys))
 	for _, key := range keys {
-		out = append(out, bodyAttribute(key, bodyDerivedHint(parser, key), freq[key], formats))
+		attr := bodyAttribute(key, freq[key], formats)
+		attr.Hint = bodyDerivedHint(parser, key)
+		out = append(out, attr)
 	}
 	return out
 }
 
-// bodyAttribute builds a body-derived entry seen in count of the sampled rows.
-// Under half coverage its parser was inferred from a minority of rows, so the
-// entry is marked low confidence and carries every sampled row's format.
-func bodyAttribute(key, hint string, count int, formats map[string]int) LogAttribute {
+// bodyAttribute builds a body-derived entry (without Hint) seen in count of the
+// sampled rows. Under half coverage its parser was inferred from a minority of
+// rows, so the entry is marked low confidence with every sampled row's format.
+func bodyAttribute(key string, count int, formats map[string]int) LogAttribute {
 	total := 0
 	for _, n := range formats {
 		total += n
@@ -526,7 +529,6 @@ func bodyAttribute(key, hint string, count int, formats map[string]int) LogAttri
 	attr := LogAttribute{
 		Name:           key,
 		FilterField:    fmt.Sprintf("attributes['%s']", key),
-		Hint:           hint,
 		Source:         "body",
 		SampleCoverage: fmt.Sprintf("%d/%d", count, total),
 	}
