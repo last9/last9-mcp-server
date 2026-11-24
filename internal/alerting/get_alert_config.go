@@ -2,8 +2,11 @@ package alerting
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/last9api"
@@ -125,4 +128,31 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 			},
 		}, nil, nil
 	}
+}
+
+func PrepareAlertConfigArguments(raw json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return raw, nil
+	}
+	if _, ok := fields["alert_id"]; ok {
+		return nil, errors.New("get_alert_config looks up rules. Pass the triggering rule's rule_id, shown as Rule ID by get_alerts.")
+	}
+	alias, ok := fields["alert_rule_id"]
+	if !ok {
+		return raw, nil
+	}
+	var id string
+	if err := json.Unmarshal(alias, &id); err != nil || strings.TrimSpace(id) == "" {
+		return nil, errors.New("alert_rule_id must be a nonempty string")
+	}
+	if canonical, ok := fields["rule_id"]; ok {
+		var current string
+		if err := json.Unmarshal(canonical, &current); err != nil || current != id {
+			return nil, errors.New("conflicting rule_id and alert_rule_id: supply one rule ID")
+		}
+	}
+	fields["rule_id"] = alias
+	delete(fields, "alert_rule_id")
+	return json.Marshal(fields)
 }
