@@ -313,7 +313,7 @@ Supports PostgreSQL, MySQL, MongoDB, Redis, Aerospike, and anything else OTel tr
 - **`prometheus_range_query`** — PromQL range queries over any metric
 - **`prometheus_instant_query`** — Instant queries; use rollup functions like `avg_over_time`, `sum_over_time`
 - **`prometheus_label_values`** — Label values for a given series
-- **`prometheus_labels`** — All labels available for a series
+- **`prometheus_labels`** — Label names in the window, optionally scoped to a series selector
 
 Point these at a different datasource/cluster than the default by setting `LAST9_DATASOURCE`, or per call with `datasource`. An omitted `datasource` uses the default; a unique near miss that the matcher considers safe (such as a case variant) uses its closest match. A missing, extra or transposed letter is not guaranteed to resolve automatically: even one candidate can require confirmation when the edit could affect a region or environment code. Looser or ambiguous matches return candidates and run no query (not an error); unknown names return an error. An additional content block names the datasource used whenever you did not name it exactly. `get_metric_status`, `get_service_profile`, and `get_apm_service_deviations` resolve `datasource` the same way.
 
@@ -663,11 +663,11 @@ When no window is given and `match_query` names one metric (`metric{...}` or `{_
 
 ### prometheus_labels
 
-- `match_query` (string, optional): PromQL filter.
+- `match_query` (string, optional): Series selector. Omit to list label names across all series in the window.
 - `lookback_minutes` (float, optional): Default: 60.
 - `start_time_iso` / `end_time_iso` (string, optional)
 
-Retries an empty single-metric lookup over 4 days, like `prometheus_label_values`.
+Retries an empty single-metric lookup over 4 days, like `prometheus_label_values`; an unscoped lookup is never retried.
 
 ### get_logs
 
