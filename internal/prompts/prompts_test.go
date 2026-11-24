@@ -296,7 +296,9 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"Only report returned P99 values; empty result→say unavailable and stop", "must prevent fallback counts from replacing an empty percentile result"},
 		{"ALL→`$and`; ANY→`$or`", "must document all/any-word Body searches"},
 		{"never `$icontainsWords`", "must avoid the slower case-insensitive word operator"},
-		{"no service→search `Body` with `$contains` (even service-like)", "must distinguish standalone identifiers from service names"},
+		{"word/ID (even service-like)→`Body` `$containsWords`", "must search standalone identifiers, even service-like ones, as Body words"},
+		{"`$contains` only for substrings", "must reserve the substring operator for true substrings"},
+		{"Service known/findable→scope `ServiceName` + narrow window first", "must scope free-text searches by service and window first"},
 		{"Stages: `filter`|`parse`|`aggregate`|`window_aggregate` (no `transform`/`select`)", "must list valid stage types up front"},
 		{"`$regex` (RE2: no lookaround)", "must state the accepted regexp flavor"},
 		{"`community_member_id`→`attributes['key']`, `resource_attributes['key']`→`resources['key']`", "must show wrong→right field references"},
@@ -305,6 +307,9 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		if !strings.Contains(desc, c.phrase) {
 			t.Errorf("GetLogsDescription missing %q: %s", c.phrase, c.reason)
 		}
+	}
+	if strings.Contains(desc, "with `$contains`") {
+		t.Error("GetLogsDescription must NOT recommend `$contains` for Body text; `$containsWords` is the Body word operator")
 	}
 	if strings.Contains(desc, "window_minutes") {
 		t.Error("GetLogsDescription must NOT contain deprecated 'window_minutes' key")
