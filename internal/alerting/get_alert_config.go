@@ -136,7 +136,7 @@ func PrepareAlertConfigArguments(raw json.RawMessage) (json.RawMessage, error) {
 		return raw, nil
 	}
 	if _, ok := fields["alert_id"]; ok {
-		return nil, errors.New("get_alert_config looks up rules. Pass the triggering rule's rule_id, shown as Rule ID by get_alerts.")
+		return nil, errors.New(`get_alert_config does not take "alert_id": it looks up rules, not alert instances. Pass the triggering rule's rule_id, shown as Rule ID by get_alerts.`)
 	}
 	alias, ok := fields["alert_rule_id"]
 	if !ok {

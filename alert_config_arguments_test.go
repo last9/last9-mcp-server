@@ -27,6 +27,7 @@ func TestAlertConfigRuleArguments(t *testing.T) {
 		{`{"alert_rule_id":null}`, "nonempty string", true},
 		{`{"alert_rule_id":42}`, "nonempty string", true},
 		{`{"alert_rule_id":" "}`, "nonempty string", true},
+		{`{"alert_id":"instance"}`, `"alert_id"`, true},
 		{`{"alert_id":"instance"}`, "Rule ID by get_alerts", true},
 		{`{"alert_rule_id":"rule","unknown":1}`, "unknown", true},
 	} {
