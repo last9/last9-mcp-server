@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -307,47 +308,32 @@ func TestSanitizeLogJSONQueryRejectsDoubleQuotedBracketSyntax(t *testing.T) {
 	}
 }
 
-func TestSanitizeLogJSONQueryRejectsFlatResourcePrefix(t *testing.T) {
-	tests := []struct {
-		name     string
-		fieldRef string
-		wantKey  string
-	}{
-		{
-			name:     "resource_department",
-			fieldRef: "resource_department",
-			wantKey:  "resources['department']",
-		},
-		{
-			name:     "resource_env",
-			fieldRef: "resource_env",
-			wantKey:  "resources['env']",
-		},
+func TestResourceFieldsAndAggregateOutputs(t *testing.T) {
+	const input = `[{"type":"filter","query":{"$eq":["resource_host.name","resource_env"]}},{"type":"aggregate","aggregates":[{"function":{"$sum":["attributes['bytes']"]},"as":"resource_count"}],"groupby":{"resource_env":"resource_group"}},{"type":"filter","query":{"$eq":["resource_count","1"]}},{"type":"aggregate","groupby":{"resource_group":"g"}}]`
+	var stages []map[string]any
+	if err := json.Unmarshal([]byte(input), &stages); err != nil {
+		t.Fatal(err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := sanitizeLogJSONQuery([]map[string]interface{}{
-				{
-					"type": "filter",
-					"query": map[string]interface{}{
-						"$and": []interface{}{
-							map[string]interface{}{
-								"$eq": []interface{}{tt.fieldRef, "value"},
-							},
-						},
-					},
-				},
-			})
-			if err == nil {
-				t.Fatalf("expected error for flat resource_ prefix %q, got nil", tt.fieldRef)
-			}
-			if !strings.Contains(err.Error(), tt.wantKey) {
-				t.Errorf("expected error to contain %q, got: %v", tt.wantKey, err)
-			}
-			if !strings.Contains(err.Error(), "get_log_attributes") {
-				t.Errorf("expected error to point to get_log_attributes, got: %v", err)
-			}
-		})
+	got, err := sanitizeLogJSONQuery(stages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Replace(input, "resource_host.name", "resources['host.name']", 1)
+	want = strings.Replace(want, `"resource_env":"resource_group"`, `"resources['env']":"resource_group"`, 1)
+	var expected []map[string]any
+	if err := json.Unmarshal([]byte(want), &expected); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, expected) {
+		t.Fatalf("got %#v", got)
+	}
+	for _, field := range []string{"resource_", "resource_a'b", "resource_a[b]", "resource_a\\b"} {
+		if _, err := (resourceFieldOutputs(nil)).fieldRef(field, "field"); err == nil {
+			t.Errorf("accepted %q", field)
+		}
+	}
+	if _, err := (resourceFieldOutputs(nil)).sanitizeLogGroupBy(map[string]any{"resource_env": "a", "resources['env']": "b"}, "groupby"); err == nil {
+		t.Error("accepted groupby collision")
 	}
 }
 
@@ -498,8 +484,8 @@ func TestSanitizeLogJSONQueryNormalizesInsideOrAndNot(t *testing.T) {
 		}
 	})
 
-	t.Run("resource_ prefix inside $or is rejected", func(t *testing.T) {
-		_, err := sanitizeLogJSONQuery([]map[string]interface{}{
+	t.Run("resource_ prefix inside $or is normalized", func(t *testing.T) {
+		got, err := sanitizeLogJSONQuery([]map[string]interface{}{
 			{
 				"type": "filter",
 				"query": map[string]interface{}{
@@ -509,11 +495,12 @@ func TestSanitizeLogJSONQueryNormalizesInsideOrAndNot(t *testing.T) {
 				},
 			},
 		})
-		if err == nil {
-			t.Fatal("expected error for resource_ prefix inside $or, got nil")
+		if err != nil {
+			t.Fatal(err)
 		}
-		if !strings.Contains(err.Error(), "resources['env']") {
-			t.Errorf("expected error to mention resources['env'], got: %v", err)
+		encoded, err := json.Marshal(got)
+		if err != nil || !strings.Contains(string(encoded), "resources['env']") {
+			t.Fatalf("unexpected pipeline %s (%v)", encoded, err)
 		}
 	})
 
@@ -591,8 +578,8 @@ func TestSanitizeLogJSONQueryNormalizesK8sAliasInAggregateFunctionArgs(t *testin
 		}
 	})
 
-	t.Run("resource_ prefix in $sum arg is rejected", func(t *testing.T) {
-		_, err := sanitizeLogJSONQuery([]map[string]interface{}{
+	t.Run("resource_ prefix in $sum arg is normalized", func(t *testing.T) {
+		got, err := sanitizeLogJSONQuery([]map[string]interface{}{
 			{
 				"type": "aggregate",
 				"aggregates": []interface{}{
@@ -605,11 +592,12 @@ func TestSanitizeLogJSONQueryNormalizesK8sAliasInAggregateFunctionArgs(t *testin
 				},
 			},
 		})
-		if err == nil {
-			t.Fatal("expected error for resource_ prefix in aggregate function arg, got nil")
+		if err != nil {
+			t.Fatal(err)
 		}
-		if !strings.Contains(err.Error(), "resources['bytes']") {
-			t.Errorf("expected error to mention resources['bytes'], got: %v", err)
+		encoded, err := json.Marshal(got)
+		if err != nil || !strings.Contains(string(encoded), "resources['bytes']") {
+			t.Fatalf("unexpected pipeline %s (%v)", encoded, err)
 		}
 	})
 }

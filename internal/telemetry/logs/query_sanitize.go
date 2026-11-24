@@ -67,6 +67,7 @@ func sanitizeLogJSONQueryPrefixed(stages []map[string]interface{}, pathPrefix st
 	}
 	sanitized := make([]map[string]interface{}, 0, len(stages))
 
+	var outputs resourceFieldOutputs
 	for stageIndex, stage := range stages {
 		sanitizedStage := make(map[string]interface{}, len(stage))
 		stagePath := fmt.Sprintf("%s[%d]", pathPrefix, stageIndex)
@@ -79,13 +80,13 @@ func sanitizeLogJSONQueryPrefixed(stages []map[string]interface{}, pathPrefix st
 
 			switch key {
 			case "query":
-				sanitizedValue, err = sanitizeLogCondition(value, stagePath+".query")
+				sanitizedValue, err = outputs.sanitizeLogCondition(value, stagePath+".query")
 			case "aggregates":
-				sanitizedValue, err = sanitizeLogAggregates(value, stagePath+".aggregates")
+				sanitizedValue, err = outputs.sanitizeLogAggregates(value, stagePath+".aggregates")
 			case "function":
-				sanitizedValue, err = sanitizeLogFunction(value, stagePath+".function")
+				sanitizedValue, err = outputs.sanitizeLogFunction(value, stagePath+".function")
 			case "groupby":
-				sanitizedValue, err = sanitizeLogGroupBy(value, stagePath+".groupby")
+				sanitizedValue, err = outputs.sanitizeLogGroupBy(value, stagePath+".groupby")
 			default:
 				sanitizedValue = value
 			}
@@ -104,18 +105,22 @@ func sanitizeLogJSONQueryPrefixed(stages []map[string]interface{}, pathPrefix st
 			}
 		}
 
+		switch stageType, _ := stage["type"].(string); stageType {
+		case "aggregate", "window_aggregate":
+			outputs = aggregateResourceOutputs(sanitizedStage)
+		}
 		sanitized = append(sanitized, sanitizedStage)
 	}
 
 	return sanitized, nil
 }
 
-func sanitizeLogCondition(value interface{}, path string) (interface{}, error) {
+func (outputs resourceFieldOutputs) sanitizeLogCondition(value interface{}, path string) (interface{}, error) {
 	switch typed := value.(type) {
 	case []interface{}:
 		sanitized := make([]interface{}, len(typed))
 		for index, item := range typed {
-			next, err := sanitizeLogCondition(item, fmt.Sprintf("%s[%d]", path, index))
+			next, err := outputs.sanitizeLogCondition(item, fmt.Sprintf("%s[%d]", path, index))
 			if err != nil {
 				return nil, err
 			}
@@ -127,7 +132,7 @@ func sanitizeLogCondition(value interface{}, path string) (interface{}, error) {
 		for key, item := range typed {
 			fieldArgIndex, isFieldOperator := logFilterFieldOperators[key]
 			if isFieldOperator {
-				next, err := sanitizeLogFieldOperatorArgs(item, key, fieldArgIndex, path+"."+key)
+				next, err := outputs.sanitizeLogFieldOperatorArgs(item, key, fieldArgIndex, path+"."+key)
 				if err != nil {
 					return nil, err
 				}
@@ -158,7 +163,7 @@ func sanitizeLogCondition(value interface{}, path string) (interface{}, error) {
 					item = []interface{}{item}
 				}
 			}
-			next, err := sanitizeLogCondition(item, path+"."+key)
+			next, err := outputs.sanitizeLogCondition(item, path+"."+key)
 			if err != nil {
 				return nil, err
 			}
@@ -170,7 +175,7 @@ func sanitizeLogCondition(value interface{}, path string) (interface{}, error) {
 	}
 }
 
-func sanitizeLogFieldOperatorArgs(value interface{}, operator string, fieldArgIndex int, path string) (interface{}, error) {
+func (outputs resourceFieldOutputs) sanitizeLogFieldOperatorArgs(value interface{}, operator string, fieldArgIndex int, path string) (interface{}, error) {
 	args, ok := value.([]interface{})
 	if !ok {
 		return nil, newLogValidationError(
@@ -194,7 +199,7 @@ func sanitizeLogFieldOperatorArgs(value interface{}, operator string, fieldArgIn
 		return sanitized, nil
 	}
 
-	next, err := sanitizeLogFieldRef(fieldRef, fmt.Sprintf("%s[%d]", path, fieldArgIndex))
+	next, err := outputs.fieldRef(fieldRef, fmt.Sprintf("%s[%d]", path, fieldArgIndex))
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +316,7 @@ func coerceLogFilterValueToString(value interface{}, path string) (string, error
 	}
 }
 
-func sanitizeLogAggregates(value interface{}, path string) (interface{}, error) {
+func (outputs resourceFieldOutputs) sanitizeLogAggregates(value interface{}, path string) (interface{}, error) {
 	aggregates, ok := value.([]interface{})
 	if !ok {
 		return value, nil
@@ -328,7 +333,7 @@ func sanitizeLogAggregates(value interface{}, path string) (interface{}, error) 
 		sanitizedAggregate := make(map[string]interface{}, len(aggregateMap))
 		for key, item := range aggregateMap {
 			if key == "function" {
-				next, err := sanitizeLogFunction(item, fmt.Sprintf("%s[%d].function", path, index))
+				next, err := outputs.sanitizeLogFunction(item, fmt.Sprintf("%s[%d].function", path, index))
 				if err != nil {
 					return nil, err
 				}
@@ -343,7 +348,7 @@ func sanitizeLogAggregates(value interface{}, path string) (interface{}, error) 
 	return sanitized, nil
 }
 
-func sanitizeLogFunction(value interface{}, path string) (interface{}, error) {
+func (outputs resourceFieldOutputs) sanitizeLogFunction(value interface{}, path string) (interface{}, error) {
 	functionMap, ok := value.(map[string]interface{})
 	if !ok {
 		return value, nil
@@ -368,7 +373,7 @@ func sanitizeLogFunction(value interface{}, path string) (interface{}, error) {
 				continue
 			}
 
-			next, err := sanitizeLogFieldRef(fieldRef, fmt.Sprintf("%s.%s[%d]", path, operator, fieldArgIndex))
+			next, err := outputs.fieldRef(fieldRef, fmt.Sprintf("%s.%s[%d]", path, operator, fieldArgIndex))
 			if err != nil {
 				return nil, err
 			}
@@ -381,7 +386,7 @@ func sanitizeLogFunction(value interface{}, path string) (interface{}, error) {
 	return sanitized, nil
 }
 
-func sanitizeLogGroupBy(value interface{}, path string) (interface{}, error) {
+func (outputs resourceFieldOutputs) sanitizeLogGroupBy(value interface{}, path string) (interface{}, error) {
 	groupBy, ok := value.(map[string]interface{})
 	if !ok {
 		return value, nil
@@ -390,7 +395,7 @@ func sanitizeLogGroupBy(value interface{}, path string) (interface{}, error) {
 	sanitized := make(map[string]interface{}, len(groupBy))
 	originalBySanitized := make(map[string]string, len(groupBy))
 	for fieldRef, alias := range groupBy {
-		next, err := sanitizeLogFieldRef(fieldRef, path+"."+fieldRef)
+		next, err := outputs.fieldRef(fieldRef, path+"."+fieldRef)
 		if err != nil {
 			return nil, err
 		}
@@ -414,6 +419,44 @@ func sanitizeLogGroupBy(value interface{}, path string) (interface{}, error) {
 	}
 
 	return sanitized, nil
+}
+
+type resourceFieldOutputs map[string]bool
+
+var flatResourceKey = regexp.MustCompile(`^[A-Za-z0-9_.:/-]+$`)
+
+func aggregateResourceOutputs(stage map[string]any) resourceFieldOutputs {
+	outputs := resourceFieldOutputs{}
+	add := func(value any) {
+		if name, ok := value.(string); ok && strings.HasPrefix(name, "resource_") {
+			outputs[name] = true
+		}
+	}
+	add(stage["as"])
+	aggregates, _ := stage["aggregates"].([]any)
+	for _, entry := range aggregates {
+		item, _ := entry.(map[string]any)
+		add(item["as"])
+	}
+	groups, _ := stage["groupby"].(map[string]any)
+	for _, alias := range groups {
+		add(alias)
+	}
+	return outputs
+}
+
+func (outputs resourceFieldOutputs) fieldRef(field, path string) (string, error) {
+	name := strings.TrimSpace(field)
+	key, flat := strings.CutPrefix(name, "resource_")
+	if flat && flatResourceKey.MatchString(key) {
+		if outputs == nil {
+			return "resources['" + key + "']", nil
+		}
+		if outputs[name] && logSimpleFieldRefPattern.MatchString(name) {
+			return name, nil
+		}
+	}
+	return sanitizeLogFieldRef(field, path)
 }
 
 func sanitizeLogFieldRef(fieldRef, path string) (string, error) {
