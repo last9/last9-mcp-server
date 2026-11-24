@@ -49,3 +49,19 @@ func TestResolveInstantQueryTime(t *testing.T) {
 		t.Fatalf("lookback timeParam = %d, expected near %d", timeParam, expected)
 	}
 }
+
+func TestInstantTimeAlias(t *testing.T) {
+	const iso = "2025-01-01T00:00:00Z"
+	for _, raw := range []string{`"2025-01-01T01:00:00+01:00"`, `1735689600`, `"1735689600.5"`, `"1735689600.999999999"`} {
+		args := PromqlInstantQueryArgs{Time: []byte(raw), TimeISO: iso}
+		got, err := args.evaluationTime()
+		if err != nil || got != 1735689600 {
+			t.Errorf("%s: %d %v", raw, got, err)
+		}
+	}
+	for _, raw := range []string{`""`, `"NaN"`, `null`, `0`, `1735689600000`, `1735689601`} {
+		if _, err := (PromqlInstantQueryArgs{Time: []byte(raw), TimeISO: iso}).evaluationTime(); err == nil {
+			t.Errorf("accepted %s", raw)
+		}
+	}
+}

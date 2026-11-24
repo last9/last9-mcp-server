@@ -2,6 +2,7 @@ package apm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -14,10 +15,11 @@ import (
 )
 
 type PromqlInstantQueryArgs struct {
-	Query           string  `json:"query" jsonschema:"(Required) PromQL query to execute"`
-	TimeISO         string  `json:"time_iso,omitempty" jsonschema:"Evaluation time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). If omitted, defaults to now or now-lookback_minutes."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now when time_iso is omitted (default: 0, minimum: 1)."`
-	Datasource      string  `json:"datasource,omitempty" jsonschema:"Datasource name; omitted uses the default, a near miss its closest match (named in a second content block)."`
+	Query           string          `json:"query" jsonschema:"(Required) PromQL query to execute"`
+	Time            json.RawMessage `json:"time,omitempty"`
+	TimeISO         string          `json:"time_iso,omitempty" jsonschema:"Evaluation time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). If omitted, defaults to now or now-lookback_minutes."`
+	LookbackMinutes float64         `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now when time_iso is omitted (default: 0, minimum: 1)."`
+	Datasource      string          `json:"datasource,omitempty" jsonschema:"Datasource name; omitted uses the default, a near miss its closest match (named in a second content block)."`
 }
 
 // instantQueryLinkWindow is how far before the evaluation time the Metrics
@@ -55,7 +57,7 @@ func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(c
 			return nil, nil, fmt.Errorf("query is required")
 		}
 
-		timeParam, err := resolveInstantQueryTime(args.TimeISO, args.LookbackMinutes)
+		timeParam, err := args.evaluationTime()
 		if err != nil {
 			return nil, nil, err
 		}
