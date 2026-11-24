@@ -33,7 +33,9 @@ func TestGetLogsPipelineAlias(t *testing.T) {
 		{`{"pipeline":` + stages + `}`, ""},
 		{`{"pipeline":` + reordered + `,"logjson_query":` + stages + `}`, ""},
 		{`{"pipeline":[],"logjson_query":` + stages + `}`, "conflicting"},
-		{`{"pipeline":"oops"}`, "logjson_query"},
+		{`{"pipeline":"oops"}`, `argument "pipeline" must be an array`},
+		{`{"pipeline":null}`, `argument "pipeline" must be an array`},
+		{`{"pipeline":{"type":"filter"}}`, `argument "pipeline" must be an array`},
 		{`{"pipeline":` + stages + `,"unknown":true}`, "unknown"},
 	} {
 		res := callRegisteredTool(t, session, &mcp.CallToolParams{Name: "get_logs", Arguments: json.RawMessage(tc.args)})
