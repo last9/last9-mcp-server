@@ -41,13 +41,15 @@ func addGetLogsGuidance(result map[string]interface{}, args GetLogsArgs, guidanc
 	if err != nil {
 		return false
 	}
-	if len(items) == 0 || (kind == "streams" && countLogEntriesInResultItems(items) == 0) {
+	// Aggregate rows carry no log lines, so emptiness follows the pipeline sent, not the response's resultType label.
+	lines := kind == "streams" && !utils.PipelineHasAggregateStage(args.LogjsonQuery)
+	if len(items) == 0 || (lines && countLogEntriesInResultItems(items) == 0) {
 		result["l9_guidance"] = utils.EmptyResultGuidanceMap("logs", logsGuidanceOptions(args, guidance.startMs, guidance.endMs))
 		return false
 	}
 	returned := countLogEntriesInResultItems(items)
 	totalMatching := logTotalMatching(result)
-	if kind == "streams" && isLogResultTruncated(result, logTruncationState{
+	if lines && isLogResultTruncated(result, logTruncationState{
 		returned:       returned,
 		totalMatching:  totalMatching,
 		effectiveLimit: guidance.effectiveLimit,
