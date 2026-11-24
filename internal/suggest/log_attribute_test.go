@@ -21,8 +21,8 @@ import (
 type fakeLogAttributeAPI struct {
 	sampleBody string
 	mu         sync.Mutex
-	paths     []string
-	pipelines []string
+	paths      []string
+	pipelines  []string
 }
 
 func (f *fakeLogAttributeAPI) serve(t *testing.T, fields []string) *httptest.Server {

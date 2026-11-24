@@ -35,7 +35,8 @@ func checkLogAttributeScope(args DidYouMeanArgs) error {
 	return nil
 }
 
-func suggestLogAttributes(ctx context.Context, client *http.Client, cfg models.Config, query string, args DidYouMeanArgs) (*mcp.CallToolResult, error) {
+func suggestLogAttributes(ctx context.Context, client *http.Client, cfg models.Config, args DidYouMeanArgs) (*mcp.CallToolResult, error) {
+	query := args.Query
 	attrs, err := logs.DiscoverLogAttributes(ctx, client, cfg, logs.LogAttributeScope{
 		Service:         strings.TrimSpace(args.Service),
 		LookbackMinutes: args.LookbackMinutes,
