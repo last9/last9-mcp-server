@@ -5,6 +5,9 @@ import (
 	"fmt"
 )
 
+// PrepareArguments renames the name and entity_type aliases to query and type before the
+// SDK rejects them as unknown keys. An alias sent beside its canonical key must carry the
+// same string, so a call never silently drops one of two different values.
 func PrepareArguments(raw json.RawMessage) (json.RawMessage, error) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
