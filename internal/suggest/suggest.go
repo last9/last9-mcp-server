@@ -2,12 +2,15 @@ package suggest
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
+	"unicode"
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
@@ -113,13 +116,10 @@ func NewDidYouMeanHandler(client *http.Client, cfg models.Config) func(context.C
 			}, nil, nil
 		}
 
+		suggestions := rankSuggestions(query, apiResp.Suggestions)
 		var sb strings.Builder
 		fmt.Fprintf(&sb, "Did you mean one of these for %q?\n\n", query)
-		max := len(apiResp.Suggestions)
-		if max > maxDidYouMeanSuggestions {
-			max = maxDidYouMeanSuggestions
-		}
-		for _, s := range apiResp.Suggestions[:max] {
+		for _, s := range suggestions[:min(len(suggestions), maxDidYouMeanSuggestions)] {
 			fmt.Fprintf(&sb, "  - %s (%d%% match, type: %s)\n", s.Name, int(s.Score*100), s.Type)
 		}
 
@@ -131,4 +131,54 @@ func NewDidYouMeanHandler(client *http.Client, cfg models.Config) func(context.C
 			},
 		}, nil, nil
 	}
+}
+
+// rankSuggestions scores a name made of the query's words in another order
+// as a full match, since character similarity rates it no higher than
+// unrelated names, then orders by score, shared words and name.
+func rankSuggestions(query string, items []suggestionItem) []suggestionItem {
+	queryWords := words(query)
+	ranked := make([]suggestionItem, len(items))
+	overlap := make(map[string]int, len(items))
+	for i, s := range items {
+		nameWords := words(s.Name)
+		if len(queryWords) > 0 && slices.Equal(queryWords, nameWords) {
+			s.Score = 1
+		}
+		overlap[s.Name] = sharedWords(queryWords, nameWords)
+		ranked[i] = s
+	}
+	slices.SortStableFunc(ranked, func(a, b suggestionItem) int {
+		return cmp.Or(
+			cmp.Compare(b.Score, a.Score),
+			cmp.Compare(overlap[b.Name], overlap[a.Name]),
+			strings.Compare(a.Name, b.Name),
+		)
+	})
+	return ranked
+}
+
+func words(name string) []string {
+	w := strings.FieldsFunc(strings.ToLower(name), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	slices.Sort(w)
+	return w
+}
+
+func sharedWords(a, b []string) int {
+	n := 0
+	for i, j := 0, 0; i < len(a) && j < len(b); {
+		switch strings.Compare(a[i], b[j]) {
+		case 0:
+			n++
+			i++
+			j++
+		case -1:
+			i++
+		default:
+			j++
+		}
+	}
+	return n
 }

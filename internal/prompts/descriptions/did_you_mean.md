@@ -5,7 +5,8 @@ when the user types something that looks like a typo, abbreviation, or partial n
 
 Returns up to 3 closest matches with similarity scores (0–100%) from the Last9 catalog,
 covering all entity types: services, environments, hosts, databases, k8s deployments,
-k8s namespaces, jobs, and more.
+k8s namespaces, jobs, and more. A name made of the query's words in another order
+("beta-alpha" for "alpha beta") scores 100% and is listed first.
 
 When to use:
 - Before calling get_service_logs, get_service_traces, get_service_performance_details, etc.
