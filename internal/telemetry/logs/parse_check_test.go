@@ -312,3 +312,18 @@ func TestGetLogsParseCheckReportsFailedPreParseCount(t *testing.T) {
 		t.Errorf("the parsed result must still be served, got %v", out["data"])
 	}
 }
+
+func TestParseCountNote(t *testing.T) {
+	for _, tc := range []struct {
+		gap     int64
+		parsers []string
+		want    string
+	}{
+		{1, []string{"logfmt"}, `1 more row than the parsed count (parsers: "logfmt")`},
+		{2, []string{"json", "logfmt"}, `2 more rows than the parsed count (parsers: "json", "logfmt")`},
+	} {
+		if got := parseCountNote(tc.gap, tc.parsers); !strings.Contains(got, tc.want) {
+			t.Errorf("got %q, want %q", got, tc.want)
+		}
+	}
+}

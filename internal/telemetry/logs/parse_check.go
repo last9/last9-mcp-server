@@ -85,7 +85,7 @@ func appendParseCheck(ctx context.Context, scope parseCheckScope, stages []map[s
 		result["l9_parse_check"] = map[string]interface{}{
 			"parsers":          parsers,
 			"rows_after_parse": int64(math.Round(afterParse)),
-			"error":            "could not count the rows matched before the parse stage; rows_after_parse may exclude rows the parser dropped",
+			"error":            "The pre-parse count was unavailable. The number of matching rows excluded during parsing is unknown.",
 		}
 		return
 	}
@@ -99,20 +99,21 @@ func appendParseCheck(ctx context.Context, scope parseCheckScope, stages []map[s
 		"rows_before_parse": int64(math.Round(beforeParse)),
 		"rows_after_parse":  int64(math.Round(afterParse)),
 		"unparsed_rows":     unparsed,
-		"note": fmt.Sprintf("%d rows matched the filters but are missing after the %s, which drops bodies it cannot parse (for example multi-line or header-prefixed key=value text). "+
-			"Report the gap. To count those rows, match their bodies with a `regexp` parse using named groups and compare, or count them without parsing.", unparsed, describeParseStages(parsers)),
+		"note":              parseCountNote(unparsed, parsers),
 	}
 }
 
-func describeParseStages(parsers []string) string {
+func parseCountNote(unparsed int64, parsers []string) string {
+	noun := "rows"
+	if unparsed == 1 {
+		noun = "row"
+	}
+
 	quoted := make([]string, len(parsers))
 	for i, parser := range parsers {
 		quoted[i] = strconv.Quote(parser)
 	}
-	if len(quoted) == 1 {
-		return quoted[0] + " parse stage"
-	}
-	return strings.Join(quoted, ", ") + " parse stages, any of which"
+	return fmt.Sprintf("The filtered count includes %d more %s than the parsed count (parsers: %s). Check whether the selected parsers match the body format. For a total, count without parsing. For extraction, try a regexp parse with named groups.", unparsed, noun, strings.Join(quoted, ", "))
 }
 
 func countAggregateRows(result map[string]interface{}, countAlias string) (float64, bool) {
