@@ -23,6 +23,10 @@ func TestSuggestionArgumentAliases(t *testing.T) {
 		{`{"query":"example","name":"example","entity_type":"service"}`, "example/service", false},
 		{`{"query":"example","name":"different"}`, "conflict", true},
 		{`{"query":"example","type":"host","entity_type":"service"}`, "conflict", true},
+		{`{"type":"service","entity_type":"service","name":"example"}`, "example/service", false},
+		{`{"query":"example","name":null}`, "conflict", true},
+		{`{"name":null}`, "", true},
+		{`{"entity_type":"service"}`, "", true},
 		{`{"name":42}`, "", true},
 		{`{"name":"example","unknown":true}`, "", true},
 	} {
