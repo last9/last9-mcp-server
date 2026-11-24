@@ -49,6 +49,10 @@ func searchLogsByWindow(
 			windowReq.EndMs = window.EndMs
 			return utils.SearchLogs(ctx, client, cfg, windowReq)
 		})
+	// The caller has gone: windows that finished first are not a partial answer.
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("%s cancelled: %w", req.Op, err)
+	}
 	limit := min(req.Limit, utils.LogSearchMaxSampleSize)
 	return mergeLogSearchWindows(results, limit)
 }
