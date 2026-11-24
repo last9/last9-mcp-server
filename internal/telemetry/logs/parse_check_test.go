@@ -114,12 +114,11 @@ func logfmtCountPipeline(extra ...map[string]interface{}) []map[string]interface
 
 func runParseCheckQuery(t *testing.T, server *httptest.Server, pipeline []map[string]interface{}) map[string]any {
 	t.Helper()
-	return runParseCheckQueryWithConfig(t, server, testLogsConfig(server.URL), pipeline)
+	return runParseCheckHandler(t, NewGetLogsHandler(server.Client(), testLogsConfig(server.URL)), pipeline)
 }
 
-func runParseCheckQueryWithConfig(t *testing.T, server *httptest.Server, cfg models.Config, pipeline []map[string]interface{}) map[string]any {
+func runParseCheckHandler(t *testing.T, handler func(context.Context, *mcp.CallToolRequest, GetLogsArgs) (*mcp.CallToolResult, any, error), pipeline []map[string]interface{}) map[string]any {
 	t.Helper()
-	handler := NewGetLogsHandler(server.Client(), cfg)
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
 		LogjsonQuery: pipeline,
 		StartTimeISO: "1970-01-01T00:00:00Z",
@@ -162,7 +161,7 @@ func TestGetLogsReportsRowsDroppedByParseStage(t *testing.T) {
 
 func TestGetLogsReportsRowsDroppedByParseStageOnLogSearchAPI(t *testing.T) {
 	server, requests := newParseCheckServer(t, false)
-	out := runParseCheckQueryWithConfig(t, server, apiModeCfg(server.URL), logfmtCountPipeline())
+	out := runParseCheckHandler(t, NewGetLogsHandler(server.Client(), apiModeCfg(server.URL)), logfmtCountPipeline())
 
 	check, ok := out["l9_parse_check"].(map[string]any)
 	if !ok {
