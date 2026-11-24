@@ -25,9 +25,10 @@ func TestSuggestionArgumentAliases(t *testing.T) {
 		{`{"query":"example","type":"host","entity_type":"service"}`, "conflict", true},
 		{`{"type":"service","entity_type":"service","name":"example"}`, "example/service", false},
 		{`{"query":"example","name":null}`, "conflict", true},
-		{`{"name":null}`, "", true},
+		{`{"name":null}`, `argument "name" must be a string`, true},
 		{`{"entity_type":"service"}`, "", true},
-		{`{"name":42}`, "", true},
+		{`{"name":42}`, `argument "name" must be a string`, true},
+		{`{"query":"example","entity_type":["service"]}`, `argument "entity_type" must be a string`, true},
 		{`{"name":"example","unknown":true}`, "", true},
 	} {
 		result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "did_you_mean", Arguments: json.RawMessage(tc.args)})
