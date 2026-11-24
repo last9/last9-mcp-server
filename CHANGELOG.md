@@ -14,8 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Empty `get_logs` results for an explicit time range now show both resolved UTC bounds. The guidance previously described historical intervals as a lookback from the present (#600).
+- `get_logs` and `get_traces` accept `window_aggregate` buckets in whole days (`["1","days"]`, `["7","day"]`) by sending the same width in hours, which the API accepts, and their input schemas list `days` among the window units; the query window, filters and limits are unchanged. Day counts that are not a positive whole number, or exceed 106751 days (the widest window whose width in hours fits a duration), are rejected before any request (#593).
+- `get_alert_rule_state` rejects a range whose last scheduled sample (`start_time + n·step`) is after the current time before making any upstream call, naming that sample and the current time and asking for an earlier `end_time` (and an earlier `start_time` when it is not before now); it used to fetch the earlier samples and then fail on the upstream's future-timestamp error. An `end_time` past now is still accepted when no sample lands after now (#598).
 
 ### Changed
+- `get_logs` and `get_service_logs` ranges over 336 hours on the log-search API now report coverage per piece in `search_stats.pieces`: each piece's `start`, `end` and `status` (`complete`, `partial` when its rows were cut by the upstream or the `limit`, `failed` with its `error`), so callers can name covered and unsearched spans. Aggregate `get_logs` pipelines over 336 hours are refused before any request with an error naming the limit, instead of being sent as one read the backend rejects (#597).
 - Dashboard authoring guidance now explains that table query names become value-column headers, `table_config.columnConfig` controls the complete rendered column order, and `table_config.sorting` controls row order; its worked top-10 example keeps every outcome and rate column on the same key set (#585).
 
 ## [0.24.0] - 2026-11-19

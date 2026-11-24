@@ -52,6 +52,7 @@ onset conclusions (a narrow raw sample is not a trend):
    - Use `start_time_iso` + `end_time_iso` when the user gave explicit absolute dates/times
    - Otherwise use `lookback_minutes` (default: 5, minimum: 1); Body contains-family searches, including `i`/`not` variants, must set it explicitly
    - Chunked raw searches are limited to 24 chunks (currently at most 24 hours / 1440 minutes). Larger plans are refused before any log query is sent. Narrow `lookback_minutes` or the `start_time_iso`/`end_time_iso` window; do not retry unchanged. Lowering `limit` does not reduce the chunk count. Aggregate pipelines and server-side log search do not use this client-side chunk budget.
+   - Server-side log search (only when the server operator enabled it; otherwise the chunked rules above apply and neither `pieces` nor this refusal occurs) reads at most 336 hours per request. A longer non-aggregate range runs as contiguous pieces of at most 336 hours, newest first, merged up to `limit`; `search_stats.pieces` lists each piece's `start`, `end` and `status` (`complete`, `partial` when rows were cut, `failed` with `error`). Report a `failed` piece's span as not searched. An aggregate pipeline over 336 hours is refused before any query: narrow the range, or run one query per window of at most 336 hours and add the results only for counts or sums.
 6. Analyze the results and provide insights to the user
 
 **LOG SERVICE INVENTORY BEFORE BROAD SEARCH:**
