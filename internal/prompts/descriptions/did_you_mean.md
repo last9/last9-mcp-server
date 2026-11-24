@@ -17,7 +17,11 @@ When to use:
 Parameters:
 - query: (Required) The name to search for — can be a partial name, misspelling, or abbreviation
 - type: (Optional) Restrict suggestions to a specific entity type (e.g. "service", "environment",
-  "host", "k8s_deployment", "k8s_namespace", "database", "job")
+  "host", "k8s_deployment", "k8s_namespace", "database", "job"), or "log_attribute" for log attribute names
+- service, lookback_minutes, start_time_iso, end_time_iso: (Optional, type "log_attribute" only) scope as in
+  get_log_attributes_for_pipeline for that service, indexed and body-derived; without service, the indexed
+  attributes. Window default: last 15 minutes. Each match lists its filter_field and source (indexed or body;
+  a body field needs the parse stage get_log_attributes_for_pipeline shows).
 
 Examples:
 - query="paymnt-svc"  → "payment-service (92%, service)"
@@ -25,3 +29,4 @@ Examples:
 - query="payment"     → "payment-service (81%, service)", "payment-gateway (76%, service)"
 - query="web-01"      → "web-01.prod (88%, host)"
 - query="order-svc"   → "order-service (85%, k8s_deployment)"
+- query="transaction id", type="log_attribute", service="checkout" → "txn_id (90%, filter_field: attributes['txn_id'])"

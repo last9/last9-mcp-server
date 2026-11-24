@@ -25,8 +25,12 @@ const (
 
 // DidYouMeanArgs are the input parameters for the did_you_mean tool.
 type DidYouMeanArgs struct {
-	Query string `json:"query" jsonschema:"(Required) The misspelled or uncertain entity name to find suggestions for"`
-	Type  string `json:"type,omitempty" jsonschema:"Optional entity type filter: service, environment, host, database, k8s_deployment, k8s_namespace, job"`
+	Query           string `json:"query" jsonschema:"(Required) The misspelled or uncertain entity name to find suggestions for"`
+	Type            string `json:"type,omitempty" jsonschema:"Optional entity type filter: service, environment, host, database, k8s_deployment, k8s_namespace, job, or log_attribute for log attribute names"`
+	Service         string `json:"service,omitempty" jsonschema:"type log_attribute only: service whose log attributes to search, indexed and body-derived (default: the workspace's indexed attributes)"`
+	LookbackMinutes int    `json:"lookback_minutes,omitempty" jsonschema:"type log_attribute only: minutes to look back from now (default: 15, minimum: 1)"`
+	StartTimeISO    string `json:"start_time_iso,omitempty" jsonschema:"type log_attribute only: start time in RFC3339 (e.g. 2026-02-09T15:04:05Z); overrides lookback_minutes"`
+	EndTimeISO      string `json:"end_time_iso,omitempty" jsonschema:"type log_attribute only: end time in RFC3339 (default: now)"`
 }
 
 type suggestionItem struct {
@@ -56,6 +60,16 @@ func NewDidYouMeanHandler(client *http.Client, cfg models.Config) func(context.C
 		if query == "" {
 			return nil, nil, fmt.Errorf("query parameter is required")
 		}
+		if err := checkLogAttributeScope(args); err != nil {
+			return nil, nil, err
+		}
+		if cfg.TokenManager == nil {
+			return nil, nil, fmt.Errorf("token manager is not configured")
+		}
+		if strings.TrimSpace(args.Type) == logAttributeType {
+			result, err := suggestLogAttributes(ctx, client, cfg, query, args)
+			return result, nil, err
+		}
 
 		payload := suggestRequest{
 			Query:    query,
@@ -76,10 +90,6 @@ func NewDidYouMeanHandler(client *http.Client, cfg models.Config) func(context.C
 		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(bodyBytes))
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create request: %w", err)
-		}
-
-		if cfg.TokenManager == nil {
-			return nil, nil, fmt.Errorf("token manager is not configured")
 		}
 
 		httpReq.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
