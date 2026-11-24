@@ -104,7 +104,7 @@ func TestGetExceptionsHandler_EmptyResultIncludesRetryGuidance(t *testing.T) {
 		context.Background(),
 		&mcp.CallToolRequest{},
 		GetExceptionsArgs{
-			StartTimeISO: startTime.Format(time.RFC3339),
+			StartTimeISO: new(startTime.Format(time.RFC3339)),
 			EndTimeISO:   endTime.Format(time.RFC3339),
 			ServiceName:  "checkut",
 			Env:          "prod",
