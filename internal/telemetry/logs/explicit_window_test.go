@@ -73,6 +73,33 @@ func TestGetLogsExplicitWindowEmptyGuidance(t *testing.T) {
 	}
 }
 
+func TestServiceLogsExplicitWindowEmptyGuidance(t *testing.T) {
+	const start = "2024-04-10T12:00:00Z"
+	const end = "2024-04-10T12:05:00Z"
+	for _, tc := range []struct{ name, start, end string }{
+		{"both", "2024-04-10T17:30:00+05:30", end},
+		{"start only", start, ""},
+		{"end only", "", end},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, _ := streamSearchServer(t, nil)
+			result, _, err := NewGetServiceLogsHandler(srv.Client(), apiModeCfg(srv.URL))(
+				context.Background(), &mcp.CallToolRequest{}, GetServiceLogsArgs{
+					ServiceName: "checkout", StartTimeISO: tc.start, EndTimeISO: tc.end, LookbackMinutes: 5,
+					ResponseMode: logResponseModeRaw,
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			hint, _ := parseToolJSONResult(t, result)["hint"].(string)
+			if !strings.Contains(hint, "the range "+start+" to "+end) || strings.Contains(hint, "last ") {
+				t.Errorf("empty hint = %q, want the range %s to %s", hint, start, end)
+			}
+		})
+	}
+}
+
 func TestServiceLogsDefaultWindowEmptyResultIsExplicit(t *testing.T) {
 	response := &ServiceLogsResponse{
 		StartTime:     "2026-11-13T13:00:00Z",
