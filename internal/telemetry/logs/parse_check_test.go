@@ -234,6 +234,63 @@ func TestGetLogsParseCheckSkipsFiltersAfterParse(t *testing.T) {
 	}
 }
 
+// A row-limited result keeps only some groups, so its count is not the parsed
+// total: comparing it with the pre-parse count would report rows that the
+// limit, not the parser, removed.
+func TestGetLogsParseCheckSkipsRowLimitedResult(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cfg  func(string) models.Config
+	}{
+		{"query range", testLogsConfig},
+		{"log search API", apiModeCfg},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != constants.EndpointLogsQueryRange && r.URL.Path != constants.EndpointLogSearch {
+					_, _ = w.Write([]byte(`[]`))
+					return
+				}
+				requests.Add(1)
+				var groups []any
+				for _, key := range []string{"a", "b", "c"} {
+					groups = append(groups, map[string]any{"metric": map[string]any{"key1": key, "count": 10}, "values": []any{}})
+				}
+				data := map[string]any{"resultType": "matrix", "result": groups}
+				response := map[string]any{"data": data}
+				if r.URL.Path == constants.EndpointLogSearch {
+					response = map[string]any{"query_result": map[string]any{"status": "success", "data": data}}
+				}
+				_ = json.NewEncoder(w).Encode(response)
+			}))
+			t.Cleanup(server.Close)
+
+			cfg := tc.cfg(server.URL)
+			handler := NewGetLogsHandler(server.Client(), cfg)
+			result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+				LogjsonQuery: logfmtCountPipeline(),
+				StartTimeISO: "1970-01-01T00:00:00Z",
+				EndTimeISO:   "1970-01-01T00:30:00Z",
+				Limit:        2,
+			})
+			if err != nil {
+				t.Fatalf("handler returned error: %v", err)
+			}
+			out := decodeGetLogsBody(t, result)
+			if _, ok := out["l9_result"].(map[string]any); !ok {
+				t.Fatalf("expected the row limit to mark the result partial, got %v", out)
+			}
+			if _, ok := out["l9_parse_check"]; ok {
+				t.Errorf("a row-limited result must not be compared with the pre-parse count, got %v", out["l9_parse_check"])
+			}
+			if got := requests.Load(); got != 1 {
+				t.Errorf("expected only the original request, got %d requests", got)
+			}
+		})
+	}
+}
+
 func TestGetLogsParseCheckReportsFailedPreParseCount(t *testing.T) {
 	server, _ := newParseCheckServer(t, true)
 	out := runParseCheckQuery(t, server, logfmtCountPipeline())
