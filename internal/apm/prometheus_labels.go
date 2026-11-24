@@ -2,7 +2,6 @@ package apm
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 
 	"last9-mcp/internal/last9api"
@@ -13,7 +12,7 @@ import (
 )
 
 type PromqlLabelsArgs struct {
-	MatchQuery      string  `json:"match_query,omitempty" jsonschema:"PromQL query to match series (e.g. up{job=\"prometheus\"})"`
+	MatchQuery      string  `json:"match_query,omitempty" jsonschema:"Optional series selector (e.g. up{job=\"prometheus\"})"`
 	Match           string  `json:"match,omitempty" jsonschema:"Alias of match_query (matches the Prometheus API's match parameter); ignored when match_query is set."`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
@@ -24,9 +23,6 @@ type PromqlLabelsArgs struct {
 func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlLabelsArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args PromqlLabelsArgs) (*mcp.CallToolResult, any, error) {
 		query := firstNonEmpty(args.MatchQuery, args.Match)
-		if query == "" {
-			return nil, nil, fmt.Errorf("match_query is required")
-		}
 		window, err := resolveLabelWindow(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
 		if err != nil {
 			return nil, nil, err

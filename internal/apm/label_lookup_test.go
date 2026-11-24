@@ -17,6 +17,7 @@ import (
 )
 
 type labelLookupRequest struct {
+	Metric string
 	Path   string
 	Window int64
 }
@@ -29,10 +30,11 @@ func labelLookupServer(t *testing.T, bodies ...string) (models.Config, *http.Cli
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		var payload struct {
-			Window int64 `json:"window"`
+			Metric string `json:"metric"`
+			Window int64  `json:"window"`
 		}
 		_ = json.Unmarshal(raw, &payload)
-		got = append(got, labelLookupRequest{Path: r.URL.Path, Window: payload.Window})
+		got = append(got, labelLookupRequest{Path: r.URL.Path, Window: payload.Window, Metric: payload.Metric})
 		body := bodies[min(len(got), len(bodies))-1]
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(body))
@@ -229,7 +231,7 @@ func TestPromqlLabelValues_ExplicitWindowNeverRetries(t *testing.T) {
 }
 
 func TestPromqlLabels_UnscopedEmptyNeverRetries(t *testing.T) {
-	for _, query := range []string{`{job="api"}`, `{__name__=~"aws_.*"}`, `sum(rate(http_requests_total[5m]))`, `aws_s3_bucketsizebytes{} or up{}`} {
+	for _, query := range []string{"", `{job="api"}`, `{__name__=~"aws_.*"}`, `sum(rate(http_requests_total[5m]))`, `aws_s3_bucketsizebytes{} or up{}`} {
 		t.Run(query, func(t *testing.T) {
 			cfg, client, got := labelLookupServer(t, `{"labels":[]}`)
 
@@ -371,5 +373,19 @@ func TestPromqlLabelLookups_BadTimeReportedBeforeBadDatasource(t *testing.T) {
 	}
 	if len(*got) != 0 {
 		t.Fatalf("requests = %d, want 0", len(*got))
+	}
+}
+
+func TestPromqlLabels_OmittedSelectorPreservesWindow(t *testing.T) {
+	cfg, client, requests := labelLookupServer(t, `{"labels":["job"]}`)
+	result, _, err := NewPromqlLabelsHandler(client, cfg)(context.Background(), &mcp.CallToolRequest{}, PromqlLabelsArgs{LookbackMinutes: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(*requests) != 1 || (*requests)[0].Metric != "" || (*requests)[0].Window != 60 {
+		t.Fatalf("unexpected upstream requests: %+v", *requests)
+	}
+	if texts := lookupTexts(t, result); len(texts) != 1 || texts[0] != `{"labels":["job"]}` {
+		t.Fatalf("unexpected labels: %v", texts)
 	}
 }
