@@ -6,6 +6,7 @@ import (
 
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/suggest"
+	"last9-mcp/internal/telemetry/logs"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -14,6 +15,7 @@ import (
 // argumentChecks run before the SDK validates a tool's arguments against its schema,
 // which stops at the first violation; each check names every problem it finds.
 var argumentChecks = map[string]func(json.RawMessage) (json.RawMessage, error){
+	"get_logs":         logs.PrepareGetLogsArguments,
 	"did_you_mean":     suggest.PrepareArguments,
 	"create_dashboard": dashboards.PrepareDashboardArguments,
 	"update_dashboard": dashboards.PrepareDashboardArguments,
