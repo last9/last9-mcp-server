@@ -664,6 +664,7 @@ When no window is given and `match_query` names one metric (`metric{...}` or `{_
 ### prometheus_labels
 
 - `match_query` (string, optional): Series selector. Omit to list label names across all series in the window.
+- `match` (string, optional): Alias for `match_query`; `match_query` takes precedence when both are supplied.
 - `lookback_minutes` (float, optional): Default: 60.
 - `start_time_iso` / `end_time_iso` (string, optional)
 
