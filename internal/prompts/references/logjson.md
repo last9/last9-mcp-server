@@ -208,6 +208,8 @@ Regexps (`$regex` family and the `regexp` parser) use RE2 syntax: no lookahead/l
 }
 ```
 
+A parse stage can drop rows whose Body it cannot parse (for example multi-line key=value text after a header line). For a filter → parse → `$count` aggregate pipeline, get_logs also counts the filtered rows without the parse; when fewer survive, `l9_parse_check` gives `rows_before_parse`, `rows_after_parse`, `unparsed_rows` and `parsers` (every parse stage, any of which may have dropped them). Report that gap; never present the parsed count as the total. Count without parsing for the total, or try a `regexp` parse with named groups to extract fields from a different body format. If the pre-parse count fails, `l9_parse_check` contains `parsers`, `rows_after_parse`, and `error`. The size of the gap is unknown.
+
 ### Aggregate Operations:
 ```json
 {
