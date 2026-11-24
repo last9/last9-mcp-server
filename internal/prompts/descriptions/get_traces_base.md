@@ -21,7 +21,7 @@
 
 `window_aggregate` only when asked per time bucket / over time: `{"type":"window_aggregate","function":{"$quantile":[0.99,"Duration"]},"as":"p99","window":["24","hours"],"groupby":{"SpanName":"endpoint"}}`.
 
-Calendar buckets need ISO bounds and time zone. P99 `Duration` output remains nanoseconds.
+For calendar buckets, use explicit ISO bounds and time zone. P99 `Duration` output remains nanoseconds.
 
 **Order:** filter first (match-all TraceId/SpanId before aggregate). Show/find → filter only; analysis → aggregate.
 

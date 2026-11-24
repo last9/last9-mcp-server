@@ -370,7 +370,7 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 		{"P99 `Duration` output remains nanoseconds", "must preserve Duration units"},
 		{"`filter`|`parse`|`transform`|`aggregate`|`window_aggregate`", "must list valid stage types up front"},
 		{"\"as\":[\"endpoint\"]", "must show transform as an array"},
-		{"read it as `attributes['endpoint']`", "must say how to reference transform output"},
+		{"`\"groupby\":{\"attributes['endpoint']\":\"endpoint\"}`", "must group by the qualified transform output; a bare key is HTTP 400"},
 		{"`$regex` (RE2: no lookaround)", "must state the accepted regexp flavor"},
 		{"Percentile over the whole lookback (p95 latency, last hour) → ONE `aggregate` stage", "must steer lookback percentiles to a single aggregate"},
 		{`{"type":"aggregate","aggregates":[{"function":{"$quantile":[0.95,"Duration"]},"as":"p95"}]}`, "must show a complete lookback percentile stage"},
@@ -386,6 +386,14 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 	}
 	if !strings.Contains(desc, `[{"type":"filter","query":{"$and":[{"$eq":["StatusCode","STATUS_CODE_ERROR"]}]}}]`) {
 		t.Error("GetTracesDescription must include its canonical JSON stage-array example")
+	}
+}
+
+// A transform output is a span attribute: grouping by its bare name is rejected with HTTP 400.
+func TestTracejsonReferenceGroupsByQualifiedTransformOutput(t *testing.T) {
+	want := "`\"groupby\":{\"attributes['endpoint']\":\"endpoint\"}`; a bare `endpoint` key fails"
+	if !strings.Contains(prompts.TracejsonReference, want) {
+		t.Errorf("TracejsonReference missing %q", want)
 	}
 }
 
