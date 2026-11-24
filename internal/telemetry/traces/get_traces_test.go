@@ -62,24 +62,26 @@ func TestGetTracesWaitsForAFreeSlotBeyondTheConcurrencyCap(t *testing.T) {
 		}
 	}
 	for _, tt := range []struct {
-		name string
-		args GetTracesArgs
+		name    string
+		args    GetTracesArgs
+		wantErr string
 	}{
-		{name: "start_time_iso", args: invalidTraceTimeArgs("start")},
-		{name: "end_time_iso", args: invalidTraceTimeArgs("end")},
+		{name: "start_time_iso", args: invalidTraceTimeArgs("start"), wantErr: "failed to parse time range"},
+		{name: "end_time_iso", args: invalidTraceTimeArgs("end"), wantErr: "failed to parse time range"},
+		{name: "window_aggregate days", args: invalidDayWindowTraceArgs(), wantErr: "must be a whole number of days"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 			defer cancel()
 			_, _, err := handler(ctx, &mcp.CallToolRequest{}, tt.args)
-			if err == nil || !strings.Contains(err.Error(), "failed to parse time range") {
-				t.Fatalf("expected immediate time validation error, got %v", err)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected immediate validation error containing %q, got %v", tt.wantErr, err)
 			}
 			if ctx.Err() != nil {
-				t.Fatalf("invalid bounds waited for a slot: %v", ctx.Err())
+				t.Fatalf("invalid arguments waited for a slot: %v", ctx.Err())
 			}
 			if got := arrived.Load(); got != maxConcurrentGetTraces {
-				t.Fatalf("invalid bounds reached upstream: got %d requests, want %d", got, maxConcurrentGetTraces)
+				t.Fatalf("invalid arguments reached upstream: got %d requests, want %d", got, maxConcurrentGetTraces)
 			}
 		})
 	}
@@ -118,6 +120,14 @@ func invalidTraceTimeArgs(bound string) GetTracesArgs {
 	} else {
 		args.EndTimeISO = "not-a-time"
 	}
+	return args
+}
+
+func invalidDayWindowTraceArgs() GetTracesArgs {
+	args := oneChunkTracesArgs()
+	args.TracejsonQuery = append(args.TracejsonQuery, map[string]interface{}{
+		"type": "window_aggregate", "function": map[string]interface{}{"$count": []interface{}{}}, "as": "count", "window": []interface{}{"0", "days"},
+	})
 	return args
 }
 
