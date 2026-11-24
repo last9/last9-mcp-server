@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"last9-mcp/internal/constants"
+	"last9-mcp/internal/models"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -43,7 +44,7 @@ func newParseCheckServer(t *testing.T, failControl bool) (*httptest.Server, *ato
 	bodies := parseCheckBodies()
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != constants.EndpointLogsQueryRange {
+		if r.URL.Path != constants.EndpointLogsQueryRange && r.URL.Path != constants.EndpointLogSearch {
 			_, _ = w.Write([]byte(`[]`))
 			return
 		}
@@ -78,12 +79,16 @@ func newParseCheckServer(t *testing.T, failControl bool) (*httptest.Server, *ato
 			metric["key1"] = ""
 			metric["key2"] = ""
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		response := map[string]any{
 			"data": map[string]any{
 				"resultType": "matrix",
 				"result":     []any{map[string]any{"metric": metric, "values": []any{}}},
 			},
-		})
+		}
+		if r.URL.Path == constants.EndpointLogSearch {
+			response = map[string]any{"query_result": map[string]any{"status": "success", "data": response["data"]}}
+		}
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	t.Cleanup(server.Close)
 	return server, &requests
@@ -109,7 +114,12 @@ func logfmtCountPipeline(extra ...map[string]interface{}) []map[string]interface
 
 func runParseCheckQuery(t *testing.T, server *httptest.Server, pipeline []map[string]interface{}) map[string]any {
 	t.Helper()
-	handler := NewGetLogsHandler(server.Client(), testLogsConfig(server.URL))
+	return runParseCheckQueryWithConfig(t, server, testLogsConfig(server.URL), pipeline)
+}
+
+func runParseCheckQueryWithConfig(t *testing.T, server *httptest.Server, cfg models.Config, pipeline []map[string]interface{}) map[string]any {
+	t.Helper()
+	handler := NewGetLogsHandler(server.Client(), cfg)
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
 		LogjsonQuery: pipeline,
 		StartTimeISO: "1970-01-01T00:00:00Z",
@@ -147,6 +157,22 @@ func TestGetLogsReportsRowsDroppedByParseStage(t *testing.T) {
 	}
 	if got := requests.Load(); got != 2 {
 		t.Errorf("expected the query plus one pre-parse count, got %d requests", got)
+	}
+}
+
+func TestGetLogsReportsRowsDroppedByParseStageOnLogSearchAPI(t *testing.T) {
+	server, requests := newParseCheckServer(t, false)
+	out := runParseCheckQueryWithConfig(t, server, apiModeCfg(server.URL), logfmtCountPipeline())
+
+	check, ok := out["l9_parse_check"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected l9_parse_check, got %v", out)
+	}
+	if check["rows_before_parse"] != float64(44) || check["rows_after_parse"] != float64(25) || check["unparsed_rows"] != float64(19) {
+		t.Errorf("l9_parse_check = %v, want 44 before, 25 after, 19 unparsed", check)
+	}
+	if got := requests.Load(); got != 2 {
+		t.Errorf("expected the search plus one pre-parse count, got %d requests", got)
 	}
 }
 
