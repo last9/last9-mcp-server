@@ -252,6 +252,27 @@ func snippet(s string) string {
 	return s[:120] + "..."
 }
 
+func TestGetServiceOperationsSummaryDescriptionRanking(t *testing.T) {
+	desc := prompts.GetServiceOperationsSummaryDescription
+	checks := []struct {
+		phrase string
+		reason string
+	}{
+		{"For a top N, omit `limit`", "must not suggest an unsupported limit argument"},
+		{"`throughput` for traffic", "must identify the traffic ranking field"},
+		{"`response_time[\"0.95\"]` when present", "must identify the measured p95 latency field"},
+		{"otherwise a populated\n\t`response_time.p95`", "must document the legacy p95 fallback"},
+		{"Exclude unmeasured\n\tlatencies from the ranking", "must keep placeholder latency values out of the ranking"},
+		{"Sort highest first and report the first N", "must explain how to rank and truncate results"},
+		{"service_name: (Required) One service name", "must describe the required single-service scope"},
+	}
+	for _, check := range checks {
+		if !strings.Contains(desc, check.phrase) {
+			t.Errorf("GetServiceOperationsSummaryDescription missing %q: %s", check.phrase, check.reason)
+		}
+	}
+}
+
 func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 	desc := prompts.GetLogsDescription
 	if desc == "" {
