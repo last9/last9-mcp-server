@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `get_logs` decides whether an aggregate pipeline (`aggregate` or `window_aggregate` stage) came back empty from its rows, whatever `resultType` the response carries; a grouped count returned as `streams` used to be read as zero log lines, so its rows and `l9_sanity.matched_count` came with "No logs found" `l9_guidance`. Raw searches still count lines (#601).
+- Empty `get_logs` and `get_service_logs` results for an explicit time range now show both resolved UTC bounds. The guidance previously described historical intervals as a lookback from the present (#600).
 - `get_logs` and `get_traces` accept `window_aggregate` buckets in whole days (`["1","days"]`, `["7","day"]`) by sending the same width in hours, which the API accepts, and their input schemas list `days` among the window units; the query window, filters and limits are unchanged. Day counts that are not a positive whole number, or exceed 106751 days (the widest window whose width in hours fits a duration), are rejected before any request (#593).
 - `get_alert_rule_state` rejects a range whose last scheduled sample (`start_time + n·step`) is after the current time before making any upstream call, naming that sample and the current time and asking for an earlier `end_time` (and an earlier `start_time` when it is not before now); it used to fetch the earlier samples and then fail on the upstream's future-timestamp error. An `end_time` past now is still accepted when no sample lands after now (#598).
 
