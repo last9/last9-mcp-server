@@ -3,10 +3,8 @@
 
 	**Profile first:** Call `get_service_profile` for this service before using this tool. Use `signal_shape` and `telemetry` for routing — see `last9://reference/investigation`. If results contradict the profile, fall back to discovery tools (profile may be stale; 15min TTL).
 
-	Returns a list of operations with their details.
 	These include operations like HTTP endpoints, database queries, messaging producer and http client calls.
 	Includes service name, environment, throughput, error rate, and response time for each operation.
-	All values are p95 quantiles over the time range.
 	Response times are in milliseconds. Throughput and error rates are in requests per minute (rpm).
 	Each operation includes:
 		- operation name
@@ -27,9 +25,10 @@
 		- net_peer_name: HTTP host or connection string
 	
 	Parameters:
+	- limit: Optional positive integer. Returns the busiest operations by requests per minute across all types, plus total_operations before limiting. Omit for all operations.
 	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
 	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
 	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
 	- env: (Optional) Exact environment name, e.g. production. Use "get_service_environments" tool to get available environments. Default all environments (empty or .*). Anchored ^production$ is accepted and matched exactly; alternation (a|b) and wildcards (prod.*) are rejected. For regex matching use get_service_summary. The response echoes the matched `env`, plus `env_requested` when it differed.
-	- service_name: (Required) Service name to filter by. Defaults to all services.
+	- service_name: (Required) Service name to filter by.
 	- If unsure of the service_name or env spelling, call "did_you_mean" first.
