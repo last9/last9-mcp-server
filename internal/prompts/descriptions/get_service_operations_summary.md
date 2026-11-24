@@ -4,8 +4,10 @@
 	**Profile first:** Call `get_service_profile` for this service before using this tool. Use `signal_shape` and `telemetry` for routing — see `last9://reference/investigation`. If results contradict the profile, fall back to discovery tools (profile may be stale; 15min TTL).
 
 	Returns HTTP, database, and messaging operations in `operations`. For a top N, omit `limit`
-	and rank the returned rows by the requested metric (e.g. `response_time.p95` for p95
-	latency or `throughput` for traffic). Report the first N after sorting highest first.
+	and rank the returned rows by the requested metric (e.g. `throughput` for traffic).
+	For p95 latency use `response_time["0.95"]` when present, otherwise a populated
+	`response_time.p95`. A lone zero in `p95` can be a placeholder. Exclude unmeasured
+	latencies from the ranking. Sort highest first and report the first N.
 	Response times are in milliseconds.
 	Each operation includes:
 		- operation name
