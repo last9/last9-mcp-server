@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -128,6 +129,36 @@ func TestGetLogsHandler_APIModeWindowsCancelledAfterOneSucceedsReturnsCancelled(
 	})
 	if result != nil || !errors.Is(err, context.Canceled) {
 		t.Fatalf("handler = (%v, %v), want a context.Canceled error instead of the finished window", result, err)
+	}
+}
+
+// A caller deadline that ends the search first is the caller's, not a slow
+// scan: no timeout guidance, and the error names the caller's deadline.
+func TestGetLogsHandler_APIModeCallerDeadlineIsNotReportedAsScanTimeout(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		holdUntilCancelled(r, release)
+	}))
+	defer server.Close()
+	defer close(release)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	end := time.Now().UTC()
+	started := time.Now()
+	result, _, err := NewGetLogsHandler(server.Client(), apiModeCfg(server.URL))(ctx, &mcp.CallToolRequest{}, GetLogsArgs{
+		LogjsonQuery: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "checkout"}}}},
+		StartTimeISO: end.Add(-time.Hour).Format(time.RFC3339),
+		EndTimeISO:   end.Format(time.RFC3339),
+	})
+	if elapsed := time.Since(started); elapsed > cancelReturnBound {
+		t.Fatalf("handler returned %s after a 100ms caller deadline", elapsed)
+	}
+	if result != nil || !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, utils.ErrLogSearchTimeout) {
+		t.Fatalf("handler = (%v, %v), want a caller-deadline error without scan guidance", result, err)
+	}
+	if want := "stopped at the caller's deadline"; !strings.Contains(err.Error(), want) {
+		t.Fatalf("error %q is missing %q", err, want)
 	}
 }
 
