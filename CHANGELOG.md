@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `get_alert_config` accepts `alert_rule_id` as an alias for `rule_id` and explains how to find the triggering rule when passed an `alert_id` (#622).
+- `get_logs` reports rows a parse stage dropped. For a filter → parse → `$count` aggregate pipeline it also counts the rows the filters match without the parse, and when the parsed count is lower adds `l9_parse_check` with `rows_before_parse`, `rows_after_parse`, `unparsed_rows` and `parsers` (every parse stage the gap spans); a failed pre-parse count is reported as an `error` there instead. A `logfmt` parse over multi-line key=value bodies used to drop those rows with no note (#615).
 - `did_you_mean` accepts `name` for `query` and `entity_type` for `type` before argument validation. Conflicting spellings return an error (#614).
 - `get_exceptions` accepts JSON null for the optional `span_name` and `start_time_iso` arguments. These now use the omitted-field defaults instead of failing input validation (#604).
 - `get_logs` decides whether an aggregate pipeline (`aggregate` or `window_aggregate` stage) came back empty from its rows, whatever `resultType` the response carries; a grouped count returned as `streams` used to be read as zero log lines, so its rows and `l9_sanity.matched_count` came with "No logs found" `l9_guidance`. Raw searches still count lines (#602).
