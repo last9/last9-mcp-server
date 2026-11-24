@@ -20,11 +20,13 @@ func PrepareArguments(raw json.RawMessage) (json.RawMessage, error) {
 		if !ok {
 			continue
 		}
+		var a, b *string
 		if current, exists := fields[key]; exists {
-			var a, b *string
 			if json.Unmarshal(current, &a) != nil || json.Unmarshal(value, &b) != nil || a == nil || b == nil || *a != *b {
 				return nil, fmt.Errorf("conflicting arguments %q and %q: supply one string value", alias, key)
 			}
+		} else if json.Unmarshal(value, &b) != nil || b == nil {
+			return nil, fmt.Errorf("argument %q must be a string", alias)
 		}
 		fields[key] = value
 		delete(fields, alias)
