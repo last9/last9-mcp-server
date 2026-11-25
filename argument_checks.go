@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/suggest"
@@ -14,10 +15,19 @@ import (
 // argumentChecks run before the SDK validates a tool's arguments against its schema,
 // which stops at the first violation; each check names every problem it finds.
 var argumentChecks = map[string]func(json.RawMessage) (json.RawMessage, error){
-	"did_you_mean":     suggest.PrepareArguments,
-	"get_dashboard":    dashboards.PrepareGetDashboardArguments,
-	"create_dashboard": dashboards.PrepareDashboardArguments,
-	"update_dashboard": dashboards.PrepareDashboardArguments,
+	"get_trace_attributes_for_pipeline": checkTraceDiscoveryArguments,
+	"did_you_mean":                      suggest.PrepareArguments,
+	"get_dashboard":                     dashboards.PrepareGetDashboardArguments,
+	"create_dashboard":                  dashboards.PrepareDashboardArguments,
+	"update_dashboard":                  dashboards.PrepareDashboardArguments,
+}
+
+func checkTraceDiscoveryArguments(raw json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil && fields["tracejson_query"] != nil {
+		return nil, errors.New(`unexpected additional properties ["tracejson_query"]. Use pipeline for the filter stages that scope attribute discovery.`)
+	}
+	return raw, nil
 }
 
 func argumentCheckMiddleware(tool string, check func(json.RawMessage) (json.RawMessage, error)) mcp.Middleware {

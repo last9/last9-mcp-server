@@ -59,6 +59,12 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 		wantText  string // substring the surfaced error content should contain
 	}{
 		{
+			name:      "trace discovery pipeline correction",
+			tool:      "get_trace_attributes_for_pipeline",
+			arguments: map[string]any{"tracejson_query": []any{}},
+			wantText:  "Use pipeline for the filter stages that scope attribute discovery.",
+		},
+		{
 			name:      "unknown parameter name",
 			tool:      "prometheus_labels",
 			arguments: map[string]any{"selector": "up"},
