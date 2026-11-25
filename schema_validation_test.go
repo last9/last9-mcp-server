@@ -68,7 +68,7 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 			name:      "KPI group name recovery",
 			tool:      "get_entity_kpis",
 			arguments: map[string]any{"entity_name": "example"},
-			wantText:  "Call get_alert_groups with alert_group_name, select the intended group, then pass its id as entity_id to get_entity_kpis. If get_alert_groups is unavailable, ask for the alert group ID.",
+			wantText:  "Call get_alert_groups with alert_group_name, select the intended group, then pass its id as entity_id to get_entity_kpis.",
 		},
 		{
 			name:      "wrong value type",
