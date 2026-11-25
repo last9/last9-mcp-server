@@ -1,4 +1,4 @@
-Lists services that send logs, with their environments, physical indexes and when each last reported, from the log-index service count metric. Use it to offer the user a list of services for a log request: it includes log-only services, which `get_service_summary` (APM server spans only) never shows.
+Lists services that send logs, with their environments, physical indexes and when each last reported, from the log-index service count metric. Use it to offer the user a list of services for a log request: unlike APM server-span inventories, it includes log-only services.
 
 Parameters:
 - `query`: a service name to rank by. Each row gets `similarity` (percent, word order ignored, so `beta-alpha-gamma` scores 100 for `alpha-beta-gamma`); rows sort by similarity, then name. Omitted: rows sort by name.
