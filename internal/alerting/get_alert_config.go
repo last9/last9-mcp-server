@@ -149,8 +149,11 @@ func PrepareAlertConfigArguments(raw json.RawMessage) (json.RawMessage, error) {
 	}
 	if canonical, ok := fields["rule_id"]; ok {
 		var current *string
+		if err := json.Unmarshal(canonical, &current); err != nil || current == nil || strings.TrimSpace(*current) == "" {
+			return nil, errors.New("rule_id must be a nonempty string when alert_rule_id is also supplied")
+		}
 		// Same equivalence as the rule_id filter, so two spellings of one rule never conflict.
-		if err := json.Unmarshal(canonical, &current); err != nil || current == nil || !strings.EqualFold(strings.TrimSpace(*current), strings.TrimSpace(id)) {
+		if !strings.EqualFold(strings.TrimSpace(*current), strings.TrimSpace(id)) {
 			return nil, errors.New("conflicting rule_id and alert_rule_id: supply one rule ID")
 		}
 	}
