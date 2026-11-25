@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 
+	"last9-mcp/internal/alerting"
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/suggest"
 	"last9-mcp/internal/utils"
@@ -16,6 +17,7 @@ import (
 // argumentChecks run before the SDK validates a tool's arguments against its schema,
 // which stops at the first violation; each check names every problem it finds.
 var argumentChecks = map[string]func(json.RawMessage) (json.RawMessage, error){
+	"get_alert_config":                  alerting.PrepareAlertConfigArguments,
 	"get_trace_attributes_for_pipeline": checkTraceDiscoveryArguments,
 	"did_you_mean":                      suggest.PrepareArguments,
 	"get_dashboard":                     dashboards.PrepareGetDashboardArguments,
