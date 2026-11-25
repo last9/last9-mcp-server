@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"last9-mcp/internal/alerting"
 	"last9-mcp/internal/apm"
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/suggest"
@@ -19,6 +20,7 @@ import (
 // argumentChecks run before the SDK validates a tool's arguments against its schema,
 // which stops at the first violation; each check names every problem it finds.
 var argumentChecks = map[string]func(json.RawMessage) (json.RawMessage, error){
+	"get_alert_config":        alerting.PrepareAlertConfigArguments,
 	"did_you_mean":            suggest.PrepareArguments,
 	"get_dashboard":           dashboards.PrepareGetDashboardArguments,
 	"create_dashboard":        dashboards.PrepareDashboardArguments,

@@ -94,6 +94,9 @@ func TestDiscoverDatabases_OmitsEmptyEnvFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DiscoverDatabases: %v", err)
 	}
+	if _, ok := body["db_system"]; ok {
+		t.Errorf("db_system sent when omitted")
+	}
 	if _, ok := body["filters"]; ok {
 		t.Errorf("filters sent when none were requested: %v", body["filters"])
 	}
