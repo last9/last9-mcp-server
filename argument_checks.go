@@ -25,7 +25,7 @@ var argumentChecks = map[string]func(json.RawMessage) (json.RawMessage, error){
 func checkAlertGroupArguments(raw json.RawMessage) (json.RawMessage, error) {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) == nil && fields["query"] != nil {
-		return nil, errors.New(`unexpected additional properties ["query"]. To search by group name, pass alert_group_name. For team or tier, use team or tier.`)
+		return nil, errors.New(`validating "arguments": validating root: unexpected additional properties ["query"]. To search by group name, pass alert_group_name. For team or tier, use team or tier.`)
 	}
 	return raw, nil
 }
