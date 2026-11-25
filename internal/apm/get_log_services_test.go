@@ -3,6 +3,7 @@ package apm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -233,6 +234,40 @@ func TestGetLogServicesReportsFailedRetryAsIncomplete(t *testing.T) {
 
 	if !strings.Contains(out.Note, "incomplete") {
 		t.Errorf("note = %q, want discovery reported incomplete", out.Note)
+	}
+}
+
+func TestGetLogServicesCancelledRetryReturnsCancellation(t *testing.T) {
+	retryStarted := make(chan struct{})
+	releaseRetry := make(chan struct{})
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if requests == 1 {
+			seriesReply()(w)
+			return
+		}
+		close(retryStarted)
+		select {
+		case <-r.Context().Done():
+		case <-releaseRetry:
+		}
+	}))
+	t.Cleanup(server.Close)
+	cfg := testSummaryConfig(server.URL)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := NewGetLogServicesHandler(server.Client(), cfg)(ctx, &mcp.CallToolRequest{}, GetLogServicesArgs{})
+		done <- err
+	}()
+
+	<-retryStarted
+	cancel()
+	err := <-done
+	close(releaseRetry)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 }
 
