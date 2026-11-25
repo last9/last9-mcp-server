@@ -3,9 +3,7 @@
 
 	**Profile first:** Call `get_service_profile` for this service before using this tool. Use `signal_shape` and `telemetry` for routing — see `last9://reference/investigation`. If results contradict the profile, fall back to discovery tools (profile may be stale; 15min TTL).
 
-	These include operations like HTTP endpoints, database queries, messaging producer and http client calls.
-	Includes service name, environment, throughput, error rate, and response time for each operation.
-	Response times are in milliseconds. Throughput and error rates are in requests per minute (rpm).
+	Covers HTTP endpoints, database queries, messaging producers and HTTP client calls.
 	Each operation includes:
 		- operation name
 		- service name
