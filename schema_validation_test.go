@@ -59,6 +59,12 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 		wantText  string // substring the surfaced error content should contain
 	}{
 		{
+			name:      "service summary single-service route",
+			tool:      "get_service_summary",
+			arguments: map[string]any{"service_name": "example-service", "lookback_minutes": 5},
+			wantText:  "call get_service_performance_details with service_name",
+		},
+		{
 			name:      "unknown parameter name",
 			tool:      "prometheus_labels",
 			arguments: map[string]any{"selector": "up"},
