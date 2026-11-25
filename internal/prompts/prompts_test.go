@@ -20,6 +20,15 @@ func TestGetLogsDescriptionEvalGatedCopy(t *testing.T) {
 	}
 }
 
+func TestServiceOperationsDescriptionNamesP95Field(t *testing.T) {
+	if !strings.Contains(prompts.GetServiceOperationsSummaryDescription, "response_time.p95") {
+		t.Fatal("get_service_operations_summary must name the response_time.p95 field")
+	}
+	if strings.Contains(prompts.GetServiceOperationsSummaryDescription, `response_time["0.95"]`) {
+		t.Fatal("get_service_operations_summary names a response field that is not served")
+	}
+}
+
 var promptDescriptionFiles = map[string]string{
 	"add_drop_rule.md":                     prompts.AddDropRuleDescription,
 	"add_remapping_rule.md":                prompts.AddRemappingRuleDescription,
