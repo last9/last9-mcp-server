@@ -59,6 +59,24 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 		wantText  string // substring the surfaced error content should contain
 	}{
 		{
+			name:      "label values label name",
+			tool:      "prometheus_label_values",
+			arguments: map[string]any{"label_name": "job", "match_query": "up"},
+			wantText:  "unexpected additional properties [\"label_name\"]. Use label for the label name.",
+		},
+		{
+			name:      "label values selector",
+			tool:      "prometheus_label_values",
+			arguments: map[string]any{"label": "job", "matches": []string{"up"}},
+			wantText:  "unexpected additional properties [\"matches\"]. Use match_query for a single PromQL selector string.",
+		},
+		{
+			name:      "label values both keys",
+			tool:      "prometheus_label_values",
+			arguments: map[string]any{"label_name": "job", "matches": "up"},
+			wantText:  "Use label for the label name. Use match_query for a single PromQL selector string.",
+		},
+		{
 			name:      "unknown parameter name",
 			tool:      "prometheus_labels",
 			arguments: map[string]any{"selector": "up"},

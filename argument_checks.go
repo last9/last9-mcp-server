@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/suggest"
@@ -14,9 +15,28 @@ import (
 // argumentChecks run before the SDK validates a tool's arguments against its schema,
 // which stops at the first violation; each check names every problem it finds.
 var argumentChecks = map[string]func(json.RawMessage) (json.RawMessage, error){
-	"did_you_mean":     suggest.PrepareArguments,
-	"create_dashboard": dashboards.PrepareDashboardArguments,
-	"update_dashboard": dashboards.PrepareDashboardArguments,
+	"did_you_mean":            suggest.PrepareArguments,
+	"create_dashboard":        dashboards.PrepareDashboardArguments,
+	"update_dashboard":        dashboards.PrepareDashboardArguments,
+	"prometheus_label_values": checkLabelValueArguments,
+}
+
+func checkLabelValueArguments(raw json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return raw, nil
+	}
+	const labelHint = "Use label for the label name."
+	const selectorHint = "Use match_query for a single PromQL selector string."
+	switch {
+	case fields["label_name"] != nil && fields["matches"] != nil:
+		return nil, errors.New(`unexpected additional properties ["label_name" "matches"]. ` + labelHint + " " + selectorHint)
+	case fields["label_name"] != nil:
+		return nil, errors.New(`unexpected additional properties ["label_name"]. ` + labelHint)
+	case fields["matches"] != nil:
+		return nil, errors.New(`unexpected additional properties ["matches"]. ` + selectorHint)
+	}
+	return raw, nil
 }
 
 func argumentCheckMiddleware(tool string, check func(json.RawMessage) (json.RawMessage, error)) mcp.Middleware {
