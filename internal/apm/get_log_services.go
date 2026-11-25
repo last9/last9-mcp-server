@@ -108,6 +108,8 @@ func NewGetLogServicesHandler(client *http.Client, cfg models.Config) func(conte
 		if len(rows) == 0 && window.isDefault {
 			wide, err := fetch(window.end-sparseLookbackMinutes*60, window.end)
 			switch {
+			case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+				return nil, nil, err
 			case err != nil:
 				note = fmt.Sprintf("No log services in the last %d minutes, and retrying over the last 4 days failed, so discovery is incomplete: %v", utils.DefaultLookbackMinutes, err)
 			case len(wide) == 0:
