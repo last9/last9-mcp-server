@@ -59,6 +59,12 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 		wantText  string // substring the surfaced error content should contain
 	}{
 		{
+			name:      "alert group query names supported filters",
+			tool:      "get_alert_groups",
+			arguments: map[string]any{"query": "example-group"},
+			wantText:  "To search by group name, pass alert_group_name. For team or tier, use team or tier.",
+		},
+		{
 			name:      "unknown parameter name",
 			tool:      "prometheus_labels",
 			arguments: map[string]any{"selector": "up"},

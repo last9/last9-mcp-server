@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/suggest"
@@ -16,8 +17,17 @@ import (
 var argumentChecks = map[string]func(json.RawMessage) (json.RawMessage, error){
 	"did_you_mean":     suggest.PrepareArguments,
 	"get_dashboard":    dashboards.PrepareGetDashboardArguments,
+	"get_alert_groups": checkAlertGroupArguments,
 	"create_dashboard": dashboards.PrepareDashboardArguments,
 	"update_dashboard": dashboards.PrepareDashboardArguments,
+}
+
+func checkAlertGroupArguments(raw json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil && fields["query"] != nil {
+		return nil, errors.New(`unexpected additional properties ["query"]. To search by group name, pass alert_group_name. For team or tier, use team or tier.`)
+	}
+	return raw, nil
 }
 
 func argumentCheckMiddleware(tool string, check func(json.RawMessage) (json.RawMessage, error)) mcp.Middleware {
