@@ -21,6 +21,8 @@ func TestAlertRuleStateHandler_EmptyIdentityFiltersThroughTransport(t *testing.T
 		wantError bool
 	}{
 		{name: "unknown group", filter: "alert_group_id", value: "missing-group", wantError: true},
+		{name: "missing exact ID", filter: "rule_id", value: "missing-rule", wantError: true},
+		{name: "same name distinct IDs", filter: "rule_id", value: "r", match: true},
 		{name: "unknown rule", filter: "rule_name", value: "^missing-rule$", wantError: true},
 		{name: "unmatched group name", filter: "alert_group_name", value: "^missing-group$", wantError: true},
 		{name: "unfiltered empty"},
@@ -32,6 +34,17 @@ func TestAlertRuleStateHandler_EmptyIdentityFiltersThroughTransport(t *testing.T
 			var hits atomic.Int64
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				hits.Add(1)
+				if tc.filter == "rule_id" {
+					if r.URL.Query().Has("rule_id") {
+						t.Error("rule_id must be matched against the returned sample")
+					}
+					rows := `{"alert_rules":[{"rule_id":"r.2","rule_name":"shared","state":"firing"}]}`
+					if r.URL.Query().Get("timestamp") == "1718000060" {
+						rows = `{"alert_rules":[{"rule_id":"r.2","rule_name":"shared","state":"normal"},{"rule_id":"r","rule_name":"shared","state":"firing"}]}`
+					}
+					_, _ = w.Write([]byte(rows))
+					return
+				}
 				if tc.filter != "" && r.URL.Query().Get(tc.filter) != tc.value {
 					t.Errorf("filter %s = %q, want %q", tc.filter, r.URL.Query().Get(tc.filter), tc.value)
 				}
@@ -87,7 +100,7 @@ func TestAlertRuleStateHandler_EmptyIdentityFiltersThroughTransport(t *testing.T
 				return
 			}
 			series := got["r"]
-			if len(series) != 2 || series[0].IsFiring != 0 || series[1].IsFiring != 1 {
+			if len(got) != 1 || len(series) != 2 || series[0].IsFiring != 0 || series[1].IsFiring != 1 {
 				t.Fatalf("want zero-filled first sample and firing second sample, got %v", series)
 			}
 		})
