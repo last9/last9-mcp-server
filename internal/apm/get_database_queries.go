@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
-	"sync"
 
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/prom"
@@ -14,6 +13,7 @@ import (
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"golang.org/x/sync/errgroup"
 )
 
 type GetDatabaseQueriesArgs struct {
@@ -115,13 +115,31 @@ func NewGetDatabaseQueriesHandler(client *http.Client, cfg models.Config) func(c
 		// Each goroutine writes to its own map to avoid concurrent map writes
 		var (
 			avgLatency, p95Latency, errorCounts, totalCounts map[string]float64
-			wg                                               sync.WaitGroup
+			group                                            errgroup.Group
 		)
-		wg.Go(func() { avgLatency, _ = queryValues(avgLatencyQuery) })
-		wg.Go(func() { p95Latency, _ = queryValues(p95LatencyQuery) })
-		wg.Go(func() { errorCounts, _ = queryValues(errorCountQuery) })
-		wg.Go(func() { totalCounts, _ = queryValues(totalCountQuery) })
-		wg.Wait()
+		group.Go(func() error {
+			var err error
+			avgLatency, err = queryValues(avgLatencyQuery)
+			return metricQueryError("average latency", err)
+		})
+		group.Go(func() error {
+			var err error
+			p95Latency, err = queryValues(p95LatencyQuery)
+			return metricQueryError("p95 latency", err)
+		})
+		group.Go(func() error {
+			var err error
+			errorCounts, err = queryValues(errorCountQuery)
+			return metricQueryError("error count", err)
+		})
+		group.Go(func() error {
+			var err error
+			totalCounts, err = queryValues(totalCountQuery)
+			return metricQueryError("total count", err)
+		})
+		if err := group.Wait(); err != nil {
+			return nil, nil, err
+		}
 
 		result := make([]QueryPattern, 0, len(throughput))
 		for span, rpm := range throughput {
@@ -177,6 +195,13 @@ func NewGetDatabaseQueriesHandler(client *http.Client, cfg models.Config) func(c
 			},
 		}, nil, nil
 	}
+}
+
+func metricQueryError(metric string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("failed to fetch %s: %w", metric, err)
 }
 
 func buildDBBaseFilter(args GetDatabaseQueriesArgs) (filter, envDisplay string, err error) {
