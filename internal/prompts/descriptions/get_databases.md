@@ -26,6 +26,8 @@ rows add `activity_source`.
 Rows are returned in the same order the Databases dashboard shows: busiest first.
 
 Parameters:
+- db_system: (Optional) Exact database system, e.g. "postgresql". Filters both trace and
+  metrics-only rows. Omit to include all systems.
 - env: (Optional) Filter by deployment environment. Accepts a regular expression, so
   "prod|staging" matches either. Default: all environments. For one exact environment
   use get_database_queries or get_service_performance_details, which take a literal name.

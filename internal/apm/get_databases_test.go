@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -237,4 +238,57 @@ func TestGetDatabasesHandler_Integration(t *testing.T) {
 		text = text[:500]
 	}
 	t.Logf("get_databases response: %s", text)
+}
+
+func TestGetDatabasesHandler_ExactDBSystem(t *testing.T) {
+	const mixed = `{"partial":true,"errors":[{"field":"activity","reason":"timeout"}],"discover":{"databases":[
+        {"id":"first","db_system":"redis","metrics_only":true},
+        {"id":"other","db_system":"redisearch","metrics_only":true},
+        {"id":"third","db_system":"redis","throughput":3}
+    ]}}`
+	for _, tc := range []struct {
+		system string
+		ids    []string
+	}{
+		{"redis", []string{"first", "third"}},
+		{"Redis", nil},
+		{"", []string{"first", "other", "third"}},
+	} {
+		t.Run("filter="+tc.system, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body struct {
+					DBSystem string `json:"db_system"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+					http.Error(w, "invalid JSON", 400)
+					return
+				}
+				if body.DBSystem != tc.system {
+					t.Errorf("db_system=%q, want %q", body.DBSystem, tc.system)
+				}
+				_, _ = w.Write([]byte(mixed))
+			}))
+			defer srv.Close()
+			result, _, err := NewGetDatabasesHandler(srv.Client(), testDBConfig(srv.URL))(context.Background(), nil, GetDatabasesArgs{DBSystem: tc.system, LookbackMinutes: 60})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var payload struct {
+				Count     int
+				Databases []DatabaseSummary
+				Warnings  []string `json:"_warnings"`
+			}
+			if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &payload); err != nil {
+				t.Fatal(err)
+			}
+			var ids []string
+			for _, row := range payload.Databases {
+				ids = append(ids, row.ID)
+			}
+			if !slices.Equal(ids, tc.ids) || payload.Count != len(tc.ids) || !slices.Equal(payload.Warnings, []string{"activity: timeout"}) {
+				t.Errorf("unexpected payload %+v", payload)
+			}
+		})
+	}
 }

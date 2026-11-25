@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `get_databases` accepts an optional exact `db_system` filter and counts only matching trace-backed and metrics-only rows (#632).
 - `get_database_queries` accepts an optional exact `service_name` filter, so throughput, latency and errors for a shared database can be scoped to one calling service (#630).
 - `get_alert_rule_state` accepts an optional exact `rule_id` to return one rule’s firing history, including when multiple rules share a name. An ID absent from every sample returns guidance to check the filters and time range (#631).
 - `get_service_operations_summary` accepts an optional positive `limit` to return the busiest operations across types by requests per minute, with `total_operations` reporting the count before truncation (#624).
