@@ -81,8 +81,8 @@ func (args PromqlInstantQueryArgs) evaluationTime() (int64, error) {
 		instant = time.Unix(whole, 0)
 	}
 	seconds := instant.Unix()
-	if seconds == 0 || seconds > math.MaxInt64/int64(time.Second) || seconds < math.MinInt64/int64(time.Second) {
-		return 0, errors.New("time is outside the supported evaluation range or resolves to reserved Unix second zero")
+	if seconds <= 0 || seconds > math.MaxInt64/int64(time.Second) {
+		return 0, errors.New("time must resolve to a positive Unix second within the supported evaluation range")
 	}
 	if args.TimeISO != "" {
 		canonical, err := utils.ParseToolTimestamp(args.TimeISO)

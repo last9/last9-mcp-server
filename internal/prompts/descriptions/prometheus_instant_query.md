@@ -20,7 +20,7 @@
 		"value": [1700000000, "0.123"]
 	}]
 	Parameters:
-	- time: Optional Prometheus alias for time_iso, as RFC3339 or Unix seconds. Evaluation uses whole seconds; prefer time_iso.
+	- time: Optional Prometheus alias for time_iso, as RFC3339 or positive Unix seconds. Evaluation uses whole seconds; prefer time_iso.
 	- query: (Required) The Prometheus query to execute.
 	- time_iso: (Optional) The point in time to query in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
 	- lookback_minutes: (Optional) Number of minutes to look back from now when time_iso is omitted.

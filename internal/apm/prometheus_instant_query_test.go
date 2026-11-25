@@ -59,7 +59,7 @@ func TestInstantTimeAlias(t *testing.T) {
 			t.Errorf("%s: %d %v", raw, got, err)
 		}
 	}
-	for _, raw := range []string{`""`, `"NaN"`, `null`, `0`, `1735689600000`, `1735689601`} {
+	for _, raw := range []string{`""`, `"NaN"`, `null`, `-1`, `"1969-12-31T23:59:59Z"`, `0`, `1735689600000`, `1735689601`} {
 		if _, err := (PromqlInstantQueryArgs{Time: []byte(raw), TimeISO: iso}).evaluationTime(); err == nil {
 			t.Errorf("accepted %s", raw)
 		}
