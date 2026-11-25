@@ -385,3 +385,20 @@ func TestFeedbackAPIErrorsDoNotSuggestRetry(t *testing.T) {
 		})
 	}
 }
+
+// A caller deadline that comes before the tool-call deadline is the caller's:
+// the handler's error stands instead of the tool-call deadline message.
+func TestWithCallDeadlineLeavesCallerDeadlineToHandler(t *testing.T) {
+	callerStopped := fmt.Errorf("logs query stopped at the caller's deadline: %w", context.DeadlineExceeded)
+	handler := withCallDeadline(time.Minute, true, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+		<-ctx.Done()
+		return nil, nil, callerStopped
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	result, _, err := handler(ctx, &mcp.CallToolRequest{}, struct{}{})
+	if result != nil || err != callerStopped {
+		t.Fatalf("handler = (%v, %v), want the handler's caller-deadline error unchanged", result, err)
+	}
+}

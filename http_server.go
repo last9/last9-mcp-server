@@ -81,7 +81,7 @@ func (h *HTTPServer) Handler() http.Handler {
 
 	// Register handlers on both root and /mcp paths for maximum client flexibility
 	mux := http.NewServeMux()
-	sessions := withClientSessions(mcpHandler)
+	sessions := withRequestLifetime(withClientSessions(mcpHandler))
 	mux.Handle("/", sessions)    // Root endpoint for standard MCP clients
 	mux.Handle("/mcp", sessions) // /mcp endpoint for explicit MCP usage
 	mux.HandleFunc("/health", h.handleHealth)
@@ -124,6 +124,32 @@ func withClientSessions(next http.Handler) http.Handler {
 	})
 }
 
+type requestLifetimeKey struct{}
+
+// withRequestLifetime lets a tool call stop when its POST ends. Before
+// protocol 2026-07-28 the SDK runs the handler on a context detached from the
+// POST, but it keeps the POST context's values, so the POST travels as one.
+func withRequestLifetime(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestLifetimeKey{}, r.Context())))
+	})
+}
+
+// stopWithRequest returns ctx cancelled once the HTTP request that carried the
+// call ends, as when the client cancels or disconnects. Outside HTTP it returns ctx.
+func stopWithRequest(ctx context.Context) (context.Context, context.CancelFunc) {
+	request, ok := ctx.Value(requestLifetimeKey{}).(context.Context)
+	if !ok {
+		return ctx, func() {}
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(request, cancel)
+	return ctx, func() {
+		stop()
+		cancel()
+	}
+}
+
 // initializeClientInfo returns the clientInfo of a single initialize request, else nil.
 func initializeClientInfo(body []byte) *mcp.Implementation {
 	var msg struct {
@@ -138,8 +164,11 @@ func initializeClientInfo(body []byte) *mcp.Implementation {
 	return msg.Params.ClientInfo
 }
 
+// streamableOptions ties a tool call to its POST, so a client that cancels or
+// disconnects stops the call. The SDK does this only for protocol 2026-07-28
+// and later; older clients' calls run until the tool-call deadline.
 func streamableOptions() *mcp.StreamableHTTPOptions {
-	return &mcp.StreamableHTTPOptions{Stateless: true, MaxRequestBodyBytes: maxRequestBodyBytes}
+	return &mcp.StreamableHTTPOptions{Stateless: true, MaxRequestBodyBytes: maxRequestBodyBytes, PropagateRequestCancellation: true}
 }
 
 // requestToolsets returns the tools a request may see: the startup set

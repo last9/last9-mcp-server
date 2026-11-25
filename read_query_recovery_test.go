@@ -10,8 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"last9-mcp/internal/apm"
 	"last9-mcp/internal/utils"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestReadQueryFailureKeepsRecoveryGuidance(t *testing.T) {
@@ -31,21 +33,10 @@ func TestReadQueryFailureKeepsRecoveryGuidance(t *testing.T) {
 				}
 			}))
 			defer upstream.Close()
-			server := newRegisterTestServer(t)
-			if _, err := registerTools(server, writeToolTestConfig(upstream.URL), upstream.Client()); err != nil {
-				t.Fatal(err)
-			}
-			server.Server.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
-				return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
-					if method == "tools/call" {
-						var cancel context.CancelFunc
-						ctx, cancel = context.WithTimeout(ctx, 100*time.Millisecond)
-						defer cancel()
-					}
-					return next(ctx, method, req)
-				}
-			})
-			session := connectRegisteredServer(t, server)
+			session := connectToolFixture(t, registeredToolFixture{
+				tool:    &mcp.Tool{Name: "get_databases", Annotations: readOnlyTool("Get Databases")},
+				timeout: 100 * time.Millisecond,
+			}, apm.NewGetDatabasesHandler(upstream.Client(), writeToolTestConfig(upstream.URL)))
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "get_databases", Arguments: map[string]any{"lookback_minutes": 60}})
