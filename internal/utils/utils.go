@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -107,11 +108,11 @@ func GetTimeRangeAt(params map[string]interface{}, defaultLookbackMinutes int, n
 			return time.Time{}, time.Time{}, fmt.Errorf("Invalid lookback_minutes %q. Use minutes as a number, for example 60 for 1h or 390 for 6h30m", rawLookback)
 		}
 	}
-	if lookbackMinutes < 1 {
-		return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes must be at least 1. Use minutes as a number, for example 60 for 1h")
+	lookbackDuration, err := durationFromLookbackMinutes(lookbackMinutes)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
 	}
 	// Default start time based on lookback
-	lookbackDuration := time.Duration(lookbackMinutes * float64(time.Minute))
 	startTime = endTime.Add(-lookbackDuration)
 
 	startTimeStr, hasStart := params["start_time_iso"].(string)
@@ -146,6 +147,21 @@ func GetTimeRangeAt(params map[string]interface{}, defaultLookbackMinutes int, n
 	}
 
 	return startTime, endTime, nil
+}
+
+func durationFromLookbackMinutes(minutes float64) (time.Duration, error) {
+	if math.IsNaN(minutes) || math.IsInf(minutes, 0) {
+		return 0, fmt.Errorf("lookback_minutes must be finite")
+	}
+	if minutes < 1 {
+		return 0, fmt.Errorf("lookback_minutes must be at least 1. Use minutes as a number, for example 60 for 1h")
+	}
+	nanoseconds := minutes * float64(time.Minute)
+	maxDuration := math.Nextafter(math.Ldexp(1, 63), 0)
+	if nanoseconds > maxDuration {
+		return 0, fmt.Errorf("lookback_minutes is too large; use explicit start_time_iso and end_time_iso for this window")
+	}
+	return time.Duration(nanoseconds), nil
 }
 
 func MakePromInstantAPIQuery(ctx context.Context, client *http.Client, promql string, endTimeParam int64, cfg models.Config) (*http.Response, error) {
