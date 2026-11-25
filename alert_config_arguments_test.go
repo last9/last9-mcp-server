@@ -8,23 +8,32 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"last9-mcp/internal/alerting"
+	"last9-mcp/internal/prompts"
 )
 
 func TestAlertConfigRuleArguments(t *testing.T) {
-	session := connectToolFixture(t, registeredToolFixture{tool: &mcp.Tool{Name: "get_alert_config"}}, func(_ context.Context, _ *mcp.CallToolRequest, in alerting.GetAlertConfigArgs) (*mcp.CallToolResult, any, error) {
+	session := connectToolFixture(t, registeredToolFixture{tool: &mcp.Tool{Name: "get_alert_config", Description: prompts.GetAlertConfigDescription}}, func(_ context.Context, _ *mcp.CallToolRequest, in alerting.GetAlertConfigArgs) (*mcp.CallToolResult, any, error) {
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: in.RuleID + "/" + in.Severity}}}, nil, nil
 	})
 	list, err := session.ListTools(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	schema := schemaAsMap(t, toolByName(t, list.Tools, "get_alert_config").InputSchema)
+	tool := toolByName(t, list.Tools, "get_alert_config")
+	schema := schemaAsMap(t, tool.InputSchema)
 	properties := schema["properties"].(map[string]any)
 	if _, ok := properties["alert_rule_id"]; !ok {
 		t.Fatal("get_alert_config schema does not expose alert_rule_id")
 	}
-	if description := properties["rule_id"].(map[string]any)["description"].(string); !strings.Contains(strings.ToLower(description), "case-insensitive") {
-		t.Fatalf("rule_id description does not document case-insensitive matching: %q", description)
+	for name, description := range map[string]string{
+		"tool":    tool.Description,
+		"rule_id": properties["rule_id"].(map[string]any)["description"].(string),
+	} {
+		for _, behavior := range []string{"case-insensitive", "spaces"} {
+			if !strings.Contains(strings.ToLower(description), behavior) {
+				t.Errorf("%s description does not document %s matching: %q", name, behavior, description)
+			}
+		}
 	}
 	for _, tc := range []struct {
 		args, want string

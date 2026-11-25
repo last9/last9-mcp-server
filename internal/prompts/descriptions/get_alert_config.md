@@ -1,6 +1,6 @@
 List alert rules and their metadata. Use it to discover rule and entity ids; use `get_entity_alert_rules` for each indicator's PromQL and full properties.
 
-Filters: `rule_id` is a case-insensitive exact match; `alert_rule_id` is its alias, and `rule_id` is preferred; `search_term` searches rule/group names and types, datasource, tags, team, tier and labels; `rule_name`, `alert_group_name`, `alert_group_type`, and `data_source_name` are case-insensitive substrings; `severity` and `rule_type` (`static`, `anomaly`, `adaptive`) are case-insensitive exact matches; every `tags` entry must match.
+Filters: `rule_id` is a case-insensitive exact match that ignores surrounding spaces; `alert_rule_id` is its alias, and `rule_id` is preferred; `search_term` searches rule/group names and types, datasource, tags, team, tier and labels; `rule_name`, `alert_group_name`, `alert_group_type`, and `data_source_name` are case-insensitive substrings; `severity` and `rule_type` (`static`, `anomaly`, `adaptive`) are case-insensitive exact matches; every `tags` entry must match.
 
 Channel filters inspect per-entity bindings only. `only_without_notification_channel` is OR-combined with `notification_channel_types`. Names and severities (`breach` or `threat`) are AND constraints on the same binding row. Global org-wide channels do not satisfy these filters.
 

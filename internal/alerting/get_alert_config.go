@@ -17,7 +17,7 @@ import (
 )
 
 type GetAlertConfigArgs struct {
-	RuleID                         string   `json:"rule_id,omitempty" jsonschema:"Case-insensitive exact match on alert rule ID (optional; preferred over alert_rule_id)"`
+	RuleID                         string   `json:"rule_id,omitempty" jsonschema:"Case-insensitive exact match on alert rule ID; surrounding spaces are ignored (optional; preferred over alert_rule_id)"`
 	AlertRuleID                    string   `json:"alert_rule_id,omitempty" jsonschema:"Alias for rule_id (optional; if both are supplied they must identify the same rule)"`
 	SearchTerm                     string   `json:"search_term,omitempty" jsonschema:"Case-insensitive substring search across rule name and alert group metadata (optional)"`
 	RuleName                       string   `json:"rule_name,omitempty" jsonschema:"Case-insensitive substring match on rule name (optional)"`
