@@ -3,8 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"fmt"
+	"reflect"
+	"slices"
+	"strings"
 
+	"last9-mcp/internal/apm"
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/suggest"
 	"last9-mcp/internal/utils"
@@ -27,15 +31,32 @@ func checkLabelValueArguments(raw json.RawMessage) (json.RawMessage, error) {
 	if json.Unmarshal(raw, &fields) != nil {
 		return raw, nil
 	}
+	unknown := make([]string, 0, len(fields))
+	argsType := reflect.TypeFor[apm.PromqlLabelValuesArgs]()
+	for name := range fields {
+		known := false
+		for i := range argsType.NumField() {
+			field := argsType.Field(i)
+			jsonName, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+			if jsonName == name {
+				known = true
+				break
+			}
+		}
+		if !known {
+			unknown = append(unknown, name)
+		}
+	}
+	slices.Sort(unknown)
 	const labelHint = "Use label for the label name."
 	const selectorHint = "Use match_query for a single PromQL selector string."
 	switch {
 	case fields["label_name"] != nil && fields["matches"] != nil:
-		return nil, errors.New(`unexpected additional properties ["label_name" "matches"]. ` + labelHint + " " + selectorHint)
+		return nil, fmt.Errorf("unexpected additional properties %q. %s %s", unknown, labelHint, selectorHint)
 	case fields["label_name"] != nil:
-		return nil, errors.New(`unexpected additional properties ["label_name"]. ` + labelHint)
+		return nil, fmt.Errorf("unexpected additional properties %q. %s", unknown, labelHint)
 	case fields["matches"] != nil:
-		return nil, errors.New(`unexpected additional properties ["matches"]. ` + selectorHint)
+		return nil, fmt.Errorf("unexpected additional properties %q. %s", unknown, selectorHint)
 	}
 	return raw, nil
 }
