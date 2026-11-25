@@ -76,6 +76,56 @@ const (
 	sparseWindowSeconds  = 4 * 24 * 60 * 60
 )
 
+func TestResolveLabelWindowPreservesDurationAndValidatesBounds(t *testing.T) {
+	tests := []struct {
+		name              string
+		start, end        string
+		lookbackMinutes   float64
+		wantWindowSeconds int64
+		wantErr           string
+	}{
+		{name: "fractional lookback", lookbackMinutes: 1.5, wantWindowSeconds: 90},
+		{name: "whole lookback", lookbackMinutes: 2, wantWindowSeconds: 120},
+		{
+			name:              "explicit boundaries take precedence",
+			start:             "2026-11-25T02:00:00Z",
+			end:               "2026-11-25T02:03:00Z",
+			lookbackMinutes:   1.5,
+			wantWindowSeconds: 180,
+		},
+		{
+			name:    "equal boundaries",
+			start:   "2026-11-25T02:00:00Z",
+			end:     "2026-11-25T02:00:00Z",
+			wantErr: "end_time_iso must be after start_time_iso",
+		},
+		{
+			name:    "reversed boundaries",
+			start:   "2026-11-25T02:01:00Z",
+			end:     "2026-11-25T02:00:00Z",
+			wantErr: "start_time cannot be after end_time",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			window, err := resolveLabelWindow(tt.start, tt.end, tt.lookbackMinutes)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("err = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveLabelWindow() error: %v", err)
+			}
+			if got := window.end - window.start; got != tt.wantWindowSeconds {
+				t.Errorf("window = %ds, want %ds", got, tt.wantWindowSeconds)
+			}
+		})
+	}
+}
+
 func TestPromqlLabelValues_ScopedEmptyRetriesWiderWithNote(t *testing.T) {
 	cfg, client, got := labelLookupServer(t, `[]`, `["bucket-a","bucket-b"]`)
 
