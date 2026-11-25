@@ -16,7 +16,9 @@ Follow-up tools do not accept `id` or `database_id`. Pass `db_system` and `env` 
 to `get_database_slow_queries`. Omit the discovery row's `host`: it is not necessarily the
 tool's `net_peer_name` filter value. Use `host` only when that value is already known; it
 scopes traces, not logs.
-`get_database_server_metrics` accepts only `db_system` and may combine instances. When `resolved_labels` is present, use it in a Prometheus query to isolate one instance.
+`get_database_server_metrics` scopes instances only by `db_system` and may combine instances.
+To compare the same window, pass matching `lookback_minutes`, `start_time_iso`, or `end_time_iso`.
+When `resolved_labels` is present, use it in a Prometheus query to isolate one instance.
 
 Rows include `id`, `env`, and `sources`. The `id` can repeat across environments. Metrics-only
 rows add `activity_source`.
