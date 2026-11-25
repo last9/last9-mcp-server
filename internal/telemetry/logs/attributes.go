@@ -50,9 +50,7 @@ func fetchLogLabels(ctx context.Context, client *http.Client, cfg models.Config,
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		var errorBody map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&errorBody)
-		return nil, fmt.Errorf("API returned status %d: %v", resp.StatusCode, errorBody)
+		return nil, utils.NewUpstreamHTTPError(resp, "log labels API")
 	}
 
 	var result struct {

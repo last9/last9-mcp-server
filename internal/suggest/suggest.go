@@ -67,7 +67,8 @@ func NewDidYouMeanHandler(client *http.Client, cfg models.Config) func(context.C
 			return nil, nil, fmt.Errorf("token manager is not configured")
 		}
 		if strings.TrimSpace(args.Type) == logAttributeType {
-			result, err := suggestLogAttributes(ctx, client, cfg, query, args)
+			args.Query = query
+			result, err := suggestLogAttributes(ctx, client, cfg, args)
 			return result, nil, err
 		}
 

@@ -20,9 +20,10 @@ import (
 
 type fakeLogAttributeAPI struct {
 	sampleBody string
+	rejectBody string
 	mu         sync.Mutex
-	paths     []string
-	pipelines []string
+	paths      []string
+	pipelines  []string
 }
 
 func (f *fakeLogAttributeAPI) serve(t *testing.T, fields []string) *httptest.Server {
@@ -32,7 +33,11 @@ func (f *fakeLogAttributeAPI) serve(t *testing.T, fields []string) *httptest.Ser
 		f.paths = append(f.paths, r.URL.Path)
 		f.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
+		discovery := strings.Contains(r.URL.Path, constants.EndpointLogsSeries) || strings.HasSuffix(r.URL.Path, "/logs/api/v1/labels")
 		switch {
+		case discovery && f.rejectBody != "":
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(f.rejectBody))
 		case strings.Contains(r.URL.Path, constants.EndpointLogsSeries):
 			var body struct {
 				Pipeline json.RawMessage `json:"pipeline"`
@@ -147,8 +152,25 @@ func TestDidYouMeanLogAttribute_NoResemblingAttribute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(text, `No log attributes resemble "transaction id"`) {
-		t.Errorf("unexpected response:\n%s", text)
+	want := `No log attributes of service "checkout" resemble "transaction id" in this window. Widen the window, or check the service name.`
+	if text != want {
+		t.Errorf("response mismatch\ngot:\n%s\nwant:\n%s", text, want)
+	}
+}
+
+// did_you_mean is served in toolsets that lack the log attribute tools, so the
+// no-service miss names the service argument, not another tool.
+func TestDidYouMeanLogAttribute_NoResemblingIndexedAttribute(t *testing.T) {
+	srv := (&fakeLogAttributeAPI{}).serve(t, []string{"udf1", "udf2"})
+	defer srv.Close()
+
+	text, err := runLogAttributeDidYouMean(t, srv, DidYouMeanArgs{Query: "transaction id", Type: "log_attribute"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := `No indexed log attributes resemble "transaction id" in this window. Pass service to include that service's body-derived attributes, or widen the window.`
+	if text != want {
+		t.Errorf("response mismatch\ngot:\n%s\nwant:\n%s", text, want)
 	}
 }
 
@@ -181,6 +203,29 @@ func TestDidYouMean_LogAttributeScopeRejectedForOtherTypes(t *testing.T) {
 		}
 		if len(api.paths) != 0 {
 			t.Errorf("args %+v: rejected call reached the API: %v", args, api.paths)
+		}
+	}
+}
+
+func TestDidYouMeanLogAttribute_UpstreamRejectionIsSanitized(t *testing.T) {
+	for _, service := range []string{"", "checkout"} {
+		api := &fakeLogAttributeAPI{rejectBody: `{"error":"bad window","auth":"Bearer test-secret","upstream":"http://logs-reader.internal:9000/v2/series"}`}
+		srv := api.serve(t, nil)
+		_, err := runLogAttributeDidYouMean(t, srv, DidYouMeanArgs{Query: "txn", Type: "log_attribute", Service: service})
+		srv.Close()
+		if err == nil {
+			t.Fatalf("service %q: want an error for an upstream 400", service)
+		}
+		msg := err.Error()
+		for _, leaked := range []string{"test-secret", "logs-reader.internal"} {
+			if strings.Contains(msg, leaked) {
+				t.Errorf("service %q: error leaks %q: %s", service, leaked, msg)
+			}
+		}
+		for _, kept := range []string{"HTTP 400", "bad window", "[redacted-credential]", "[redacted-url]"} {
+			if !strings.Contains(msg, kept) {
+				t.Errorf("service %q: error lacks %q: %s", service, kept, msg)
+			}
 		}
 	}
 }
