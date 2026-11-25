@@ -97,6 +97,72 @@ func TestServedQueryToolSchemas(t *testing.T) {
 	}
 }
 
+func TestGetDatabasesDescriptionFollowUpContract(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, toolsets.Filter{}); err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Tools []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			InputSchema struct {
+				Properties map[string]any `json:"properties"`
+			} `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+
+	tools := map[string]struct {
+		description string
+		properties  map[string]any
+	}{}
+	for _, tool := range out.Tools {
+		tools[tool.Name] = struct {
+			description string
+			properties  map[string]any
+		}{tool.Description, tool.InputSchema.Properties}
+	}
+
+	for tool, fields := range map[string]map[string]bool{
+		"get_database_slow_queries": {
+			"id": false, "database_id": false, "db_system": true, "env": true, "host": true,
+			"lookback_minutes": true, "start_time_iso": true, "end_time_iso": true,
+		},
+		"get_database_server_metrics": {
+			"id": false, "database_id": false, "db_system": true, "env": false, "host": false,
+			"lookback_minutes": true, "start_time_iso": true, "end_time_iso": true,
+		},
+	} {
+		properties := tools[tool].properties
+		for field, want := range fields {
+			_, got := properties[field]
+			if got != want {
+				t.Errorf("%s schema field %q present = %t, want %t", tool, field, got, want)
+			}
+		}
+	}
+
+	description := tools["get_databases"].description
+	for _, want := range []string{
+		"The `id` can repeat across environments",
+		"Follow-up tools do not accept `id` or `database_id`",
+		"Omit the discovery row's `host`",
+		"`get_database_server_metrics` scopes instances only by `db_system`",
+		"`lookback_minutes`, `start_time_iso`, or `end_time_iso`",
+		"When `resolved_labels` is present",
+	} {
+		if !strings.Contains(description, want) {
+			t.Errorf("get_databases description missing %q", want)
+		}
+	}
+	if strings.HasSuffix(description, "\n") {
+		t.Error("get_databases description gained a trailing newline")
+	}
+}
+
 func TestDumpTools(t *testing.T) {
 	var buf bytes.Buffer
 	if err := dumpTools(&buf, toolsets.Filter{}); err != nil {
