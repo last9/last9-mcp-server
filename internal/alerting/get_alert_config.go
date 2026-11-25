@@ -2,8 +2,11 @@ package alerting
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/last9api"
@@ -14,7 +17,8 @@ import (
 )
 
 type GetAlertConfigArgs struct {
-	RuleID                         string   `json:"rule_id,omitempty" jsonschema:"Exact match on alert rule ID (optional)"`
+	RuleID                         string   `json:"rule_id,omitempty" jsonschema:"Case-insensitive exact match on alert rule ID; surrounding spaces are ignored (optional; preferred over alert_rule_id)"`
+	AlertRuleID                    string   `json:"alert_rule_id,omitempty" jsonschema:"Alias for rule_id (optional; if both are supplied they must identify the same rule)"`
 	SearchTerm                     string   `json:"search_term,omitempty" jsonschema:"Case-insensitive substring search across rule name and alert group metadata (optional)"`
 	RuleName                       string   `json:"rule_name,omitempty" jsonschema:"Case-insensitive substring match on rule name (optional)"`
 	Severity                       string   `json:"severity,omitempty" jsonschema:"Exact case-insensitive severity filter (optional, e.g. breach or threat)"`
@@ -125,4 +129,35 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 			},
 		}, nil, nil
 	}
+}
+
+func PrepareAlertConfigArguments(raw json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return raw, nil
+	}
+	if _, ok := fields["alert_id"]; ok {
+		return nil, errors.New(`get_alert_config does not take "alert_id": it looks up rules, not alert instances. Pass the triggering rule's rule_id, shown as Rule ID by get_alerts.`)
+	}
+	alias, ok := fields["alert_rule_id"]
+	if !ok {
+		return raw, nil
+	}
+	var id string
+	if err := json.Unmarshal(alias, &id); err != nil || strings.TrimSpace(id) == "" {
+		return nil, errors.New("alert_rule_id must be a nonempty string")
+	}
+	if canonical, ok := fields["rule_id"]; ok {
+		var current *string
+		if err := json.Unmarshal(canonical, &current); err != nil || current == nil || strings.TrimSpace(*current) == "" {
+			return nil, errors.New("rule_id must be a nonempty string when alert_rule_id is also supplied")
+		}
+		// Same equivalence as the rule_id filter, so two spellings of one rule never conflict.
+		if !strings.EqualFold(strings.TrimSpace(*current), strings.TrimSpace(id)) {
+			return nil, errors.New("conflicting rule_id and alert_rule_id: supply one rule ID")
+		}
+	}
+	fields["rule_id"] = alias
+	delete(fields, "alert_rule_id")
+	return json.Marshal(fields)
 }
