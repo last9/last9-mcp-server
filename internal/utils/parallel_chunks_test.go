@@ -140,6 +140,30 @@ func TestRunChunksParallelCancelsQueuedChunksOnContextCancel(t *testing.T) {
 	}
 }
 
+func TestRunChunksParallelStartsNoChunkOnceContextIsCancelled(t *testing.T) {
+	// Free slots and a cancelled context are both ready at once, which is the
+	// state a queued chunk sees when an in-flight chunk returns after a cancel.
+	chunks := make([]TimeChunk, 32)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var started atomic.Int32
+	results := RunChunksParallel(ctx, chunks, len(chunks),
+		func(context.Context, int, TimeChunk) (int, error) {
+			started.Add(1)
+			return 0, nil
+		})
+
+	if n := started.Load(); n != 0 {
+		t.Fatalf("%d chunks started after cancel, want 0", n)
+	}
+	for _, r := range results {
+		if !errors.Is(r.Err, context.Canceled) {
+			t.Fatalf("chunk %d err = %v, want context.Canceled", r.Index, r.Err)
+		}
+	}
+}
+
 func TestRunChunksParallelHonorsPerCallContextTimeout(t *testing.T) {
 	chunks := []TimeChunk{{StartMs: 0, EndMs: 100}}
 
