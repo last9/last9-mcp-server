@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `get_databases` accepts an optional exact `db_system` filter and counts only matching trace-backed and metrics-only rows (#632).
 - `get_database_queries` accepts an optional exact `service_name` filter, so throughput, latency and errors for a shared database can be scoped to one calling service (#630).
 - `get_alert_rule_state` accepts an optional exact `rule_id` to return one rule’s firing history, including when multiple rules share a name. An ID absent from every sample returns guidance to check the filters and time range (#631).
 - `get_service_operations_summary` accepts an optional positive `limit` to return the busiest operations across types by requests per minute, with `total_operations` reporting the count before truncation (#624).
@@ -18,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `prometheus_instant_query` accepts the Prometheus `time` argument as RFC3339 or positive Unix seconds and rejects non-positive or conflicting evaluation times (#625).
+- `get_alert_config` accepts `alert_rule_id` as an alias for `rule_id` and explains how to find the triggering rule when passed an `alert_id` (#622).
 - `get_dashboard` accepts the `dashboard_id` returned by `patch_dashboard` as an alias for `id` and rejects conflicting IDs before lookup (#623).
 - `get_log_attributes_for_pipeline` logfmt body-field hints now map the key in the parse stage's `labels`, so the hint runs as returned instead of failing with HTTP 400 `invalid JSON pipeline`. A body field seen in under half of the sampled rows is marked `confidence: "low"` with `sample_formats` counting the sampled rows per format (json, logfmt, text), since its parser was inferred from a minority of rows (#617).
 - A cancelled `get_logs` call stops sooner and reports the cancellation: no queued chunk or log-search window starts after the cancel, and a range over 336 hours on the log-search API that is cancelled after some windows finish returns a cancellation error instead of those windows as a successful result. `get_service_logs` reads over 336 hours get the same error. With `--http`, a client that cancels or disconnects now stops its running tool call, and a log search stopped by its caller reports the cancel or the caller's deadline instead of a log-scan timeout (#616).
@@ -32,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_alert_rule_state` rejects a range whose last scheduled sample (`start_time + n·step`) is after the current time before making any upstream call, naming that sample and the current time and asking for an earlier `end_time` (and an earlier `start_time` when it is not before now); it used to fetch the earlier samples and then fail on the upstream's future-timestamp error. An `end_time` past now is still accepted when no sample lands after now (#598).
 
 ### Changed
+- Database discovery now explains which fields to pass to slow-query tools, why its host must not be reused as a trace host filter, and how to use resolved labels to scope metric queries to one instance (#626).
 - The `get_logs` description's free-text rule now matches its Filter line and the logjson manual: search a word or identifier, even a service-like one, in `Body` with `$containsWords`, use `$contains` only for a true substring, and scope by `ServiceName` and a narrow window first when the service is known or can be found. It used to send clients without a service to `$contains` on `Body` (#618).
 - `get_logs` and `get_service_logs` ranges over 336 hours on the log-search API now report coverage per piece in `search_stats.pieces`: each piece's `start`, `end` and `status` (`complete`, `partial` when its rows were cut by the upstream or the `limit`, `failed` with its `error`), so callers can name covered and unsearched spans. Aggregate `get_logs` pipelines over 336 hours are refused before any request with an error naming the limit, instead of being sent as one read the backend rejects (#597).
 - Dashboard authoring guidance now explains that table query names become value-column headers, `table_config.columnConfig` controls the complete rendered column order, and `table_config.sorting` controls row order; its worked top-10 example keeps every outcome and rate column on the same key set (#585).
