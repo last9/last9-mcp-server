@@ -86,3 +86,27 @@ func TestDatabaseQueriesCallingService(t *testing.T) {
 		})
 	}
 }
+
+func TestDatabaseQueriesFailsWhenSecondaryMetricFails(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct{ Query string }
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if strings.Contains(body.Query, `quantile="p95"`) {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		fmt.Fprint(w, opsSumRows(opsSumRow(map[string]string{"span_name": "SELECT"}, "1")))
+	}))
+	defer srv.Close()
+
+	_, _, err := NewGetDatabaseQueriesHandler(srv.Client(), testDBConfig(srv.URL))(
+		context.Background(), nil, GetDatabaseQueriesArgs{DBSystem: "postgresql", LookbackMinutes: 60},
+	)
+	if err == nil || !strings.Contains(err.Error(), "failed to fetch p95 latency") {
+		t.Fatalf("got %v, want p95 latency failure", err)
+	}
+}
