@@ -24,6 +24,7 @@ import (
 )
 
 type AlertRuleStateRequest struct {
+	RuleID         string       `json:"rule_id,omitempty" jsonschema:"Exact alert rule ID from get_alert_config or get_alerts. Omit to include all matching rules."`
 	AlertGroupID   string       `json:"alert_group_id,omitempty" jsonschema:"Optional filter by alert group ID"`
 	RuleName       string       `json:"rule_name,omitempty" jsonschema:"Optional regex filter by rule name"`
 	AlertGroupName string       `json:"alert_group_name,omitempty" jsonschema:"Optional regex filter by alert group name"`
@@ -176,7 +177,9 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 		// when the span arithmetic overflows.
 		for i := int64(0); i < points; i++ {
 			g.Go(func() error {
-				rules, err := fetchRuleStates(gctx, api, query, startTime+i*args.Step)
+				sample := query
+				sample.Timestamp = startTime + i*args.Step
+				rules, err := fetchRuleStates(gctx, api, sample, args.RuleID)
 				if err != nil {
 					return err
 				}
@@ -210,8 +213,8 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 			}
 		}
 
-		if len(results) == 0 && (args.AlertGroupID != "" || args.RuleName != "" || args.AlertGroupName != "") {
-			return utils.ToolErrorResult("No alert rules matched the supplied filters in the sampled time range. Check alert_group_id, rule_name and alert_group_name with get_alert_config; broaden the time range or remove other filters. An empty history does not establish whether the group or rule exists."), nil, nil
+		if len(results) == 0 && (args.RuleID != "" || args.AlertGroupID != "" || args.RuleName != "" || args.AlertGroupName != "") {
+			return utils.ToolErrorResult("No alert rules matched the supplied filters in the sampled time range. Check rule_id, alert_group_id, rule_name and alert_group_name with get_alert_config; broaden the time range or remove other filters. An empty history does not establish whether the group or rule exists."), nil, nil
 		}
 
 		// Construct final continuous timeseries for all seen rules. Gaps are zero-filled; see tool description for caveats.
@@ -270,15 +273,16 @@ type ruleState struct {
 	firing bool
 }
 
-func fetchRuleStates(ctx context.Context, api *last9api.Client, in alerts.GetMonitorInput, t int64) ([]ruleState, error) {
-	in.Timestamp = t
+func fetchRuleStates(ctx context.Context, api *last9api.Client, in alerts.GetMonitorInput, ruleID string) ([]ruleState, error) {
 	resp, err := alerts.GetMonitor(ctx, api, in)
 	if err != nil {
-		return nil, fmt.Errorf("sample at timestamp %d: %w", t, err)
+		return nil, fmt.Errorf("sample at timestamp %d: %w", in.Timestamp, err)
 	}
-	states := make([]ruleState, len(resp.AlertRules))
-	for i, rule := range resp.AlertRules {
-		states[i] = ruleState{ruleID: rule.RuleID, firing: rule.State == "firing"}
+	var states []ruleState
+	for _, rule := range resp.AlertRules {
+		if ruleID == "" || rule.RuleID == ruleID {
+			states = append(states, ruleState{ruleID: rule.RuleID, firing: rule.State == "firing"})
+		}
 	}
 	return states, nil
 }
