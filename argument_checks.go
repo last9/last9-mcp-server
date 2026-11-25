@@ -17,6 +17,7 @@ import (
 var argumentChecks = map[string]func(json.RawMessage) (json.RawMessage, error){
 	"get_service_environments": checkServiceEnvironmentArguments,
 	"did_you_mean":             suggest.PrepareArguments,
+	"get_dashboard":            dashboards.PrepareGetDashboardArguments,
 	"create_dashboard":         dashboards.PrepareDashboardArguments,
 	"update_dashboard":         dashboards.PrepareDashboardArguments,
 }
