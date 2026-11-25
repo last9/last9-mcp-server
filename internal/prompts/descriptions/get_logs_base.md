@@ -18,7 +18,7 @@ Pass JSON stages in `logjson_query`, never `pipeline`; **NOT SQL**/`stage`/`cond
 
 **Scope:** no `service_name` arg; filter ServiceName in query. tenant/env→`resources['last9.tenant']`/`resources['deployment.environment']`; k8s.*→`resources['k8s.…']`; service.name→`ServiceName`.
 
-**Free-text:** no service→search `Body` with `$contains` (even service-like); else `ServiceName`.
+**Free-text:** word/ID (even service-like)→`Body` `$containsWords`; `$contains` only for substrings. Service known/findable→scope `ServiceName` + narrow window first.
 
 **HTTP counts:** `get_logs`; status from Body, not SeverityText. `get_service_logs` for lines.
 
