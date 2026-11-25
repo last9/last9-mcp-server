@@ -66,4 +66,15 @@ func TestRegisteredPrometheusInstantQueryTimeAlias(t *testing.T) {
 	if got := requests.Load(); got != before {
 		t.Fatalf("conflicting aliases made %d upstream requests, want 0", got-before)
 	}
+
+	result = callRegisteredTool(t, session, &mcp.CallToolParams{
+		Name:      "prometheus_instant_query",
+		Arguments: json.RawMessage(`{"query":"vector(time())","time":-1.5}`),
+	})
+	if !result.IsError {
+		t.Fatalf("negative evaluation time accepted: %s", toolResultText(result))
+	}
+	if got := requests.Load(); got != before {
+		t.Fatalf("negative evaluation time made %d upstream requests, want 0", got-before)
+	}
 }
