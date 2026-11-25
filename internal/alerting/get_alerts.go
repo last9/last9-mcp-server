@@ -36,7 +36,7 @@ func FetchAlertsMonitor(ctx context.Context, client *http.Client, cfg models.Con
 const DefaultAlertsWindow = 15 * time.Minute
 
 type GetAlertsArgs struct {
-	State           string  `json:"state,omitempty" jsonschema:"Filter alert instances by firing or normal. Omit to include both."`
+	State           string  `json:"state,omitempty" jsonschema:"Filter alert instances by firing or normal. For both states omit the state key entirely. Never send null or all."`
 	TimeISO         string  `json:"time_iso,omitempty" jsonschema:"Evaluation time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
 	Timestamp       float64 `json:"timestamp,omitempty" jsonschema:"Unix timestamp for query time (deprecated alias; defaults to current time)"`
 	Window          float64 `json:"window,omitempty" jsonschema:"Time window in seconds (default: 900, range: 1-3600)"`
