@@ -294,3 +294,28 @@ func TestGetLogServicesRejectsOutOfRangeLimitBeforeQuerying(t *testing.T) {
 		t.Errorf("limit 100 rejected")
 	}
 }
+
+func TestGetLogServicesExplicitWindowMustHavePositiveDuration(t *testing.T) {
+	const start = "2026-11-25T02:00:00Z"
+
+	f, cfg, client := newLogServicesServer(t, seriesReply())
+	_, _, err := NewGetLogServicesHandler(client, cfg)(context.Background(), &mcp.CallToolRequest{}, GetLogServicesArgs{
+		StartTimeISO: start,
+		EndTimeISO:   start,
+	})
+	if err == nil || !strings.Contains(err.Error(), "end_time_iso must be after start_time_iso") {
+		t.Errorf("err = %v, want a positive-duration window error", err)
+	}
+	if n := len(f.recorded()); n != 0 {
+		t.Errorf("queries = %d, want 0", n)
+	}
+
+	f, cfg, client = newLogServicesServer(t, seriesReply())
+	callLogServices(t, client, cfg, GetLogServicesArgs{
+		StartTimeISO: start,
+		EndTimeISO:   "2026-11-25T02:01:00Z",
+	})
+	if n := len(f.recorded()); n != 1 {
+		t.Errorf("one-minute control sent %d queries, want 1", n)
+	}
+}
