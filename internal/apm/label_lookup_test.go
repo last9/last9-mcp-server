@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -87,6 +88,14 @@ func TestResolveLabelWindowPreservesDurationAndValidatesBounds(t *testing.T) {
 		{name: "fractional lookback", lookbackMinutes: 1.5, wantWindowSeconds: 90},
 		{name: "whole lookback", lookbackMinutes: 2, wantWindowSeconds: 120},
 		{
+			name:              "maximum representable lookback",
+			lookbackMinutes:   float64(math.MaxInt64 / int64(time.Minute)),
+			wantWindowSeconds: (math.MaxInt64 / int64(time.Minute)) * 60,
+		},
+		{name: "overflowing lookback", lookbackMinutes: 1e300, wantErr: "lookback_minutes is too large"},
+		{name: "positive infinity", lookbackMinutes: math.Inf(1), wantErr: "lookback_minutes must be finite"},
+		{name: "not a number", lookbackMinutes: math.NaN(), wantErr: "lookback_minutes must be finite"},
+		{
 			name:              "explicit boundaries take precedence",
 			start:             "2026-11-25T02:00:00Z",
 			end:               "2026-11-25T02:03:00Z",
@@ -121,6 +130,54 @@ func TestResolveLabelWindowPreservesDurationAndValidatesBounds(t *testing.T) {
 			}
 			if got := window.end - window.start; got != tt.wantWindowSeconds {
 				t.Errorf("window = %ds, want %ds", got, tt.wantWindowSeconds)
+			}
+		})
+	}
+}
+
+func TestLabelLookupConsumersRejectUnrepresentableLookbackBeforeQuerying(t *testing.T) {
+	tests := []struct {
+		name string
+		call func(*http.Client, models.Config) error
+	}{
+		{
+			name: "labels",
+			call: func(client *http.Client, cfg models.Config) error {
+				_, _, err := NewPromqlLabelsHandler(client, cfg)(context.Background(), &mcp.CallToolRequest{}, PromqlLabelsArgs{
+					MatchQuery: "up", LookbackMinutes: 1e300,
+				})
+				return err
+			},
+		},
+		{
+			name: "label values",
+			call: func(client *http.Client, cfg models.Config) error {
+				_, _, err := NewPromqlLabelValuesHandler(client, cfg)(context.Background(), &mcp.CallToolRequest{}, PromqlLabelValuesArgs{
+					MatchQuery: "up", Label: "job", LookbackMinutes: 1e300,
+				})
+				return err
+			},
+		},
+		{
+			name: "log services",
+			call: func(client *http.Client, cfg models.Config) error {
+				_, _, err := NewGetLogServicesHandler(client, cfg)(context.Background(), &mcp.CallToolRequest{}, GetLogServicesArgs{
+					LookbackMinutes: 1e300,
+				})
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, client, got := labelLookupServer(t, `[]`)
+			err := tt.call(client, cfg)
+			if err == nil || !strings.Contains(err.Error(), "lookback_minutes is too large") {
+				t.Fatalf("err = %v, want an unrepresentable-lookback error", err)
+			}
+			if len(*got) != 0 {
+				t.Fatalf("queries = %d, want 0", len(*got))
 			}
 		})
 	}
