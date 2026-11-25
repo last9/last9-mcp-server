@@ -10,17 +10,14 @@ A row reports only the signals it actually has. A database seen only in metrics 
 `throughput_rpm`, `p95_latency_ms`, `error_rate_pct` and `service_count` entirely — treat a
 missing key as "not measured", never as zero. `metrics_only: true` and `capabilities` say
 what a row supports: do not call trace-backed tools (`get_database_queries`,
-`get_database_slow_queries`) for a row whose capabilities do not list them. For slow queries on a
-specific host, pass its `host` and the row's `db_system` and `env` when present. Only trace results are
-filtered by host. Log results may include other hosts.
+`get_database_slow_queries`) for a row whose capabilities do not list them.
 
-`resolved_labels` carries the metrics-native label names and values for the row. Use these as PromQL
-label matchers for single-instance metric queries. `get_database_server_metrics` can filter
-by database type only, so its results can cover multiple instances.
+Follow-up tools do not accept `id` or `database_id`. Pass `db_system`, `env`, and optionally
+`host` to `get_database_slow_queries`; `host` scopes traces, not logs.
+`get_database_server_metrics` accepts only `db_system` and may combine instances. When `resolved_labels` is present, use it in a Prometheus query to isolate one instance.
 
-The stable `id` identifies the discovery row. Omit `database_id` from follow-up calls.
-Each row also carries `env` (its deployment environment), `sources` (which signals produced it), and, for a metrics-only row,
-`activity_source` (which infrastructure signal the `activity` value came from).
+Rows include `id`, `env`, and `sources`. The `id` can repeat across environments. Metrics-only
+rows add `activity_source`.
 
 Rows are returned in the same order the Databases dashboard shows: busiest first.
 
