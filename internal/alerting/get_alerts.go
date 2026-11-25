@@ -36,6 +36,7 @@ func FetchAlertsMonitor(ctx context.Context, client *http.Client, cfg models.Con
 const DefaultAlertsWindow = 15 * time.Minute
 
 type GetAlertsArgs struct {
+	Limit           *int    `json:"limit,omitempty" jsonschema:"Positive maximum number of alert instances to show across all rules after state filtering. Omit for all matches."`
 	State           string  `json:"state,omitempty" jsonschema:"Filter alert instances by firing or normal. For both states omit the state key entirely. Never send null or all."`
 	TimeISO         string  `json:"time_iso,omitempty" jsonschema:"Evaluation time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
 	Timestamp       float64 `json:"timestamp,omitempty" jsonschema:"Unix timestamp for query time (deprecated alias; defaults to current time)"`
@@ -45,6 +46,9 @@ type GetAlertsArgs struct {
 
 func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetAlertsArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetAlertsArgs) (*mcp.CallToolResult, any, error) {
+		if args.Limit != nil && *args.Limit < 1 {
+			return nil, nil, fmt.Errorf("limit must be a positive integer")
+		}
 		if args.State != "" && args.State != "firing" && args.State != "normal" {
 			return nil, nil, fmt.Errorf("state must be firing or normal; omit it to include both")
 		}
@@ -100,16 +104,22 @@ func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Co
 			totalAlertInstances += len(rule.Alerts)
 		}
 
-		formattedResponse += fmt.Sprintf("Found %d alert rule(s) with %d alert instance(s):\n\n", len(alertsResp.AlertRules), totalAlertInstances)
+		rules := alertsResp.AlertRules
+		if args.Limit == nil {
+			formattedResponse += fmt.Sprintf("Found %d alert rule(s) with %d alert instance(s):\n\n", len(rules), totalAlertInstances)
+		} else {
+			rules = firstAlertInstances(rules, *args.Limit)
+			formattedResponse += fmt.Sprintf("Showing %d of %d alert instance(s) across %d of %d alert rule(s):\n\n", min(*args.Limit, totalAlertInstances), totalAlertInstances, len(rules), len(alertsResp.AlertRules))
+		}
 
-		if len(alertsResp.AlertRules) == 0 {
+		if len(rules) == 0 {
 			if args.State != "" {
 				formattedResponse += fmt.Sprintf("No %s alert instances found in the specified time window.\n", args.State)
 			} else {
 				formattedResponse += "No alerts found in the specified time window.\n"
 			}
 		} else {
-			for i, rule := range alertsResp.AlertRules {
+			for i, rule := range rules {
 				formattedResponse += fmt.Sprintf("Alert Rule %d:\n", i+1)
 				formattedResponse += fmt.Sprintf("  Rule ID: %s\n", rule.RuleID)
 				formattedResponse += fmt.Sprintf("  Rule Name: %s\n", rule.RuleName)
@@ -184,6 +194,23 @@ func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Co
 			},
 		}, nil, nil
 	}
+}
+
+func firstAlertInstances(rules []AlertRuleData, limit int) []AlertRuleData {
+	var shown []AlertRuleData
+	for _, rule := range rules {
+		count := min(limit, len(rule.Alerts))
+		if count == 0 {
+			continue
+		}
+		rule.Alerts = rule.Alerts[:count]
+		shown = append(shown, rule)
+		limit -= count
+		if limit == 0 {
+			break
+		}
+	}
+	return shown
 }
 
 func formatAlertClaim(c *AlertClaim) string {
