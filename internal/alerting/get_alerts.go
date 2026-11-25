@@ -15,6 +15,7 @@ import (
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -42,6 +43,15 @@ type GetAlertsArgs struct {
 	Timestamp       float64 `json:"timestamp,omitempty" jsonschema:"Unix timestamp for query time (deprecated alias; defaults to current time)"`
 	Window          float64 `json:"window,omitempty" jsonschema:"Time window in seconds (default: 900, range: 1-3600)"`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Time window in minutes (default: 15, range: 1-60). Used only when window is omitted."`
+}
+
+func GetAlertsInputSchema() *jsonschema.Schema {
+	schema, err := jsonschema.For[GetAlertsArgs](nil)
+	if err != nil {
+		panic(fmt.Sprintf("get_alerts input schema: %v", err))
+	}
+	schema.Properties["state"].Enum = []any{"firing", "normal"}
+	return schema
 }
 
 func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetAlertsArgs) (*mcp.CallToolResult, any, error) {

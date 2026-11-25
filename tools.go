@@ -618,6 +618,7 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Name:        "get_alerts",
 		Annotations: readOnlyTool("Get Alerts"),
 		Description: prompts.GetAlertsDescription,
+		InputSchema: alerting.GetAlertsInputSchema(),
 	}, alerting.NewGetAlertsHandler(client, cfg)))
 
 	// Register get alert rule state tool
@@ -787,6 +788,7 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Name:        "get_dashboard",
 		Annotations: readOnlyTool("Get Dashboard"),
 		Description: prompts.GetDashboardDescription,
+		InputSchema: dashboards.GetDashboardInputSchema(),
 	}, dashboards.NewGetDashboardHandler(client, cfg)))
 
 	reg(registerIfAllowed(server, gate, &mcp.Tool{

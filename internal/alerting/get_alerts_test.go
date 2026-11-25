@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -465,5 +466,17 @@ func TestGetAlertsStateFiltersInstancesBeforeGrouping(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestGetAlertsInputSchemaLimitsStateValues(t *testing.T) {
+	schema := GetAlertsInputSchema()
+	state := schema.Properties["state"]
+	if state == nil {
+		t.Fatal("state property is missing")
+	}
+	want := []any{"firing", "normal"}
+	if !reflect.DeepEqual(state.Enum, want) {
+		t.Errorf("state enum = %v, want %v", state.Enum, want)
 	}
 }
