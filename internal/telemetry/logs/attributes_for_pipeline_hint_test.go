@@ -53,8 +53,6 @@ func runBodyHint(t *testing.T, attr LogAttribute, lines []string) {
 	t.Errorf("%s: hint yields no value on any sample line; hint: %s", attr.Name, attr.Hint)
 }
 
-// hintParseValue applies a json, logfmt or regexp parse stage to one line and
-// returns the value it extracts for key, or "" when there is none.
 func hintParseValue(parse map[string]interface{}, key, line string) string {
 	switch parse["parser"] {
 	case "json":

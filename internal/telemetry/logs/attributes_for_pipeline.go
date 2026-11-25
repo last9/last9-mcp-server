@@ -492,8 +492,6 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 	return nil
 }
 
-// rankedBodyAttributes reports the keys one parser found, most frequent first,
-// capped at maxBodyDerivedKeys.
 func rankedBodyAttributes(freq map[string]int, parser string, formats map[string]int) []LogAttribute {
 	keys := make([]string, 0, len(freq))
 	for key := range freq {
