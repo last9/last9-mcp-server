@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/suggest"
@@ -17,6 +18,15 @@ var argumentChecks = map[string]func(json.RawMessage) (json.RawMessage, error){
 	"did_you_mean":     suggest.PrepareArguments,
 	"create_dashboard": dashboards.PrepareDashboardArguments,
 	"update_dashboard": dashboards.PrepareDashboardArguments,
+	"get_entity_kpis":  checkEntityKPIArguments,
+}
+
+func checkEntityKPIArguments(raw json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil && fields["entity_name"] != nil {
+		return nil, errors.New("Unknown argument entity_name. Call get_alert_groups with alert_group_name, select the intended group, then pass its id as entity_id to get_entity_kpis. If get_alert_groups is unavailable, ask for the alert group ID.")
+	}
+	return raw, nil
 }
 
 func argumentCheckMiddleware(tool string, check func(json.RawMessage) (json.RawMessage, error)) mcp.Middleware {
