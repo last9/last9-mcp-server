@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `get_alerts` accepts a positive `limit` across alert instances after state filtering, preserving rule and instance order and reporting how many matches were shown (#641).
 - `get_alerts` accepts an optional `state` of `firing` or `normal` to return only matching instances within the requested window, grouped by rule (#635).
 - `get_service_operations_summary` accepts an optional positive `limit` to return the busiest operations across types by requests per minute, with `total_operations` reporting the count before truncation (#624).
 - `did_you_mean` accepts `type: "log_attribute"` to find a log attribute name from words (`transaction id` finds `txn_id` and `trackid`), with optional `service` and `lookback_minutes`/`start_time_iso`/`end_time_iso` (default 15 minutes). With a service it searches the indexed and body-derived attributes `get_log_attributes_for_pipeline` reports for it, otherwise the workspace's indexed attributes; each of up to three matches carries its `filter_field` and whether it is indexed or body-derived. The scope arguments are rejected for other types (#611).
