@@ -166,6 +166,31 @@ func TestRegisterAllTools_ExposesDashboardObjectSchemas(t *testing.T) {
 	}
 }
 
+func TestGetDashboardSchemaAcceptsEitherIDSpelling(t *testing.T) {
+	tools, _ := servedSurface(t)
+	schema := schemaAsMap(t, toolByName(t, tools, "get_dashboard").InputSchema)
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("get_dashboard InputSchema missing properties: %v", schema)
+	}
+	for _, name := range []string{"id", "dashboard_id"} {
+		property, ok := properties[name].(map[string]any)
+		if !ok || property["type"] != "string" {
+			t.Errorf("property %q must be a string: %v", name, property)
+		}
+	}
+	if required, exists := schema["required"]; exists {
+		t.Errorf("neither ID spelling can be unconditionally required: %v", required)
+	}
+	want := []any{
+		map[string]any{"required": []any{"id"}},
+		map[string]any{"required": []any{"dashboard_id"}},
+	}
+	if got := schema["anyOf"]; !reflect.DeepEqual(got, want) {
+		t.Errorf("anyOf = %v, want %v", got, want)
+	}
+}
+
 func normalizedSchemaMap(t *testing.T, schema any) map[string]any {
 	t.Helper()
 	m := schemaAsMap(t, schema)
