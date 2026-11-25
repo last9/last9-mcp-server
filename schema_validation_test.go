@@ -65,6 +65,12 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 			wantText:  "selector",
 		},
 		{
+			name:      "alert history start time correction",
+			tool:      "get_alert_rule_state",
+			arguments: map[string]any{"start_time_iso": "2024-01-01T00:00:00Z", "end_time": "2024-01-01T00:01:00Z", "step": 60},
+			wantText:  "Use start_time for the beginning of the alert-history window. You can pass the same RFC3339 timestamp.",
+		},
+		{
 			name:      "wrong value type",
 			tool:      "prometheus_instant_query",
 			arguments: map[string]any{"query": 123},
