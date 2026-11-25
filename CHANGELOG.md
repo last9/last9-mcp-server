@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `get_alerts` accepts a positive `limit` across alert instances after state filtering, preserving rule and instance order and reporting how many matches were shown (#641).
 - `get_alerts` accepts an optional `state` of `firing` or `normal` to return only matching instances within the requested window, grouped by rule (#635).
 - `get_database_queries` accepts an optional exact `service_name` filter, so throughput, latency and errors for a shared database can be scoped to one calling service (#630).
 - `get_alert_rule_state` accepts an optional exact `rule_id` to return one rule’s firing history, including when multiple rules share a name. An ID absent from every sample returns guidance to check the filters and time range (#631).

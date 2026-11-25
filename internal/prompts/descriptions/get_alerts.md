@@ -1,7 +1,8 @@
 
 	Get currently active alerts from Last9 monitoring system.
-	Returns all alerts that are currently firing or have fired recently within the specified time window.
+	Returns alerts that are currently firing or have fired recently within the specified time window.
 	Parameters:
+	- limit: Optional positive integer. Show the first N matching instances across rules in their returned order. Omit for all. Counts show displayed and total matches.
 	- state: Filter alert instances by `firing` or `normal` before grouping by rule. For all states, omit the state key entirely (e.g. `{"window":900}`). Never send null or "all". A normal instance fired in the window but is no longer firing.
 	- time_iso: Evaluation time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Preferred over timestamp.
 	- timestamp: Unix timestamp for the query time (deprecated alias, defaults to current time)
