@@ -480,3 +480,14 @@ func TestGetAlertsInputSchemaLimitsStateValues(t *testing.T) {
 		t.Errorf("state enum = %v, want %v", state.Enum, want)
 	}
 }
+
+func TestGetAlertsInputSchemaRequiresPositiveLimit(t *testing.T) {
+	schema := GetAlertsInputSchema()
+	limit := schema.Properties["limit"]
+	if limit == nil {
+		t.Fatal("limit property is missing")
+	}
+	if limit.Minimum == nil || *limit.Minimum != 1 {
+		t.Errorf("limit minimum = %v, want 1", limit.Minimum)
+	}
+}
