@@ -33,6 +33,16 @@ func hangingUpstream(t *testing.T) (srv *httptest.Server, arrived <-chan struct{
 	return srv, held
 }
 
+type samplingTransport struct {
+	http.RoundTripper
+	calls atomic.Int64
+}
+
+func (s *samplingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	s.calls.Add(1)
+	return s.RoundTripper.RoundTrip(req)
+}
+
 func TestAlertRuleStateHandler_ReturnsGuidanceWhenSamplingTimesOut(t *testing.T) {
 	restore := alertRuleStateTimeout
 	alertRuleStateTimeout = 100 * time.Millisecond
@@ -40,7 +50,8 @@ func TestAlertRuleStateHandler_ReturnsGuidanceWhenSamplingTimesOut(t *testing.T)
 
 	upstream, _ := hangingUpstream(t)
 
-	handler := NewAlertRuleStateHandler(upstream.Client(), newAlertRuleStateTestConfig(upstream.URL))
+	transport := &samplingTransport{RoundTripper: upstream.Client().Transport}
+	handler := NewAlertRuleStateHandler(&http.Client{Transport: transport}, newAlertRuleStateTestConfig(upstream.URL))
 	done := make(chan struct{})
 	var result *mcp.CallToolResult
 	var err error
@@ -54,6 +65,9 @@ func TestAlertRuleStateHandler_ReturnsGuidanceWhenSamplingTimesOut(t *testing.T)
 		t.Fatal("handler ignored its sampling deadline")
 	}
 
+	if n := transport.calls.Load(); n > alertRuleStateConcurrency {
+		t.Errorf("started %d HTTP requests with all sampling slots stalled, want at most %d", n, alertRuleStateConcurrency)
+	}
 	if err != nil {
 		t.Fatalf("expected a tool result, got error: %v", err)
 	}
@@ -65,6 +79,22 @@ func TestAlertRuleStateHandler_ReturnsGuidanceWhenSamplingTimesOut(t *testing.T)
 		if !strings.Contains(text, want) {
 			t.Errorf("message %q lacks %q", text, want)
 		}
+	}
+}
+
+func TestAlertRuleStateHandler_StopsQueuedSamplesOnUpstreamFailure(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer upstream.Close()
+	transport := &samplingTransport{RoundTripper: upstream.Client().Transport}
+	handler := NewAlertRuleStateHandler(&http.Client{Transport: transport}, newAlertRuleStateTestConfig(upstream.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, AlertRuleStateRequest{StartTime: ts(1718000000), EndTime: ts(1718003540), Step: 60})
+	if err == nil || !strings.Contains(err.Error(), "HTTP 400") {
+		t.Fatalf("expected the upstream HTTP 400, got %v", err)
+	}
+	if n := transport.calls.Load(); n > alertRuleStateConcurrency {
+		t.Errorf("started %d HTTP requests for a failing batch, want at most %d", n, alertRuleStateConcurrency)
 	}
 }
 
