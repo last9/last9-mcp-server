@@ -12,12 +12,16 @@ missing key as "not measured", never as zero. `metrics_only: true` and `capabili
 what a row supports: do not call trace-backed tools (`get_database_queries`,
 `get_database_slow_queries`) for a row whose capabilities do not list them.
 
-`resolved_labels` carries the metrics-native label names and values for the row. Use them
-when building follow-up metric queries instead of guessing label names from `host`.
+Follow-up tools do not accept `id` or `database_id`. Pass `db_system` and `env` when present
+to `get_database_slow_queries`. Omit the discovery row's `host`: it is not necessarily the
+tool's `net_peer_name` filter value. Use `host` only when that value is already known; it
+scopes traces, not logs.
+`get_database_server_metrics` scopes instances only by `db_system` and may combine instances.
+To compare the same window, pass matching `lookback_minutes`, `start_time_iso`, or `end_time_iso`.
+When `resolved_labels` is present, use it in a Prometheus query to isolate one instance.
 
-Each row also carries `id` (a stable identifier for the row), `env` (its deployment
-environment), `sources` (which signals produced it), and, for a metrics-only row,
-`activity_source` (which infrastructure signal the `activity` value came from).
+Rows include `id`, `env`, and `sources`. The `id` can repeat across environments. Metrics-only
+rows add `activity_source`.
 
 Rows are returned in the same order the Databases dashboard shows: busiest first.
 
