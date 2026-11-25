@@ -36,8 +36,7 @@ type GetMonitorResponse struct {
 	AlertRules []MonitorRule `json:"alert_rules"`
 }
 
-// AlertsResponse represents the response from alerts monitoring API
-type AlertsResponse struct {
+type GetMonitorDetailsResponse struct {
 	Timestamp  int64           `json:"timestamp"`
 	Window     int64           `json:"window"`
 	AlertRules []AlertRuleData `json:"alert_rules"`
@@ -97,8 +96,8 @@ func (in GetMonitorInput) query() url.Values {
 }
 
 // GetMonitorDetails calls GET /alerts/monitor.
-func GetMonitorDetails(ctx context.Context, c *last9api.Client, in GetMonitorInput) (AlertsResponse, error) {
-	var out AlertsResponse
+func GetMonitorDetails(ctx context.Context, c *last9api.Client, in GetMonitorInput) (GetMonitorDetailsResponse, error) {
+	var out GetMonitorDetailsResponse
 	err := c.Do(ctx, "alerts", last9api.Request{Method: http.MethodGet, Path: pathMonitor}, &out, last9api.WithQuery(in.query()), last9api.WithRequiredBody(), last9api.WithSuccessStatus(http.StatusOK))
 	return out, err
 }

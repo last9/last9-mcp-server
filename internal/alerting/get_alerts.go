@@ -18,7 +18,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-type AlertsResponse = alerts.AlertsResponse
+type AlertsResponse = alerts.GetMonitorDetailsResponse
 type AlertRuleData = alerts.AlertRuleData
 type AlertClaim = alerts.AlertClaim
 type AlertInstance = alerts.AlertInstance
