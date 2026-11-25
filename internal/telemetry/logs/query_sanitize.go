@@ -491,6 +491,15 @@ func sanitizeLogFieldRef(fieldRef, path string) (string, error) {
 				trimmed, path, trimmed,
 			),
 		)
+	case trimmed == "resource_":
+		return "", newLogValidationError(
+			LogValidationInvalidField,
+			path,
+			fmt.Sprintf(
+				"invalid log field reference %q at %s: provide a resource key after resource_; call get_log_attributes if you need the exact field name",
+				trimmed, path,
+			),
+		)
 	case strings.HasPrefix(trimmed, "resource_"):
 		stripped := trimmed[len("resource_"):]
 		return "", newLogValidationError(

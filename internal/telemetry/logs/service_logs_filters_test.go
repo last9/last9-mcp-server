@@ -28,7 +28,7 @@ func TestCompileServiceLogAttributeField(t *testing.T) {
 		{name: "double quotes are invalid syntax", field: `attributes["user_id"]`, wantErr: "single quotes"},
 		{name: "flat resource_ prefix resolves to resources", field: "resource_department", want: "resources['department']"},
 		{name: "dotted flat resource_ prefix resolves to resources", field: "resource_host.name", want: "resources['host.name']"},
-		{name: "empty flat resource_ key is invalid syntax", field: "resource_", wantErr: "resources["},
+		{name: "empty flat resource_ key explains missing key", field: "resource_", wantErr: "resource key after resource_"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -330,6 +330,8 @@ func TestResourceFieldsAndAggregateOutputs(t *testing.T) {
 	for _, field := range []string{"resource_", "resource_a'b", "resource_a[b]", "resource_a\\b"} {
 		if _, err := (resourceFieldOutputs(nil)).fieldRef(field, "field"); err == nil {
 			t.Errorf("accepted %q", field)
+		} else if field == "resource_" && !strings.Contains(err.Error(), "resource key after resource_") {
+			t.Errorf("empty resource key error %q does not explain the missing key", err)
 		}
 	}
 	if _, err := (resourceFieldOutputs(nil)).sanitizeLogGroupBy(map[string]any{"resource_env": "a", "resources['env']": "b"}, "groupby"); err == nil {
