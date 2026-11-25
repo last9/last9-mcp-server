@@ -3,7 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"fmt"
+	"sort"
 
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/suggest"
@@ -24,10 +25,29 @@ var argumentChecks = map[string]func(json.RawMessage) (json.RawMessage, error){
 
 func checkTraceDiscoveryArguments(raw json.RawMessage) (json.RawMessage, error) {
 	var fields map[string]json.RawMessage
-	if json.Unmarshal(raw, &fields) == nil && fields["tracejson_query"] != nil {
-		return nil, errors.New(`unexpected additional properties ["tracejson_query"]. Use pipeline for the filter stages that scope attribute discovery.`)
+	if json.Unmarshal(raw, &fields) != nil {
+		return raw, nil
 	}
-	return raw, nil
+	if _, exists := fields["tracejson_query"]; !exists {
+		return raw, nil
+	}
+
+	allowed := map[string]bool{
+		"pipeline":         true,
+		"lookback_minutes": true,
+		"start_time_iso":   true,
+		"end_time_iso":     true,
+		"region":           true,
+	}
+	unknown := make([]string, 0, len(fields))
+	for field := range fields {
+		if !allowed[field] {
+			unknown = append(unknown, field)
+		}
+	}
+	sort.Strings(unknown)
+	encoded, _ := json.Marshal(unknown)
+	return nil, fmt.Errorf("unexpected additional properties %s. Use pipeline for the filter stages that scope attribute discovery.", encoded)
 }
 
 func argumentCheckMiddleware(tool string, check func(json.RawMessage) (json.RawMessage, error)) mcp.Middleware {

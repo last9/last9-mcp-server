@@ -65,6 +65,12 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 			wantText:  "Use pipeline for the filter stages that scope attribute discovery.",
 		},
 		{
+			name:      "trace discovery reports every unknown parameter",
+			tool:      "get_trace_attributes_for_pipeline",
+			arguments: map[string]any{"tracejson_query": []any{}, "unknown": true},
+			wantText:  `["tracejson_query","unknown"]`,
+		},
+		{
 			name:      "unknown parameter name",
 			tool:      "prometheus_labels",
 			arguments: map[string]any{"selector": "up"},
