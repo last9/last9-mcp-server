@@ -785,6 +785,7 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Name:        "get_dashboard",
 		Annotations: readOnlyTool("Get Dashboard"),
 		Description: prompts.GetDashboardDescription,
+		InputSchema: dashboards.GetDashboardInputSchema(),
 	}, dashboards.NewGetDashboardHandler(client, cfg)))
 
 	reg(registerIfAllowed(server, gate, &mcp.Tool{

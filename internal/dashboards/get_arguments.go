@@ -5,6 +5,31 @@ import (
 	"errors"
 )
 
+func GetDashboardInputSchema() map[string]any {
+	return map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"properties": map[string]any{
+			"id": map[string]any{
+				"type":        "string",
+				"description": "Dashboard UUID; required when dashboard_id is omitted",
+			},
+			"dashboard_id": map[string]any{
+				"type":        "string",
+				"description": "Alias for id; required when id is omitted",
+			},
+			"region": map[string]any{
+				"type":        "string",
+				"description": "AWS region for query population (defaults to configured datasource region)",
+			},
+		},
+		"anyOf": []any{
+			map[string]any{"required": []any{"id"}},
+			map[string]any{"required": []any{"dashboard_id"}},
+		},
+	}
+}
+
 func PrepareGetDashboardArguments(raw json.RawMessage) (json.RawMessage, error) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
