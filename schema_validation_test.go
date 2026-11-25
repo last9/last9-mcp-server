@@ -71,6 +71,12 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 			wantText:  "query",
 		},
 		{
+			name:      "metric name correction",
+			tool:      "get_metric_status",
+			arguments: map[string]any{"metric_name": "up", "window_minutes": 5},
+			wantText:  "Use metric for the metric name or PromQL selector",
+		},
+		{
 			name:      "get_logs response_mode unknown value",
 			tool:      "get_logs",
 			arguments: map[string]any{"logjson_query": []any{map[string]any{"type": "filter", "query": map[string]any{"$eq": []any{"ServiceName", "api"}}}}, "response_mode": "bogus"},

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/suggest"
@@ -17,6 +18,8 @@ var argumentChecks = map[string]func(json.RawMessage) (json.RawMessage, error){
 	"did_you_mean":     suggest.PrepareArguments,
 	"create_dashboard": dashboards.PrepareDashboardArguments,
 	"update_dashboard": dashboards.PrepareDashboardArguments,
+
+	"get_metric_status": checkMetricStatusArguments,
 }
 
 func argumentCheckMiddleware(tool string, check func(json.RawMessage) (json.RawMessage, error)) mcp.Middleware {
@@ -32,4 +35,12 @@ func argumentCheckMiddleware(tool string, check func(json.RawMessage) (json.RawM
 			return next(ctx, method, req)
 		}
 	}
+}
+
+func checkMetricStatusArguments(raw json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil && fields["metric_name"] != nil {
+		return nil, errors.New(`unknown argument "metric_name". Use metric for the metric name or PromQL selector.`)
+	}
+	return raw, nil
 }
