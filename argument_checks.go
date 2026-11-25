@@ -16,6 +16,7 @@ import (
 // which stops at the first violation; each check names every problem it finds.
 var argumentChecks = map[string]func(json.RawMessage) (json.RawMessage, error){
 	"did_you_mean":     suggest.PrepareArguments,
+	"get_dashboard":    dashboards.PrepareGetDashboardArguments,
 	"create_dashboard": dashboards.PrepareDashboardArguments,
 	"update_dashboard": dashboards.PrepareDashboardArguments,
 
