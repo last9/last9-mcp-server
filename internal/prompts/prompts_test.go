@@ -24,6 +24,7 @@ func TestGetDatabasesDescriptionFollowUpScope(t *testing.T) {
 	for _, want := range []string{
 		"The `id` can repeat across environments",
 		"Follow-up tools do not accept `id` or `database_id`",
+		"Omit the discovery row's `host`",
 		"When `resolved_labels` is present",
 	} {
 		if !strings.Contains(prompts.GetDatabasesDescription, want) {
