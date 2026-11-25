@@ -22,6 +22,7 @@ const (
 	RouteDropRules            = "control-plane/%s/drop" // requires clusterId
 	RouteRemapping            = "control-plane/%s/remapping"
 	RouteDashboards           = "dashboards"
+	RouteLoops                = "loops"
 	RouteMetrics              = "metrics"
 	RouteProfiles             = "profiles"
 	RouteGrafana              = "grafana"
@@ -251,6 +252,16 @@ func (b *Builder) BuildDashboardLink(dashboardID string) string {
 // BuildDashboardSnapshotLink creates a deep link to a frozen dashboard snapshot by ID.
 func (b *Builder) BuildDashboardSnapshotLink(snapshotID string) string {
 	return fmt.Sprintf("/v2/organizations/%s/%s/snapshots/%s", b.orgSlug, RouteDashboards, url.PathEscape(snapshotID))
+}
+
+// BuildLoopsLink creates a deep link to the Loops list in the Last9 UI.
+func (b *Builder) BuildLoopsLink() string {
+	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, RouteLoops)
+}
+
+// BuildLoopLink creates a deep link to a single Loop by id.
+func (b *Builder) BuildLoopLink(loopID string) string {
+	return fmt.Sprintf("/v2/organizations/%s/%s/%s", b.orgSlug, RouteLoops, url.PathEscape(loopID))
 }
 
 // ProfilesLinkParams are the Profiles page filters. Cluster is the k8s cluster

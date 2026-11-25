@@ -259,6 +259,21 @@ func TestParseDashboardsIncludesValidate(t *testing.T) {
 	}
 }
 
+func TestParseLoops(t *testing.T) {
+	set, err := Parse("loops")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"get_loops_status", "list_loop_templates", "list_loops", "get_loop"} {
+		if !set.Allows(want) {
+			t.Errorf("loops missing %q", want)
+		}
+	}
+	if set.Allows("get_logs") || set.Allows("create_dashboard") {
+		t.Fatal("loops should stay read-only discovery")
+	}
+}
+
 func TestParseGrafana(t *testing.T) {
 	set, err := Parse("grafana")
 	if err != nil {
