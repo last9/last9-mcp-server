@@ -1,10 +1,12 @@
 package apm
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 
 	"last9-mcp/internal/deeplink"
@@ -14,12 +16,22 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+type ServiceOperationsSummaryArgs struct {
+	Limit           *int    `json:"limit,omitempty" jsonschema:"Maximum number of operations, ranked by descending requests per minute. Positive integer; omitted returns all operations."`
+	ServiceName     string  `json:"service_name" jsonschema:"(Required) Name of the service to get operations summary for"`
+	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
+	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
+	Env             string  `json:"env,omitempty" jsonschema:"(Optional) Exact environment name, e.g. production. Default all environments (empty or .*). Anchored forms like ^production$ are accepted and matched exactly. Alternation (a|b) and wildcards (prod.*) are rejected; list names with get_service_environments, or use get_service_summary for regex matching."`
+}
+
 type ServiceOperationsSummaryResponse struct {
-	ServiceName  string                    `json:"service_name"`
-	Env          string                    `json:"env"`
-	EnvRequested string                    `json:"env_requested,omitempty"`
-	Operations   []ServiceOperationSummary `json:"operations"`
-	Hint         string                    `json:"hint,omitempty"`
+	ServiceName     string                    `json:"service_name"`
+	Env             string                    `json:"env"`
+	EnvRequested    string                    `json:"env_requested,omitempty"`
+	TotalOperations *int                      `json:"total_operations,omitempty"`
+	Operations      []ServiceOperationSummary `json:"operations"`
+	Hint            string                    `json:"hint,omitempty"`
 }
 
 type ServiceOperationSummary struct {
@@ -38,6 +50,9 @@ type ServiceOperationSummary struct {
 
 func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServiceOperationsSummaryArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args ServiceOperationsSummaryArgs) (*mcp.CallToolResult, any, error) {
+		if args.Limit != nil && *args.Limit < 1 {
+			return nil, nil, fmt.Errorf("limit must be a positive integer")
+		}
 		startTimeParam, endTimeParam, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
 		if err != nil {
 			return nil, nil, err
@@ -562,6 +577,14 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			Env:          envDisplay,
 			EnvRequested: envRequested(env, envDisplay),
 			Operations:   operationsSummary,
+		}
+		if args.Limit != nil {
+			total := len(details.Operations)
+			details.TotalOperations = &total
+			slices.SortStableFunc(details.Operations, func(a, b ServiceOperationSummary) int {
+				return cmp.Or(cmp.Compare(b.Throughput, a.Throughput), cmp.Compare(a.Name, b.Name), cmp.Compare(a.DBSystem, b.DBSystem), cmp.Compare(a.MessagingSystem, b.MessagingSystem), cmp.Compare(a.RPCSystem, b.RPCSystem), cmp.Compare(a.NetPeerName, b.NetPeerName))
+			})
+			details.Operations = details.Operations[:min(*args.Limit, total)]
 		}
 		if len(operationsSummary) == 0 {
 			details.Hint = apmEmptyAdvice(

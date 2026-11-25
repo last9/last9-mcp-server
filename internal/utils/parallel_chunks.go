@@ -21,9 +21,9 @@ type ChunkResult[T any] struct {
 // mutation is needed). Per-chunk errors are captured in the ChunkResult rather
 // than short-circuiting; callers decide how to handle partial failure.
 //
-// Cancellation: queued goroutines waiting for a semaphore slot bail out
-// immediately when ctx is cancelled, recording ctx.Err() against their chunk;
-// in-flight chunks observe the same ctx inside fn and are expected to honour it.
+// Cancellation: no chunk starts once ctx is cancelled; queued chunks record
+// ctx.Err() instead. In-flight chunks observe the same ctx inside fn and are
+// expected to honour it.
 func RunChunksParallel[T any](
 	ctx context.Context,
 	chunks []TimeChunk,
@@ -54,6 +54,11 @@ func RunChunksParallel[T any](
 				return
 			}
 			defer func() { <-sem }()
+			// select picks at random when a slot frees up after the cancel.
+			if err := ctx.Err(); err != nil {
+				results[i] = ChunkResult[T]{Index: i, Chunk: chunk, Err: err}
+				return
+			}
 
 			value, err := fn(ctx, i, chunk)
 			results[i] = ChunkResult[T]{
