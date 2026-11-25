@@ -70,6 +70,9 @@ func NewGetLogServicesHandler(client *http.Client, cfg models.Config) func(conte
 		if err != nil {
 			return nil, nil, err
 		}
+		if window.end <= window.start {
+			return nil, nil, fmt.Errorf("end_time_iso must be after start_time_iso")
+		}
 		choice, err := chooseDatasource(cfg, args.Datasource)
 		if err != nil {
 			return nil, nil, err
