@@ -2,111 +2,41 @@ package alerting
 
 import (
 	"context"
-	"encoding/json"
+
 	"fmt"
-	"io"
+
 	"net/http"
-	"net/url"
+
 	"time"
 
-	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
+	"last9-mcp/internal/last9api"
+	"last9-mcp/internal/last9api/alerts"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// AlertsResponse represents the response from alerts monitoring API
-type AlertsResponse struct {
-	Timestamp  int64           `json:"timestamp"`
-	Window     int64           `json:"window"`
-	AlertRules []AlertRuleData `json:"alert_rules"`
-}
-
-type AlertRuleData struct {
-	AlertGroupID   string                 `json:"alert_group_id"`
-	AlertGroupName string                 `json:"alert_group_name"`
-	RuleID         string                 `json:"rule_id"`
-	RuleName       string                 `json:"rule_name"`
-	State          string                 `json:"state"`
-	Severity       string                 `json:"severity"`
-	RuleType       string                 `json:"rule_type"`
-	LastFiredAt    int64                  `json:"last_fired_at"`
-	Since          int64                  `json:"since"`
-	Alerts         []AlertInstance        `json:"alerts"`
-	Claim          *AlertClaim            `json:"claim,omitempty"`
-	RuleProperties map[string]interface{} `json:"rule_properties"`
-}
-
-type AlertClaim struct {
-	OwnerUserID     string `json:"owner_user_id"`
-	OwnerName       string `json:"owner_name,omitempty"`
-	OwnerEmail      string `json:"owner_email,omitempty"`
-	ClaimedByUserID string `json:"claimed_by_user_id"`
-	ClaimedAt       int64  `json:"claimed_at"`
-	MutedUntil      int64  `json:"muted_until"`
-}
-
-type AlertInstance struct {
-	State             string                 `json:"state"`
-	LabelHash         string                 `json:"label_hash"`
-	Annotations       map[string]interface{} `json:"annotations"`
-	GroupLabels       map[string]interface{} `json:"group_labels"`
-	MetricDegradation float64                `json:"metric_degradation"`
-	CurrentValue      float64                `json:"current_value"`
-	LastFiredAt       int64                  `json:"last_fired_at"`
-	Since             int64                  `json:"since"`
-}
+type AlertsResponse = alerts.AlertsResponse
+type AlertRuleData = alerts.AlertRuleData
+type AlertClaim = alerts.AlertClaim
+type AlertInstance = alerts.AlertInstance
 
 // MaxAlertsMonitorWindowSeconds is the widest window one alerts-monitor call accepts.
 const MaxAlertsMonitorWindowSeconds = 3600
 
-// AlertsMonitorQuery asks for the alert rules active in the Window seconds
-// ending at Timestamp (unix seconds).
-type AlertsMonitorQuery struct {
-	Timestamp int64
-	Window    int64
-}
+type AlertsMonitorQuery = alerts.GetMonitorInput
 
-// FetchAlertsMonitor calls GET /alerts/monitor. The datasource comes from cfg.
 func FetchAlertsMonitor(ctx context.Context, client *http.Client, cfg models.Config, q AlertsMonitorQuery) (AlertsResponse, error) {
-	queryParams := url.Values{}
-	queryParams.Set("timestamp", fmt.Sprintf("%d", q.Timestamp))
-	queryParams.Set("window", fmt.Sprintf("%d", q.Window))
-	finalURL := fmt.Sprintf("%s%s?%s", cfg.APIBaseURL, constants.EndpointAlertsMonitor, queryParams.Encode())
-
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", finalURL, nil)
-	if err != nil {
-		return AlertsResponse{}, fmt.Errorf("failed to create request: %w", err)
-	}
-	httpReq.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
-	httpReq.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
-
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return AlertsResponse{}, fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return AlertsResponse{}, utils.NewUpstreamHTTPError(resp, "alerts")
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return AlertsResponse{}, fmt.Errorf("failed to read response: %w", err)
-	}
-	var alertsResp AlertsResponse
-	if err := json.Unmarshal(body, &alertsResp); err != nil {
-		return AlertsResponse{}, fmt.Errorf("failed to parse response: %w", err)
-	}
-	return alertsResp, nil
+	return alerts.GetMonitorDetails(ctx, last9api.NewClient(client, cfg), q)
 }
 
 // DefaultAlertsWindow is get_alerts' window when the caller sets none.
 const DefaultAlertsWindow = 15 * time.Minute
 
 type GetAlertsArgs struct {
+	State           string  `json:"state,omitempty" jsonschema:"Filter alert instances by firing or normal. Omit to include both."`
 	TimeISO         string  `json:"time_iso,omitempty" jsonschema:"Evaluation time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
 	Timestamp       float64 `json:"timestamp,omitempty" jsonschema:"Unix timestamp for query time (deprecated alias; defaults to current time)"`
 	Window          float64 `json:"window,omitempty" jsonschema:"Time window in seconds (default: 900, range: 1-3600)"`
@@ -115,6 +45,9 @@ type GetAlertsArgs struct {
 
 func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetAlertsArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetAlertsArgs) (*mcp.CallToolResult, any, error) {
+		if args.State != "" && args.State != "firing" && args.State != "normal" {
+			return nil, nil, fmt.Errorf("state must be firing or normal; omit it to include both")
+		}
 		window := int64(DefaultAlertsWindow / time.Second)
 		if args.Window != 0 {
 			window = int64(args.Window)
@@ -153,7 +86,7 @@ func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Co
 		}
 		timestamp := endTime.Unix()
 
-		alertsResp, err := FetchAlertsMonitor(ctx, client, cfg, AlertsMonitorQuery{Timestamp: timestamp, Window: window})
+		alertsResp, err := FetchAlertsMonitor(ctx, client, cfg, AlertsMonitorQuery{Timestamp: timestamp, Window: window, State: args.State})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -170,7 +103,11 @@ func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Co
 		formattedResponse += fmt.Sprintf("Found %d alert rule(s) with %d alert instance(s):\n\n", len(alertsResp.AlertRules), totalAlertInstances)
 
 		if len(alertsResp.AlertRules) == 0 {
-			formattedResponse += "No alerts found in the specified time window.\n"
+			if args.State != "" {
+				formattedResponse += fmt.Sprintf("No %s alert instances found in the specified time window.\n", args.State)
+			} else {
+				formattedResponse += "No alerts found in the specified time window.\n"
+			}
 		} else {
 			for i, rule := range alertsResp.AlertRules {
 				formattedResponse += fmt.Sprintf("Alert Rule %d:\n", i+1)
