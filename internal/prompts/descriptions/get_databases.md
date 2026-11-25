@@ -12,8 +12,10 @@ missing key as "not measured", never as zero. `metrics_only: true` and `capabili
 what a row supports: do not call trace-backed tools (`get_database_queries`,
 `get_database_slow_queries`) for a row whose capabilities do not list them.
 
-Follow-up tools do not accept `id` or `database_id`. Pass `db_system`, `env`, and optionally
-`host` to `get_database_slow_queries`; `host` scopes traces, not logs.
+Follow-up tools do not accept `id` or `database_id`. Pass `db_system` and `env` when present
+to `get_database_slow_queries`. Omit the discovery row's `host`: it is not necessarily the
+tool's `net_peer_name` filter value. Use `host` only when that value is already known; it
+scopes traces, not logs.
 `get_database_server_metrics` accepts only `db_system` and may combine instances. When `resolved_labels` is present, use it in a Prometheus query to isolate one instance.
 
 Rows include `id`, `env`, and `sources`. The `id` can repeat across environments. Metrics-only
