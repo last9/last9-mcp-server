@@ -77,6 +77,12 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 			wantText:  "Use label for the label name. Use match_query for a single PromQL selector string.",
 		},
 		{
+			name:      "label values hints preserve other unknown keys",
+			tool:      "prometheus_label_values",
+			arguments: map[string]any{"label_name": "job", "matches": "up", "foo": true},
+			wantText:  `unexpected additional properties ["foo" "label_name" "matches"]`,
+		},
+		{
 			name:      "unknown parameter name",
 			tool:      "prometheus_labels",
 			arguments: map[string]any{"selector": "up"},
