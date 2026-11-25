@@ -25,7 +25,7 @@
 		- net_peer_name: HTTP host or connection string
 	
 	Parameters:
-	- limit: Optional positive integer. Returns the busiest operations by requests per minute across all types, plus total_operations before limiting. Omit for all operations.
+	- limit: Optional positive integer. Returns the busiest operations by requests per minute across all types, plus total_operations before limiting. Omit for all operations. For the slowest operations by p95, omit limit, rank the returned rows by measured p95 descending (use response_time["0.95"] when present), then present the requested count.
 	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
 	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
 	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
