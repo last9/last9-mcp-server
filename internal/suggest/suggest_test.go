@@ -97,6 +97,112 @@ func TestDidYouMeanHandler_Suggestions(t *testing.T) {
 	}
 }
 
+func TestDidYouMeanHandler_ReorderedNameRanksFirst(t *testing.T) {
+	tests := []struct {
+		name           string
+		query          string
+		apiSuggestions []suggestionItem
+		want           string
+	}{
+		{
+			name:  "hyphenated query",
+			query: "alpha-beta-gamma",
+			apiSuggestions: []suggestionItem{
+				{Name: "beta-alpha-gamma", Type: "service", Score: 0.74},
+				{Name: "alpha-delta-gamma", Type: "service", Score: 0.72},
+				{Name: "alpha-beta-omega", Type: "service", Score: 0.71},
+			},
+			want: "Did you mean one of these for \"alpha-beta-gamma\"?\n\n" +
+				"  - beta-alpha-gamma (100% match, type: service)\n" +
+				"  - alpha-delta-gamma (72% match, type: service)\n" +
+				"  - alpha-beta-omega (71% match, type: service)\n",
+		},
+		{
+			name:  "spaced query against a name ranked third",
+			query: "alpha beta gamma",
+			apiSuggestions: []suggestionItem{
+				{Name: "alpha-beta-omega", Type: "service", Score: 0.80},
+				{Name: "alpha-beta", Type: "service", Score: 0.79},
+				{Name: "beta_alpha_gamma", Type: "service", Score: 0.75},
+				{Name: "gamma-beta", Type: "service", Score: 0.70},
+			},
+			want: "Did you mean one of these for \"alpha beta gamma\"?\n\n" +
+				"  - beta_alpha_gamma (100% match, type: service)\n" +
+				"  - alpha-beta-omega (80% match, type: service)\n" +
+				"  - alpha-beta (79% match, type: service)\n",
+		},
+		{
+			name:  "reordered name beyond the top three is promoted",
+			query: "Alpha-Beta-Gamma",
+			apiSuggestions: []suggestionItem{
+				{Name: "alpha-beta-omega", Type: "service", Score: 0.80},
+				{Name: "alpha-beta", Type: "service", Score: 0.79},
+				{Name: "alpha-gamma", Type: "service", Score: 0.78},
+				{Name: "gamma.beta.alpha", Type: "host", Score: 0.60},
+			},
+			want: "Did you mean one of these for \"Alpha-Beta-Gamma\"?\n\n" +
+				"  - gamma.beta.alpha (100% match, type: host)\n" +
+				"  - alpha-beta-omega (80% match, type: service)\n" +
+				"  - alpha-beta (79% match, type: service)\n",
+		},
+		{
+			name:  "equal scores break ties by token overlap, then name",
+			query: "alpha-beta",
+			apiSuggestions: []suggestionItem{
+				{Name: "zeta-omega", Type: "service", Score: 0.70},
+				{Name: "omega-beta", Type: "service", Score: 0.70},
+				{Name: "delta-beta", Type: "service", Score: 0.70},
+			},
+			want: "Did you mean one of these for \"alpha-beta\"?\n\n" +
+				"  - delta-beta (70% match, type: service)\n" +
+				"  - omega-beta (70% match, type: service)\n" +
+				"  - zeta-omega (70% match, type: service)\n",
+		},
+		{
+			name:  "repeated token does not make a reordering",
+			query: "alpha-alpha-beta",
+			apiSuggestions: []suggestionItem{
+				{Name: "alpha-beta-omega", Type: "service", Score: 0.80},
+				{Name: "beta-alpha", Type: "service", Score: 0.78},
+			},
+			want: "Did you mean one of these for \"alpha-alpha-beta\"?\n\n" +
+				"  - alpha-beta-omega (80% match, type: service)\n" +
+				"  - beta-alpha (78% match, type: service)\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			text, _, err := executeDidYouMean(t, tt.apiSuggestions, http.StatusOK, DidYouMeanArgs{Query: tt.query})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if text != tt.want {
+				t.Errorf("response mismatch\ngot:\n%s\nwant:\n%s", text, tt.want)
+			}
+		})
+	}
+}
+
+func TestDidYouMeanHandler_UnreorderedQueriesKeepOrderAndScores(t *testing.T) {
+	text, _, err := executeDidYouMean(t, []suggestionItem{
+		{Name: "auth-service", Type: "service", Score: 0.95},
+		{Name: "authentication-api", Type: "service", Score: 0.81},
+		{Name: "auth-db", Type: "database", Score: 0.76},
+		{Name: "auth-cache", Type: "service", Score: 0.74},
+	}, http.StatusOK, DidYouMeanArgs{Query: "auth"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "Did you mean one of these for \"auth\"?\n\n" +
+		"  - auth-service (95% match, type: service)\n" +
+		"  - authentication-api (81% match, type: service)\n" +
+		"  - auth-db (76% match, type: database)\n"
+	if text != want {
+		t.Errorf("response mismatch\ngot:\n%s\nwant:\n%s", text, want)
+	}
+}
+
 func TestDidYouMeanHandler_EmptyQuery(t *testing.T) {
 	_, _, err := executeDidYouMean(t, nil, http.StatusOK, DidYouMeanArgs{Query: ""})
 	if err == nil {
