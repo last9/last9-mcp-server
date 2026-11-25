@@ -94,15 +94,15 @@ func GetTimeRangeAt(params map[string]interface{}, defaultLookbackMinutes int, n
 	endTime = now.UTC()
 
 	// First check if lookback_minutes is provided
-	lookbackMinutes := defaultLookbackMinutes
+	lookbackMinutes := float64(defaultLookbackMinutes)
 	if rawLookback, ok := params["lookback_minutes"]; ok {
 		switch l := rawLookback.(type) {
 		case float64:
-			lookbackMinutes = int(l)
-		case int:
 			lookbackMinutes = l
+		case int:
+			lookbackMinutes = float64(l)
 		case int64:
-			lookbackMinutes = int(l)
+			lookbackMinutes = float64(l)
 		default:
 			return time.Time{}, time.Time{}, fmt.Errorf("Invalid lookback_minutes %q. Use minutes as a number, for example 60 for 1h or 390 for 6h30m", rawLookback)
 		}
@@ -111,7 +111,8 @@ func GetTimeRangeAt(params map[string]interface{}, defaultLookbackMinutes int, n
 		return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes must be at least 1. Use minutes as a number, for example 60 for 1h")
 	}
 	// Default start time based on lookback
-	startTime = endTime.Add(time.Duration(-lookbackMinutes) * time.Minute)
+	lookbackDuration := time.Duration(lookbackMinutes * float64(time.Minute))
+	startTime = endTime.Add(-lookbackDuration)
 
 	startTimeStr, hasStart := params["start_time_iso"].(string)
 	endTimeStr, hasEnd := params["end_time_iso"].(string)
@@ -134,9 +135,9 @@ func GetTimeRangeAt(params map[string]interface{}, defaultLookbackMinutes int, n
 
 	// Apply lookback defaults only when one explicit boundary is provided.
 	if hasStart && startTimeStr != "" && (!hasEnd || endTimeStr == "") {
-		endTime = startTime.Add(time.Duration(lookbackMinutes) * time.Minute)
+		endTime = startTime.Add(lookbackDuration)
 	} else if hasEnd && endTimeStr != "" && (!hasStart || startTimeStr == "") {
-		startTime = endTime.Add(time.Duration(-lookbackMinutes) * time.Minute)
+		startTime = endTime.Add(-lookbackDuration)
 	}
 
 	// Validate time range
