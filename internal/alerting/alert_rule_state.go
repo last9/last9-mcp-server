@@ -35,6 +35,14 @@ type AlertRuleStateRequest struct {
 	Step           int64        `json:"step" jsonschema:"(Required) Resolution step in seconds"`
 }
 
+func PrepareAlertRuleStateArguments(raw json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil && fields["start_time_iso"] != nil {
+		return nil, errors.New(`unexpected additional properties ["start_time_iso"]. Use start_time for the beginning of the alert-history window. You can pass the same RFC3339 timestamp.`)
+	}
+	return raw, nil
+}
+
 // TimestampArg is a time argument as the caller sent it: a JSON integer or string.
 // The handler parses it, so a bad value gets an error naming the argument.
 type TimestampArg string
