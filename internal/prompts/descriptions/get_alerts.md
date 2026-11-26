@@ -4,7 +4,7 @@
 	Parameters:
 	- time_iso: Evaluation time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Preferred over timestamp.
 	- timestamp: Unix timestamp for the query time (deprecated alias, defaults to current time)
-	- window: Time window in seconds to look back for alerts (defaults to 900 seconds = 15 minutes, range: 1-3600). Max is 3600 seconds (1 hour). If the user asks for a longer period (e.g. 90 minutes, 2 hours, a day), cap window at 3600 — do not pass the raw computed value (such as 5400 or 7200), as the server rejects anything above 3600.
+	- window: Time window in seconds to look back for alerts (defaults to 900 seconds = 15 minutes, range: 1-3600). For a snapshot between two times, set time_iso to the end and window to the interval length in seconds.
 	- lookback_minutes: Relative time window in minutes (range: 1-60). Used only when window is not provided.
 	
 	Uses the datasource configured in the server config (or default if not specified).
@@ -32,7 +32,7 @@
 	Alerts firing now or recently: `window` is default 15 minutes, at most 1 hour.
 
 	## When not to use
-	- Firing history over a longer range: `get_alert_rule_state`
+	- Sampled firing history with start_time, end_time, step and optional rule_name: `get_alert_rule_state`
 	- Rule definitions: `get_alert_config`
 	- Only a count of firing alerts: `get_workspace_overview`
 
@@ -45,4 +45,4 @@
 	Text listing each alert rule with its group, state, severity and alert instances.
 
 	## Known traps
-	`window` above 3600 seconds is rejected; cap it.
+	A snapshot covers at most one hour. For longer requested intervals, explain the limit instead of silently shortening the interval.

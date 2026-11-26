@@ -16,6 +16,28 @@ import (
 
 const grafanaPanel = `{"title":"p","type":"timeseries","gridPos":{"x":0,"y":0,"w":24,"h":8},"queries":[{"legend":"l","query":"up","type":"prometheus"}]}`
 
+func TestGetAlertsRangeGuidance(t *testing.T) {
+	for _, history := range []bool{true, false} {
+		cfg := testToolRegistrationConfig()
+		cfg.ToolFilter.Tools = toolsets.Set{"get_alerts": {}}
+		want := toolErrorExpectation{contains: []string{"time_iso", "end_time", "window", "seconds", "3600", "longer"}, absent: []string{"private-rule"}}
+		if history {
+			cfg.ToolFilter.Tools["get_alert_rule_state"] = struct{}{}
+			want.contains = append(want.contains, "get_alert_rule_state", "start_time", "rule_name", "step")
+		} else {
+			want.absent = append(want.absent, "get_alert_rule_state")
+		}
+		session := connectTestSession(t, cfg, http.DefaultClient)
+		for _, args := range []string{
+			`{"start_time":10,"end_time":40}`,
+			`{"start_time":10,"end_time":7210,"rule_name":"private-rule"}`,
+		} {
+			result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: "get_alerts", Arguments: json.RawMessage(args)})
+			assertToolError(t, result, want)
+		}
+	}
+}
+
 func TestEntityKPIArgumentGuidanceNamesOnlyServedTools(t *testing.T) {
 	for _, tc := range []struct {
 		toolsets string
