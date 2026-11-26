@@ -95,7 +95,9 @@ func TestIdentifyException_EnvSuffixOnlyInAllEnvsMode(t *testing.T) {
 	}
 }
 
-var exceptionTestWindow = struct{ start, end time.Time }{
+type exceptionWindow struct{ start, end time.Time }
+
+var exceptionTestWindow = exceptionWindow{
 	start: time.Date(2026, 1, 20, 10, 0, 0, 0, time.UTC),
 	end:   time.Date(2026, 1, 20, 11, 0, 0, 0, time.UTC),
 }
@@ -115,29 +117,39 @@ func exceptionTestConfig(apiURL string) models.Config {
 	}
 }
 
-// runGetExceptions serves instantBody for the instant query and rangeHandler (nil = 500) for the
-// range query, and returns the decoded exception rows.
-func runGetExceptions(t *testing.T, args GetExceptionsArgs, instantBody string, rangeHandler http.HandlerFunc) []map[string]any {
+type getExceptionsTestRequest struct {
+	Args         GetExceptionsArgs
+	InstantBody  string
+	RangeHandler http.HandlerFunc
+	Window       exceptionWindow
+}
+
+// runGetExceptions serves the configured instant and range responses and returns exception rows.
+func runGetExceptions(t *testing.T, request getExceptionsTestRequest) []map[string]any {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case constants.EndpointPromQueryInstant:
-			io.WriteString(w, instantBody)
+			io.WriteString(w, request.InstantBody)
 		case constants.EndpointPromQuery:
-			if rangeHandler == nil {
+			if request.RangeHandler == nil {
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
-			rangeHandler(w, r)
+			request.RangeHandler(w, r)
 		default:
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 	}))
 	defer server.Close()
 
-	args.StartTimeISO = new(exceptionTestWindow.start.Format(time.RFC3339))
-	args.EndTimeISO = exceptionTestWindow.end.Format(time.RFC3339)
-	result, _, err := NewGetExceptionsHandler(server.Client(), exceptionTestConfig(server.URL))(context.Background(), &mcp.CallToolRequest{}, args)
+	window := request.Window
+	if window.start.IsZero() {
+		window = exceptionTestWindow
+	}
+	request.Args.StartTimeISO = new(window.start.Format(time.RFC3339Nano))
+	request.Args.EndTimeISO = window.end.Format(time.RFC3339Nano)
+	result, _, err := NewGetExceptionsHandler(server.Client(), exceptionTestConfig(server.URL))(context.Background(), &mcp.CallToolRequest{}, request.Args)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -171,10 +183,10 @@ func exceptionLinkParams(t *testing.T, row map[string]any) url.Values {
 }
 
 func TestGetExceptionsHandler_IdentifiesRowsInAllEnvsMode(t *testing.T) {
-	rows := runGetExceptions(t, GetExceptionsArgs{}, `[
+	rows := runGetExceptions(t, getExceptionsTestRequest{InstantBody: `[
 		{"metric":{"exception_type":"TypeError","service_name":"web","span_name":"View","span_kind":"SPAN_KIND_SERVER","env":"production"},"value":[1768906800,"7"]},
 		{"metric":{"exception_type":"TypeError","service_name":"web","span_name":"View","span_kind":"SPAN_KIND_SERVER"},"value":[1768906800,"2"]}
-	]`, nil)
+	]`})
 	if len(rows) != 2 {
 		t.Fatalf("rows = %d, want 2", len(rows))
 	}
@@ -213,9 +225,9 @@ func TestGetExceptionsHandler_IdentifiesRowsInAllEnvsMode(t *testing.T) {
 }
 
 func TestGetExceptionsHandler_IdentifiesRowsWithEnvArg(t *testing.T) {
-	rows := runGetExceptions(t, GetExceptionsArgs{Env: "prod"}, `[
+	rows := runGetExceptions(t, getExceptionsTestRequest{Args: GetExceptionsArgs{Env: "prod"}, InstantBody: `[
 		{"metric":{"exception_type":"","service_name":"","span_name":"","env":"prod"},"value":[1768906800,"3"]}
-	]`, nil)
+	]`})
 	if len(rows) != 1 {
 		t.Fatalf("rows = %d, want 1", len(rows))
 	}

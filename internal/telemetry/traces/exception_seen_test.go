@@ -37,7 +37,7 @@ func TestGetExceptionsHandler_FirstAndLastSeenComeFromRangeData(t *testing.T) {
 	end := exceptionTestWindow.end.Unix()
 	var request promRangeRequest
 
-	rows := runGetExceptions(t, GetExceptionsArgs{}, twoEnvRows, func(w http.ResponseWriter, r *http.Request) {
+	rows := runGetExceptions(t, getExceptionsTestRequest{InstantBody: twoEnvRows, RangeHandler: func(w http.ResponseWriter, r *http.Request) {
 		request = decodeRangeRequest(t, r)
 		io.WriteString(w, fmt.Sprintf(`[
 			{"metric":{"exception_type":"TypeError","service_name":"web","span_name":"View","span_kind":"SPAN_KIND_SERVER","env":"prod"},
@@ -45,7 +45,7 @@ func TestGetExceptionsHandler_FirstAndLastSeenComeFromRangeData(t *testing.T) {
 			{"metric":{"exception_type":"IOError","service_name":"web","span_name":"View","span_kind":"SPAN_KIND_SERVER","env":"prod"},
 			 "values":[[%d,"0"],[%d,"0"]]}
 		]`, start, start+120, start+180, start+600, end, start+60, end))
-	})
+	}})
 
 	if !strings.Contains(request.Query, "sum by (exception_type, service_name, span_name, span_kind, env)") ||
 		!strings.Contains(request.Query, "trace_endpoint_count{exception_type!=''}[1m]") {
@@ -83,12 +83,12 @@ func TestGetExceptionsHandler_FirstAndLastSeenNeedFinitePositiveCounts(t *testin
 	start := exceptionTestWindow.start.Unix()
 	for _, value := range []string{"NaN", "+Inf", "-Inf", "0", "-1", "invalid", "2"} {
 		t.Run(value, func(t *testing.T) {
-			rows := runGetExceptions(t, GetExceptionsArgs{}, twoEnvRows, func(w http.ResponseWriter, r *http.Request) {
+			rows := runGetExceptions(t, getExceptionsTestRequest{InstantBody: twoEnvRows, RangeHandler: func(w http.ResponseWriter, r *http.Request) {
 				io.WriteString(w, fmt.Sprintf(`[
 					{"metric":{"exception_type":"TypeError","service_name":"web","span_name":"View","span_kind":"SPAN_KIND_SERVER","env":"prod"},
 					 "values":[[%d,%q],[%d,"1"],[%d,%q]]}
 				]`, start+60, value, start+120, start+180, value))
-			})
+			}})
 
 			first, last := "2026-01-20T10:02:00Z", "2026-01-20T10:02:00Z"
 			if value == "2" {
@@ -102,12 +102,37 @@ func TestGetExceptionsHandler_FirstAndLastSeenNeedFinitePositiveCounts(t *testin
 	}
 }
 
+func TestGetExceptionsHandler_PreservesOccurrenceTimestampPrecision(t *testing.T) {
+	for _, fraction := range []time.Duration{0, 900 * time.Millisecond} {
+		t.Run(fraction.String(), func(t *testing.T) {
+			window := exceptionWindow{
+				start: exceptionTestWindow.start.Add(fraction),
+				end:   exceptionTestWindow.end.Add(fraction),
+			}
+			first := window.start.Add(time.Minute)
+			last := window.start.Add(2 * time.Minute)
+			rows := runGetExceptions(t, getExceptionsTestRequest{
+				InstantBody: twoEnvRows,
+				Window:      window,
+				RangeHandler: func(w http.ResponseWriter, _ *http.Request) {
+					fmt.Fprintf(w, `[{"metric":{"exception_type":"TypeError","service_name":"web","span_name":"View","span_kind":"SPAN_KIND_SERVER","env":"prod"},"values":[[%f,"1"],[%f,"1"]]}]`,
+						float64(first.UnixNano())/float64(time.Second), float64(last.UnixNano())/float64(time.Second))
+				},
+			})
+
+			if rows[0]["first_seen"] != first.Format(time.RFC3339Nano) || rows[0]["last_seen"] != last.Format(time.RFC3339Nano) {
+				t.Fatalf("first/last seen = %v / %v, want %s / %s", rows[0]["first_seen"], rows[0]["last_seen"], first.Format(time.RFC3339Nano), last.Format(time.RFC3339Nano))
+			}
+		})
+	}
+}
+
 func TestGetExceptionsHandler_FirstAndLastSeenRangeFiltersMatchInstantQuery(t *testing.T) {
 	var query string
-	runGetExceptions(t, GetExceptionsArgs{ServiceName: "last9-api", SpanName: new("GET /a"), Env: "prod"}, `[]`, func(w http.ResponseWriter, r *http.Request) {
+	runGetExceptions(t, getExceptionsTestRequest{Args: GetExceptionsArgs{ServiceName: "last9-api", SpanName: new("GET /a"), Env: "prod"}, InstantBody: `[]`, RangeHandler: func(w http.ResponseWriter, r *http.Request) {
 		query = decodeRangeRequest(t, r).Query
 		io.WriteString(w, `[]`)
-	})
+	}})
 	if !strings.Contains(query, `trace_internal_count{service_name=~'last9\\-api', span_name=~'GET \\/a', env=~'prod', exception_type!=''}[1m]`) {
 		t.Errorf("range query must carry the instant query's filters: %s", query)
 	}
@@ -125,7 +150,7 @@ func TestGetExceptionsHandler_FirstAndLastSeenOmittedWhenRangeQueryFails(t *test
 	}
 	for name, rangeHandler := range cases {
 		t.Run(name, func(t *testing.T) {
-			rows := runGetExceptions(t, GetExceptionsArgs{}, twoEnvRows, rangeHandler)
+			rows := runGetExceptions(t, getExceptionsTestRequest{InstantBody: twoEnvRows, RangeHandler: rangeHandler})
 			if len(rows) != 3 {
 				t.Fatalf("rows = %d, want 3: the range query must never fail the tool", len(rows))
 			}
