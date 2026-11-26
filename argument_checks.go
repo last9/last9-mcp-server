@@ -21,6 +21,7 @@ import (
 var argumentChecks = map[string]argumentCheck{
 	"get_metric_status":        checkMetricStatusArguments,
 	"get_service_environments": withoutToolContext(checkServiceEnvironmentArguments),
+	"get_traces":               withoutToolContext(checkGetTracesArguments),
 	"get_service_traces":       withoutToolContext(checkServiceTraceArguments),
 	"get_alert_config":         withoutToolContext(alerting.PrepareAlertConfigArguments),
 	"did_you_mean":             withoutToolContext(suggest.PrepareArguments),
@@ -59,6 +60,14 @@ func checkServiceSummaryArguments(raw json.RawMessage) (json.RawMessage, error) 
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) == nil && fields["service_name"] != nil {
 		return nil, errors.New(`unexpected additional properties ["service_name"]. get_service_summary ranks services across the fleet. For one service's performance, call get_service_performance_details with service_name.`)
+	}
+	return raw, nil
+}
+
+func checkGetTracesArguments(raw json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil && fields["response_mode"] != nil {
+		return nil, errors.New("response_mode is not supported by get_traces. Do not infer which result was intended: to retrieve matching span rows, omit response_mode and preserve the existing tracejson_query stages and time bounds; to obtain a count or percentile, append an aggregate stage and preserve the existing filters and time bounds.")
 	}
 	return raw, nil
 }
