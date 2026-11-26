@@ -50,6 +50,7 @@ type CreateAlertFromChartArgs struct {
 	Severity          string            `json:"severity,omitempty" jsonschema:"Severity: breach or threat; when omitted the backend derives it from the algorithm and static chart rules default to breach"`
 	GroupID           string            `json:"group_id,omitempty" jsonschema:"Alert group UUID the chart resolves to; normally omit. The backend rejects any group other than the chart's own, so use only a group_id already returned for this chart"`
 	Description       string            `json:"description,omitempty" jsonschema:"Responder-facing symptom, impact, and intended action stored on the rule as properties.description"`
+	OnNoData          string            `json:"on_no_data,omitempty" jsonschema:"Set to alert to fire a No data alert after 2x eval_window minutes without samples; omit to leave off"`
 }
 
 // NewCreateAlertFromChartHandler returns the MCP tool handler for
@@ -99,6 +100,9 @@ func NewCreateAlertFromChartHandler(client *http.Client, cfg models.Config) func
 		if args.Severity != "" && args.Severity != severityBreach && args.Severity != severityThreat {
 			return utils.ToolErrorResult("severity must be breach or threat"), nil, nil
 		}
+		if args.OnNoData != "" && args.OnNoData != "alert" {
+			return utils.ToolErrorResult("on_no_data must be alert or omitted"), nil, nil
+		}
 
 		req := alerts.IntelligenceRequest{
 			Surface:    surface,
@@ -123,6 +127,7 @@ func NewCreateAlertFromChartHandler(client *http.Client, cfg models.Config) func
 		req.Severity = args.Severity
 		req.GroupID = strings.TrimSpace(args.GroupID)
 		req.Description = args.Description
+		req.OnNoData = args.OnNoData
 
 		api := last9api.NewClient(client, cfg)
 		body, err := alerts.CreateAlertFromChart(ctx, api, req)
