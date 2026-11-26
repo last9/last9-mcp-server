@@ -50,15 +50,13 @@ func exceptionSeenStep(window time.Duration) time.Duration {
 }
 
 // fetchExceptionSeen finds, per series, the first and last range step inside (Start, End] whose
-// one-step bucket has occurrences. Steps end-align on End; a step at or before Start only covers
-// time before the window, so it is skipped.
+// one-step bucket has occurrences.
 func fetchExceptionSeen(ctx context.Context, client *http.Client, cfg models.Config, q exceptionSeenQuery) (map[string]exceptionSeen, error) {
 	step := exceptionSeenStep(q.End.Sub(q.Start))
 	stepSeconds := int64(step / time.Second)
-	points := (int64(q.End.Sub(q.Start)/time.Second) + stepSeconds - 1) / stepSeconds
 	query := buildExceptionsPromQL(q.BaseFilter, fmt.Sprintf("%dm", int64(step/time.Minute)))
 
-	resp, err := utils.MakePromRangeAPIQuery(ctx, client, query, q.End.Unix()-points*stepSeconds, q.End.Unix(), cfg, utils.PromResolution{Step: stepSeconds})
+	resp, err := utils.MakePromRangeAPIQuery(ctx, client, query, q.Start.Unix(), q.End.Unix(), cfg, utils.PromResolution{Step: stepSeconds})
 	if err != nil {
 		return nil, err
 	}
