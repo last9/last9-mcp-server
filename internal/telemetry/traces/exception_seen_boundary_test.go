@@ -60,3 +60,43 @@ func TestReviewExceptionSeenDoesNotReadBeforeRequestedWindow(t *testing.T) {
 		})
 	}
 }
+
+func TestReviewExceptionSeenCoversFinalPartialStep(t *testing.T) {
+	start := time.Date(2026, 1, 20, 10, 0, 0, 0, time.UTC)
+	for _, window := range []time.Duration{60 * time.Minute, 61 * time.Minute} {
+		t.Run(window.String(), func(t *testing.T) {
+			end := start.Add(window)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				request := decodeRangeRequest(t, r)
+				requestStart := time.Unix(request.Timestamp-request.Window, 0).UTC()
+				values := make([][2]any, 0)
+				for at := requestStart; !at.After(end); at = at.Add(time.Duration(request.Step) * time.Second) {
+					value := "0"
+					if !at.Before(end) {
+						value = "1"
+					}
+					values = append(values, [2]any{at.Unix(), value})
+				}
+				body, err := json.Marshal([]any{map[string]any{
+					"metric": map[string]string{"exception_type": "TypeError"},
+					"values": values,
+				}})
+				if err != nil {
+					t.Errorf("marshal response: %v", err)
+					return
+				}
+				_, _ = w.Write(body)
+			}))
+			defer srv.Close()
+
+			seen, err := fetchExceptionSeen(t.Context(), srv.Client(), exceptionTestConfig(srv.URL), exceptionSeenQuery{Start: start, End: end})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := seen[exceptionSeriesKey(map[string]string{"exception_type": "TypeError"})]
+			if got.First != end || got.Last != end {
+				t.Fatalf("seen = %#v, want occurrence at final evaluation %s", got, end)
+			}
+		})
+	}
+}
