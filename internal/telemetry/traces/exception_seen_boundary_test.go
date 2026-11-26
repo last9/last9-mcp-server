@@ -102,3 +102,51 @@ func TestReviewExceptionSeenCoversFinalPartialStep(t *testing.T) {
 		})
 	}
 }
+
+func TestReviewExceptionSeenEndAlignmentDoesNotAdmitPreWindowEvidence(t *testing.T) {
+	start := time.Date(2026, 1, 20, 10, 0, 0, 0, time.UTC)
+	end := start.Add(61 * time.Minute)
+	key := exceptionSeriesKey(map[string]string{
+		"exception_type": "TypeError", "service_name": "web", "span_name": "View",
+		"span_kind": "SPAN_KIND_SERVER", "env": "prod",
+	})
+	for _, tc := range []struct {
+		name       string
+		occurrence time.Time
+		wantSeen   bool
+	}{
+		{name: "before requested window", occurrence: start.Add(-30 * time.Second)},
+		{name: "inside final partial interval", occurrence: end.Add(-30 * time.Second), wantSeen: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				request := decodeRangeRequest(t, r)
+				step := time.Duration(request.Step) * time.Second
+				requestStart := time.Unix(request.Timestamp-request.Window, 0).UTC()
+				values := make([][2]any, 0)
+				for at := requestStart; !at.After(end); at = at.Add(step) {
+					if tc.occurrence.After(at.Add(-step)) && !tc.occurrence.After(at) {
+						values = append(values, [2]any{at.Unix(), "1"})
+					}
+				}
+				_ = json.NewEncoder(w).Encode([]any{map[string]any{
+					"metric": map[string]string{
+						"exception_type": "TypeError", "service_name": "web", "span_name": "View",
+						"span_kind": "SPAN_KIND_SERVER", "env": "prod",
+					},
+					"values": values,
+				}})
+			}))
+			defer srv.Close()
+
+			seen, err := fetchExceptionSeen(t.Context(), srv.Client(), exceptionTestConfig(srv.URL), exceptionSeenQuery{Start: start, End: end})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, gotSeen := seen[key]
+			if gotSeen != tc.wantSeen {
+				t.Fatalf("occurrence at %s: seen = %#v, want present = %t", tc.occurrence, seen, tc.wantSeen)
+			}
+		})
+	}
+}
