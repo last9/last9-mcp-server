@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -109,6 +110,49 @@ func TestGetChangeEventsHandler_ExplicitRangePrecedence(t *testing.T) {
 		if i == 0 && req.Window != 3600 {
 			t.Fatalf("window = %d, want %d", req.Window, int64(3600))
 		}
+	}
+}
+
+func TestFractionalEndKeepsReturnedEventNameDiscoverable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
+		switch r.URL.Path {
+		case constants.EndpointPromLabelValues:
+			_, _ = io.WriteString(w, `[]`)
+		case constants.EndpointPromQueryInstant:
+			_, _ = io.WriteString(w, `[{"metric":{"event_name":"deployment"},"values":[[1770649445.5,"1"]]}]`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL: server.URL,
+		TokenManager: &auth.TokenManager{
+			AccessToken: "test-token",
+			ExpiresAt:   time.Now().Add(24 * time.Hour),
+		},
+	}
+
+	handler := NewGetChangeEventsHandler(server.Client(), cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetChangeEventsArgs{
+		StartTimeISO: "2026-02-09T15:04:05.125Z",
+		EndTimeISO:   "2026-02-09T15:04:05.875Z",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	var response struct {
+		AvailableEventNames []string     `json:"available_event_names"`
+		ChangeEvents        []TimeSeries `json:"change_events"`
+	}
+	if err := json.Unmarshal([]byte(utils.GetTextContent(t, result)), &response); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if !reflect.DeepEqual(response.AvailableEventNames, []string{"deployment"}) || len(response.ChangeEvents) != 1 {
+		t.Fatalf("available=%v events=%d, want deployment discoverable with one event", response.AvailableEventNames, len(response.ChangeEvents))
 	}
 }
 
