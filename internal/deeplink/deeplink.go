@@ -91,9 +91,7 @@ type ExceptionsLinkOptions struct {
 	Env         string
 }
 
-// BuildExceptionsLink creates an exceptions dashboard deep link. ServiceName and
-// Env are regex matchers; each becomes a page filter only when it is a literal
-// name, so a pattern never narrows the page to a value that does not exist.
+// BuildExceptionsLink creates an exceptions dashboard deep link.
 func (b *Builder) BuildExceptionsLink(options ExceptionsLinkOptions) string {
 	params := url.Values{}
 	params.Set("from", fmt.Sprintf("%d", options.FromMs/1000))
@@ -102,10 +100,10 @@ func (b *Builder) BuildExceptionsLink(options ExceptionsLinkOptions) string {
 		params.Set("cluster", b.clusterID)
 	}
 	var filters []string
-	if service := literalFilterValue(options.ServiceName); service != "" {
+	if service := safeFilterValue(options.ServiceName); service != "" {
 		filters = append(filters, fmt.Sprintf(`service_name="%s"`, service))
 	}
-	if exceptionEnv := literalFilterValue(options.Env); exceptionEnv != "" {
+	if exceptionEnv := safeFilterValue(options.Env); exceptionEnv != "" {
 		filters = append(filters, fmt.Sprintf(`deployment_environment="%s"`, exceptionEnv))
 	}
 	if len(filters) > 0 {
@@ -174,16 +172,8 @@ func (b *Builder) BuildDropRulesLink() string {
 // not a single catalog filter value.
 const apmCatalogEnvRegexMeta = `.*+?()[]{}|\^$`
 
-// filterPatternChars mark a regex matcher argument as a pattern. "." is left
-// out so dotted names (checkout.v2, k8s.prod) still become filters; '"' would
-// break the page's quoted filter syntax.
-const filterPatternChars = `*+?()[]{}|\^$"`
-
-// literalFilterValue returns value when it reads as a single name, and "" for
-// empty values or patterns.
-func literalFilterValue(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" || strings.ContainsAny(value, filterPatternChars) || strings.IndexFunc(value, unicode.IsControl) >= 0 {
+func safeFilterValue(value string) string {
+	if value == "" || strings.ContainsRune(value, '"') || strings.IndexFunc(value, unicode.IsControl) >= 0 {
 		return ""
 	}
 	return value

@@ -239,8 +239,9 @@ func TestBuildExceptionsLink_Filters(t *testing.T) {
 		{name: "dotted service stays literal", service: "checkout.v2", wantFilters: []string{`service_name="checkout.v2"`}},
 		{name: "service only", service: "api", wantFilters: []string{`service_name="api"`}},
 		{name: "env only", env: "prod", wantFilters: []string{`deployment_environment="prod"`}},
-		{name: "regex service is dropped", service: "api|web", env: "prod", wantFilters: []string{`deployment_environment="prod"`}},
-		{name: "wildcard env is dropped", service: "api", env: ".*", wantFilters: []string{`service_name="api"`}},
+		{name: "regex character stays literal", service: "api|web", wantFilters: []string{`service_name="api|web"`}},
+		{name: "regex characters in env stay literal", env: "prod.*", wantFilters: []string{`deployment_environment="prod.*"`}},
+		{name: "quoted value is dropped", service: `api"web`, env: "prod", wantFilters: []string{`deployment_environment="prod"`}},
 		{name: "control character is dropped", service: "api\nweb", wantFilters: nil},
 		{name: "no filters", wantFilters: nil},
 	}

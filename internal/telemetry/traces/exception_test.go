@@ -47,7 +47,7 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 				!strings.Contains(query, "trace_internal_count") {
 				t.Fatalf("instant query does not include expected trace_*_count metrics: %s", query)
 			}
-			if !strings.Contains(query, "service_name=~'checkout'") {
+			if !strings.Contains(query, `service_name=~'api\\|web'`) {
 				t.Fatalf("service_name filter missing from instant query: %s", query)
 			}
 			if !strings.Contains(query, "span_name=~'POST \\\\/orders'") {
@@ -102,7 +102,7 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 	args := GetExceptionsArgs{
 		StartTimeISO: new(startTime.Format(time.RFC3339)),
 		EndTimeISO:   endTime.Format(time.RFC3339),
-		ServiceName:  "checkout",
+		ServiceName:  "api|web",
 		SpanName:     new("POST /orders"),
 		Env:          "prod",
 		Limit:        10,
@@ -120,7 +120,7 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse reference_url: %v", err)
 	}
-	if got, want := parsedReference.Query().Get("filter"), `["service_name=\"checkout\"","deployment_environment=\"prod\""]`; got != want {
+	if got, want := parsedReference.Query().Get("filter"), `["service_name=\"api|web\"","deployment_environment=\"prod\""]`; got != want {
 		t.Fatalf("reference_url filter = %q, want %q", got, want)
 	}
 
