@@ -77,6 +77,12 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 			wantText:  "Use service_name to filter environments by service",
 		},
 		{
+			name:      "suggestion service name recovery",
+			tool:      "did_you_mean",
+			arguments: map[string]any{"service_name": "example"},
+			wantText:  `To look up a service name, pass it as query with type "service". To find a log attribute within a service, pass the attribute as query with type "log_attribute" and the service name as service.`,
+		},
+		{
 			name:      "unknown parameter name",
 			tool:      "prometheus_labels",
 			arguments: map[string]any{"selector": "up"},
