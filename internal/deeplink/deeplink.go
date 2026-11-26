@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"unicode"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -175,7 +176,7 @@ const filterPatternChars = `*+?()[]{}|\^$"`
 // empty values or patterns.
 func literalFilterValue(value string) string {
 	value = strings.TrimSpace(value)
-	if value == "" || strings.ContainsAny(value, filterPatternChars) {
+	if value == "" || strings.ContainsAny(value, filterPatternChars) || strings.IndexFunc(value, unicode.IsControl) >= 0 {
 		return ""
 	}
 	return value
