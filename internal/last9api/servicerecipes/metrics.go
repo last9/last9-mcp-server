@@ -48,6 +48,7 @@ func ListMetricRecipes(ctx context.Context, c *last9api.Client) ([]MetricRecipe,
 		last9api.Request{Method: http.MethodGet, Path: pathMetricRecipes},
 		&out,
 		last9api.WithMaxResponseBytes(maxMetricRecipesResponseBytes),
+		last9api.WithRequiredBody(),
 	)
 	if err != nil {
 		return nil, err

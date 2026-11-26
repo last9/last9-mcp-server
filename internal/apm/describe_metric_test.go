@@ -173,7 +173,7 @@ func TestDescribeMetricTreatsCatalogLessBodyAsReadFailure(t *testing.T) {
 				t.Fatal(err)
 			}
 			note, _ := out["note"].(string)
-			if out["source"] != "legacy_heuristic" || !strings.Contains(note, "no recipe catalog") {
+			if out["source"] != "legacy_heuristic" || !strings.Contains(note, "failed") {
 				t.Fatalf("got %v", out)
 			}
 		})
