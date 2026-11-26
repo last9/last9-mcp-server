@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `get_traces` now intercepts the unsupported `response_mode` argument before strict schema validation and explains both neutral recovery paths: preserve the existing query stages and time bounds while omitting it for matching span rows, or append an aggregate stage for a count or percentile (#675).
+- `get_entity_alert_rules` now explains how to resolve an unsupported `entity_name` through `get_alert_groups` and retry with the selected group ID (#663).
 - When a caller passes `span_name`, `get_service_traces` shows how to retry with `get_traces` while keeping the original scope, time window, and limit (#659).
 - Passing `rule_id` to `describe_alert_chart` now returns the chart inputs and directs callers to inspect the rule with `get_alert_config` when available (#662).
 - `get_service_operations_summary` reports the measured failure percentage directly in `error_percent`. Dividing it by throughput a second time inflated percentages at low traffic and understated them at high traffic (#650).
