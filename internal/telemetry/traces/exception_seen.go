@@ -15,6 +15,8 @@ import (
 
 const exceptionSeenMaxPoints = 60
 
+const exceptionSeenPrecision = time.Millisecond
+
 type exceptionSeen struct {
 	First time.Time
 	Last  time.Time
@@ -47,6 +49,10 @@ func exceptionSeenStep(window time.Duration) time.Duration {
 // fetchExceptionSeen finds, per series, the first and last range step inside (Start, End] whose
 // one-step bucket has occurrences.
 func fetchExceptionSeen(ctx context.Context, client *http.Client, cfg models.Config, q exceptionSeenQuery) (map[string]exceptionSeen, error) {
+	q = normalizeExceptionSeenQuery(q)
+	if !q.End.After(q.Start) {
+		return map[string]exceptionSeen{}, nil
+	}
 	step := exceptionSeenStep(q.End.Sub(q.Start))
 	window := q.End.Sub(q.Start)
 	fullWindow := window / step * step
@@ -68,6 +74,16 @@ func fetchExceptionSeen(ctx context.Context, client *http.Client, cfg models.Con
 		reduceExceptionSeen(seenByKey, series, q)
 	}
 	return seenByKey, nil
+}
+
+func normalizeExceptionSeenQuery(q exceptionSeenQuery) exceptionSeenQuery {
+	start := q.Start.Truncate(exceptionSeenPrecision)
+	if start.Before(q.Start) {
+		start = start.Add(exceptionSeenPrecision)
+	}
+	q.Start = start
+	q.End = q.End.Truncate(exceptionSeenPrecision)
+	return q
 }
 
 func exceptionSeenRangeRequest(cfg models.Config, baseFilter string, end time.Time, window, step time.Duration) prom.QueryInput {

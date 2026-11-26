@@ -5,7 +5,7 @@ Each row also carries:
 - `exception_id`: the Discover Exceptions row id, `<fingerprint>-<service_name>-<span_name>`, plus `-<env>` only when `env` is not given (one row per environment).
 - `url`: relative link opening this row in Discover Exceptions for the queried window.
 - `count`: occurrences summed from trace-derived exception counters over the window, not counted spans.
-- `first_seen` / `last_seen` (optional): RFC3339 times of the first and last query step inside the window with occurrences, at one-minute or coarser steps (at most 60 per window). Not the exception's lifetime first occurrence; omitted when unavailable.
+- `first_seen` / `last_seen` (optional): RFC3339 times of the first and last query step inside the window with occurrences, at one-minute or coarser steps (at most 60 per window). Occurrence evidence has millisecond boundary precision; unsupported fractions are excluded rather than widening the requested window. Not the exception's lifetime first occurrence; omitted when unavailable.
 
 For a known `service_name`, call `get_service_profile` first to decide whether span exceptions are likely the answer or a symptom. Use `did_you_mean` if service or environment spelling is uncertain.
 
