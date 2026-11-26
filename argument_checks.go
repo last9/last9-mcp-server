@@ -21,8 +21,16 @@ var argumentChecks = map[string]func(json.RawMessage) (json.RawMessage, error){
 	"get_dashboard":    dashboards.PrepareGetDashboardArguments,
 	"create_dashboard": dashboards.PrepareDashboardArguments,
 	"update_dashboard": dashboards.PrepareDashboardArguments,
-
 	"get_metric_status": checkMetricStatusArguments,
+	"get_service_environments": checkServiceEnvironmentArguments,
+}
+
+func checkServiceEnvironmentArguments(raw json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil && fields["service"] != nil {
+		return nil, errors.New("unknown argument \"service\". Use service_name to filter environments by service.")
+	}
+	return raw, nil
 }
 
 func argumentCheckMiddleware(tool string, check func(json.RawMessage) (json.RawMessage, error)) mcp.Middleware {
