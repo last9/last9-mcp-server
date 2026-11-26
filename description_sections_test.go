@@ -230,6 +230,15 @@ func TestWorkspaceOverviewRoutesFollowToolset(t *testing.T) {
 	}
 }
 
+func TestGetLogServicesDescriptionDoesNotNameUnavailableTools(t *testing.T) {
+	for _, spec := range []string{"logs", "investigate"} {
+		description := servedDescriptions(t, spec)["get_log_services"]
+		if strings.Contains(description, "`get_service_summary`") {
+			t.Errorf("--toolsets=%s get_log_services names unavailable get_service_summary", spec)
+		}
+	}
+}
+
 func TestSectionViolationsCatchBadFixtures(t *testing.T) {
 	served := map[string]bool{"get_logs": true, "get_traces": true}
 	good := "Intro.\n\n## When to use\nx\n\n## When not to use\n- Use `get_traces`\n\n## Pairs well with\n- `get_logs`\n\n## Output shape\nJSON.\n\n## Known traps\nNone.\n"

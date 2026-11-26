@@ -320,7 +320,7 @@ Supports PostgreSQL, MySQL, MongoDB, Redis, Aerospike, and anything else OTel tr
 - **`prometheus_label_values`** — Label values for a given series
 - **`prometheus_labels`** — All labels available for a series
 
-Point these at a different datasource/cluster than the default by setting `LAST9_DATASOURCE`, or per call with `datasource`. An omitted `datasource` uses the default; a unique near miss that the matcher considers safe (such as a case variant) uses its closest match. A missing, extra or transposed letter is not guaranteed to resolve automatically: even one candidate can require confirmation when the edit could affect a region or environment code. Looser or ambiguous matches return candidates and run no query (not an error); unknown names return an error. An additional content block names the datasource used whenever you did not name it exactly. `get_metric_status`, `get_service_profile`, and `get_apm_service_deviations` resolve `datasource` the same way.
+Point these at a different datasource/cluster than the default by setting `LAST9_DATASOURCE`, or per call with `datasource`. An omitted `datasource` uses the default; a unique near miss that the matcher considers safe (such as a case variant) uses its closest match. A missing, extra or transposed letter is not guaranteed to resolve automatically: even one candidate can require confirmation when the edit could affect a region or environment code. Looser or ambiguous matches return candidates and run no query (not an error); unknown names return an error. An additional content block names the datasource used whenever you did not name it exactly. `get_metric_status`, `get_service_profile`, `get_apm_service_deviations`, and `get_log_services` resolve `datasource` the same way.
 
 ### Logs
 
@@ -328,6 +328,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`get_service_logs`** — Log lines for a service, filterable by severity and body content; summarized over 20 lines unless `response_mode` is `raw`
 - **`get_log_patterns`** — A service's log lines in a window clustered into message templates, with count, first/last seen, severity mix and a sample
 - **`get_emerging_log_patterns`** — Log templates that are new, increased, decreased or disappeared against a baseline window, with counts from both
+- **`get_log_services`** — Services that send logs (log-only ones included), with envs, indexes, last seen, an exact `total`, and optional name-similarity ranking
 - **`get_log_attributes`** — Global catalog of attributes in the log schema for a time window
 - **`get_log_attributes_for_pipeline`** — Log fields actually present for an in-progress pipeline (scoped discovery), each with its exact `filter_field`
 - **`get_drop_rules`** — Log drop rules from [Last9 Control Plane](https://last9.io/control-plane)
@@ -730,6 +731,15 @@ Takes every `get_log_patterns` parameter (the time range is the current window),
 - `change_factor` (number, optional): Frequency ratio, greater than 1, that a pattern seen in both windows must reach (`increased`) or fall to the inverse of (`decreased`). Default: 2.
 
 Both thresholds must hold, so a high-volume template whose frequency did not change by `change_factor` is never reported. Returns only changed templates (`new`, `increased`, `decreased`, `disappeared`) with `current` and `baseline` counts; `unchanged_patterns` counts templates in both windows that changed by less than `change_factor`, and `below_min_count_patterns` counts changes dropped for having fewer than `min_count` lines. Frequencies are compared per minute while both samples hold every matching line, per minute estimated from a capped sample's exact `total_matching_lines`, and otherwise as shares of the sample, where `increased`/`decreased` describe composition rather than rate (`comparison_basis`). An empty `patterns` list means no change above both thresholds, not unchanged logs: rarer changes are counted in `below_min_count_patterns`, and a window with `sample_limit_reached` compares samples, not whole windows.
+
+### get_log_services
+
+- `query` (string, optional): Name to rank by; adds `similarity` (percent, word order ignored) and sorts by it, then name.
+- `env` / `index` (string, optional): Exact environment and physical index filters.
+- `lookback_minutes` (number, optional): Default: 60. With no window and nothing found, retried once over 4 days (noted).
+- `start_time_iso` / `end_time_iso` (string, optional)
+- `limit` (integer, optional): 1-100, default 10. `total` counts every matching service; `truncated` says `limit` cut the rows.
+- `datasource` (string, optional)
 
 ### get_log_attributes
 

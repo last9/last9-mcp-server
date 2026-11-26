@@ -67,6 +67,10 @@ func datasourceToolsUnderTest(t *testing.T, extra ...models.DatasourceInfo) (map
 			res, _, err := NewPromqlLabelsHandler(client, cfg)(ctx, req, PromqlLabelsArgs{MatchQuery: "up", LookbackMinutes: 5, Datasource: ds})
 			return res, err
 		},
+		"get_log_services": func(ctx context.Context, ds string) (*mcp.CallToolResult, error) {
+			res, _, err := NewGetLogServicesHandler(client, cfg)(ctx, req, GetLogServicesArgs{LookbackMinutes: 5, Datasource: ds})
+			return res, err
+		},
 		"get_metric_status": func(ctx context.Context, ds string) (*mcp.CallToolResult, error) {
 			res, _, err := NewGetMetricStatusHandler(client, cfg)(ctx, req, GetMetricStatusArgs{Metric: "up", WindowMinutes: 5, Datasource: ds})
 			return res, err

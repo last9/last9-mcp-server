@@ -651,6 +651,12 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Description: prompts.GetLogAttributesDescription,
 	}, logs.NewGetLogAttributesHandler(client, cfg)))
 
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "get_log_services",
+		Annotations: readOnlyTool("Get Log Services"),
+		Description: prompts.GetLogServicesDescription,
+	}, apm.NewGetLogServicesHandler(client, cfg)))
+
 	// Register pipeline-scoped log attributes tool (discovers fields actually
 	// present for a given pipeline via the series endpoint)
 	reg(registerIfAllowed(server, gate, &mcp.Tool{

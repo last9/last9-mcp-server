@@ -58,6 +58,7 @@ var promptDescriptionFiles = map[string]string{
 	"get_exceptions.md":                    prompts.GetExceptionsInstructions,
 	"get_flamegraph.md":                    prompts.GetFlamegraphDescription,
 	"get_log_attributes.md":                prompts.GetLogAttributesDescription,
+	"get_log_services.md":                  prompts.GetLogServicesDescription,
 	"get_log_attributes_for_pipeline.md":   prompts.GetLogAttributesForPipelineDescription,
 	"get_log_patterns.md":                  prompts.GetLogPatternsDescription,
 	"get_logs_base.md":                     prompts.GetLogsDescription,
