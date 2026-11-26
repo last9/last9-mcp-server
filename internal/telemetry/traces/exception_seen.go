@@ -2,15 +2,15 @@ package traces
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
 	"strings"
 	"time"
 
+	"last9-mcp/internal/last9api"
+	apitraces "last9-mcp/internal/last9api/traces"
 	"last9-mcp/internal/models"
-	"last9-mcp/internal/utils"
 )
 
 const exceptionSeenMaxPoints = 60
@@ -23,11 +23,6 @@ type exceptionSeen struct {
 type exceptionSeenQuery struct {
 	BaseFilter string
 	Start, End time.Time
-}
-
-type promRangeSeries []struct {
-	Metric map[string]string `json:"metric"`
-	Values [][]any           `json:"values"`
 }
 
 // exceptionSeriesKey identifies a series by the labels get_exceptions groups by, raw, so range
@@ -56,18 +51,17 @@ func fetchExceptionSeen(ctx context.Context, client *http.Client, cfg models.Con
 	stepSeconds := int64(step / time.Second)
 	query := buildExceptionsPromQL(q.BaseFilter, fmt.Sprintf("%dm", int64(step/time.Minute)))
 
-	resp, err := utils.MakePromRangeAPIQuery(ctx, client, query, q.Start.Unix(), q.End.Unix(), cfg, utils.PromResolution{Step: stepSeconds})
+	series, err := apitraces.QueryPromRange(ctx, last9api.NewClient(client, cfg), apitraces.QueryPromRangeInput{
+		Query:    query,
+		Start:    q.Start.Unix(),
+		End:      q.End.Unix(),
+		Step:     stepSeconds,
+		ReadURL:  cfg.PrometheusReadURL,
+		Username: cfg.PrometheusUsername,
+		Password: cfg.PrometheusPassword,
+	})
 	if err != nil {
 		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("range query returned HTTP %d", resp.StatusCode)
-	}
-
-	var series promRangeSeries
-	if err := json.NewDecoder(resp.Body).Decode(&series); err != nil {
-		return nil, fmt.Errorf("decode range query: %w", err)
 	}
 
 	seenByKey := make(map[string]exceptionSeen, len(series))
