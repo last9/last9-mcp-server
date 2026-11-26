@@ -22,7 +22,8 @@ var argumentChecks = map[string]argumentCheck{
 	"get_dashboard":            withoutToolContext(dashboards.PrepareGetDashboardArguments),
 	"create_dashboard":         withoutToolContext(dashboards.PrepareDashboardArguments),
 	"update_dashboard":         withoutToolContext(dashboards.PrepareDashboardArguments),
-	"get_entity_kpis":          checkEntityKPIArguments,
+	"get_entity_kpis":          checkEntityNameArguments("get_entity_kpis"),
+	"get_entity_alert_rules":   checkEntityNameArguments("get_entity_alert_rules"),
 }
 
 func checkServiceEnvironmentArguments(raw json.RawMessage) (json.RawMessage, error) {
@@ -41,15 +42,17 @@ func withoutToolContext(check func(json.RawMessage) (json.RawMessage, error)) ar
 	}
 }
 
-func checkEntityKPIArguments(raw json.RawMessage, served func(string) bool) (json.RawMessage, error) {
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(raw, &fields) == nil && fields["entity_name"] != nil {
-		if served("get_alert_groups") {
-			return nil, errors.New("Unknown argument entity_name. Call get_alert_groups with alert_group_name, select the intended group, then pass its id as entity_id to get_entity_kpis.")
+func checkEntityNameArguments(tool string) argumentCheck {
+	return func(raw json.RawMessage, served func(string) bool) (json.RawMessage, error) {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) == nil && fields["entity_name"] != nil {
+			if served("get_alert_groups") {
+				return nil, errors.New("Unknown argument entity_name. Call get_alert_groups with alert_group_name, select the intended group, then pass its id as entity_id to " + tool + ".")
+			}
+			return nil, errors.New("Unknown argument entity_name. Ask for the alert group ID, then pass it as entity_id to " + tool + ".")
 		}
-		return nil, errors.New("Unknown argument entity_name. Ask for the alert group ID, then pass it as entity_id to get_entity_kpis.")
+		return raw, nil
 	}
-	return raw, nil
 }
 
 func argumentCheckMiddleware(tool string, check argumentCheck, served func(string) bool) mcp.Middleware {
