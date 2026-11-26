@@ -172,6 +172,41 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 	}
 }
 
+func TestGetExceptionsHandler_OmitsUnsafeReferenceURL(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != constants.EndpointPromQueryInstant {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, `[]`)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL:         server.URL,
+		PrometheusReadURL:  "https://prom.example.com",
+		PrometheusUsername: "prom-user",
+		PrometheusPassword: "prom-pass",
+		OrgSlug:            "acme",
+		ClusterID:          "cluster-1",
+		TokenManager: &auth.TokenManager{
+			AccessToken: "test-access-token",
+			ExpiresAt:   time.Now().Add(24 * time.Hour),
+		},
+	}
+
+	handler := NewGetExceptionsHandler(server.Client(), cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetExceptionsArgs{
+		ServiceName: `api"web`,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if _, found := result.Meta["reference_url"]; found {
+		t.Fatalf("unsafe filter published reference_url: %v", result.Meta)
+	}
+}
+
 func TestGetExceptionsHandler_UsesDashboardShapeForEnvOnlyFilters(t *testing.T) {
 	endTime := time.Date(2026, 1, 20, 12, 0, 0, 0, time.UTC)
 	startTime := endTime.Add(-60 * time.Minute)
