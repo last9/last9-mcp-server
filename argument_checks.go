@@ -17,12 +17,21 @@ import (
 // which stops at the first violation; each check names every problem it finds.
 var argumentChecks = map[string]argumentCheck{
 	"get_service_environments": withoutToolContext(checkServiceEnvironmentArguments),
+	"get_traces":               withoutToolContext(checkGetTracesArguments),
 	"get_alert_config":         withoutToolContext(alerting.PrepareAlertConfigArguments),
 	"did_you_mean":             withoutToolContext(suggest.PrepareArguments),
 	"get_dashboard":            withoutToolContext(dashboards.PrepareGetDashboardArguments),
 	"create_dashboard":         withoutToolContext(dashboards.PrepareDashboardArguments),
 	"update_dashboard":         withoutToolContext(dashboards.PrepareDashboardArguments),
 	"get_entity_kpis":          checkEntityKPIArguments,
+}
+
+func checkGetTracesArguments(raw json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil && fields["response_mode"] != nil {
+		return nil, errors.New("response_mode is not supported by get_traces. Do not infer which result was intended: to retrieve matching span rows, omit response_mode and preserve the existing tracejson_query stages and time bounds; to obtain a count or percentile, append an aggregate stage and preserve the existing filters and time bounds.")
+	}
+	return raw, nil
 }
 
 func checkServiceEnvironmentArguments(raw json.RawMessage) (json.RawMessage, error) {
