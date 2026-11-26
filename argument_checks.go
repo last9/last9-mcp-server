@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
@@ -20,12 +21,13 @@ import (
 // argumentChecks run before the SDK validates a tool's arguments against its schema,
 // which stops at the first violation; each check names every problem it finds.
 var argumentChecks = map[string]func(json.RawMessage) (json.RawMessage, error){
-	"get_alert_config":        alerting.PrepareAlertConfigArguments,
-	"did_you_mean":            suggest.PrepareArguments,
-	"get_dashboard":           dashboards.PrepareGetDashboardArguments,
-	"create_dashboard":        dashboards.PrepareDashboardArguments,
-	"update_dashboard":        dashboards.PrepareDashboardArguments,
-	"prometheus_label_values": checkLabelValueArguments,
+	"get_service_environments": checkServiceEnvironmentArguments,
+	"get_alert_config":         alerting.PrepareAlertConfigArguments,
+	"did_you_mean":             suggest.PrepareArguments,
+	"get_dashboard":            dashboards.PrepareGetDashboardArguments,
+	"create_dashboard":         dashboards.PrepareDashboardArguments,
+	"update_dashboard":         dashboards.PrepareDashboardArguments,
+	"prometheus_label_values":  checkLabelValueArguments,
 }
 
 func checkLabelValueArguments(raw json.RawMessage) (json.RawMessage, error) {
@@ -59,6 +61,14 @@ func checkLabelValueArguments(raw json.RawMessage) (json.RawMessage, error) {
 		return nil, fmt.Errorf("unexpected additional properties %q. %s", unknown, labelHint)
 	case fields["matches"] != nil:
 		return nil, fmt.Errorf("unexpected additional properties %q. %s", unknown, selectorHint)
+	}
+	return raw, nil
+}
+
+func checkServiceEnvironmentArguments(raw json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil && fields["service"] != nil {
+		return nil, errors.New("unknown argument \"service\". Use service_name to filter environments by service.")
 	}
 	return raw, nil
 }
