@@ -170,6 +170,9 @@ var CreateAlertFromChartDescription string
 //go:embed descriptions/get_log_attributes.md
 var GetLogAttributesDescription string
 
+//go:embed descriptions/get_log_services.md
+var GetLogServicesDescription string
+
 //go:embed descriptions/get_log_attributes_for_pipeline.md
 var GetLogAttributesForPipelineDescription string
 

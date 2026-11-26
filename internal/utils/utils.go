@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -94,24 +95,25 @@ func GetTimeRangeAt(params map[string]interface{}, defaultLookbackMinutes int, n
 	endTime = now.UTC()
 
 	// First check if lookback_minutes is provided
-	lookbackMinutes := defaultLookbackMinutes
+	lookbackMinutes := float64(defaultLookbackMinutes)
 	if rawLookback, ok := params["lookback_minutes"]; ok {
 		switch l := rawLookback.(type) {
 		case float64:
-			lookbackMinutes = int(l)
-		case int:
 			lookbackMinutes = l
+		case int:
+			lookbackMinutes = float64(l)
 		case int64:
-			lookbackMinutes = int(l)
+			lookbackMinutes = float64(l)
 		default:
 			return time.Time{}, time.Time{}, fmt.Errorf("Invalid lookback_minutes %q. Use minutes as a number, for example 60 for 1h or 390 for 6h30m", rawLookback)
 		}
 	}
-	if lookbackMinutes < 1 {
-		return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes must be at least 1. Use minutes as a number, for example 60 for 1h")
+	lookbackDuration, err := durationFromLookbackMinutes(lookbackMinutes)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
 	}
 	// Default start time based on lookback
-	startTime = endTime.Add(time.Duration(-lookbackMinutes) * time.Minute)
+	startTime = endTime.Add(-lookbackDuration)
 
 	startTimeStr, hasStart := params["start_time_iso"].(string)
 	endTimeStr, hasEnd := params["end_time_iso"].(string)
@@ -134,9 +136,9 @@ func GetTimeRangeAt(params map[string]interface{}, defaultLookbackMinutes int, n
 
 	// Apply lookback defaults only when one explicit boundary is provided.
 	if hasStart && startTimeStr != "" && (!hasEnd || endTimeStr == "") {
-		endTime = startTime.Add(time.Duration(lookbackMinutes) * time.Minute)
+		endTime = startTime.Add(lookbackDuration)
 	} else if hasEnd && endTimeStr != "" && (!hasStart || startTimeStr == "") {
-		startTime = endTime.Add(time.Duration(-lookbackMinutes) * time.Minute)
+		startTime = endTime.Add(-lookbackDuration)
 	}
 
 	// Validate time range
@@ -145,6 +147,21 @@ func GetTimeRangeAt(params map[string]interface{}, defaultLookbackMinutes int, n
 	}
 
 	return startTime, endTime, nil
+}
+
+func durationFromLookbackMinutes(minutes float64) (time.Duration, error) {
+	if math.IsNaN(minutes) || math.IsInf(minutes, 0) {
+		return 0, fmt.Errorf("lookback_minutes must be finite")
+	}
+	if minutes < 1 {
+		return 0, fmt.Errorf("lookback_minutes must be at least 1. Use minutes as a number, for example 60 for 1h")
+	}
+	nanoseconds := minutes * float64(time.Minute)
+	maxDuration := math.Nextafter(math.Ldexp(1, 63), 0)
+	if nanoseconds > maxDuration {
+		return 0, fmt.Errorf("lookback_minutes is too large; use explicit start_time_iso and end_time_iso for this window")
+	}
+	return time.Duration(nanoseconds), nil
 }
 
 func MakePromInstantAPIQuery(ctx context.Context, client *http.Client, promql string, endTimeParam int64, cfg models.Config) (*http.Response, error) {
