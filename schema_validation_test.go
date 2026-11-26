@@ -60,6 +60,9 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 	}{
 		{name: "pattern body correction", tool: "get_log_patterns", arguments: map[string]any{"service_name": "example", "body": "timeout"}, wantText: `Use body_filters with an array of message substrings, for example ["timeout"]`},
 		{name: "pattern service correction", tool: "get_log_patterns", arguments: map[string]any{"service": "example"}, wantText: "Use service_name"},
+		{name: "pattern service case correction", tool: "get_log_patterns", arguments: map[string]any{"Service": "example"}, wantText: `Unknown argument "Service". Use service_name`},
+		{name: "pattern redundant service alias", tool: "get_log_patterns", arguments: map[string]any{"service": "example", "service_name": "example"}, wantText: `Unknown argument "service". service_name is already set; remove service.`},
+		{name: "pattern redundant body alias", tool: "get_log_patterns", arguments: map[string]any{"service_name": "example", "body": "timeout", "body_filters": []string{"timeout"}}, wantText: `Unknown argument "body". body_filters is already set; remove body.`},
 		{name: "all pattern corrections", tool: "get_log_patterns", arguments: map[string]any{"service": "example", "body": "timeout", "other": 1}, wantText: `Use body_filters with an array of message substrings, for example ["timeout"]. Unknown argument "other". Unknown argument "service". Use service_name`},
 		{
 			name:      "service trace span name correction",

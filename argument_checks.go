@@ -63,16 +63,31 @@ func checkServiceEnvironmentArguments(raw json.RawMessage) (json.RawMessage, err
 func logPatternArgumentCheck(properties map[string]any) argumentCheck {
 	return withoutToolContext(func(raw json.RawMessage) (json.RawMessage, error) {
 		var fields map[string]json.RawMessage
-		if json.Unmarshal(raw, &fields) != nil || (fields["service"] == nil && fields["body"] == nil) {
+		if json.Unmarshal(raw, &fields) != nil {
+			return raw, nil
+		}
+		hasAlias := false
+		for key := range fields {
+			hasAlias = hasAlias || strings.EqualFold(key, "service") || strings.EqualFold(key, "body")
+		}
+		if !hasAlias {
 			return raw, nil
 		}
 		var problems []string
 		for key := range fields {
-			switch key {
+			switch strings.ToLower(key) {
 			case "service":
-				problems = append(problems, `Unknown argument "service". Use service_name to select the service.`)
+				if fields["service_name"] != nil {
+					problems = append(problems, fmt.Sprintf(`Unknown argument %q. service_name is already set; remove %s.`, key, key))
+				} else {
+					problems = append(problems, fmt.Sprintf(`Unknown argument %q. Use service_name to select the service.`, key))
+				}
 			case "body":
-				problems = append(problems, `Unknown argument "body". Use body_filters with an array of message substrings, for example ["timeout"].`)
+				if fields["body_filters"] != nil {
+					problems = append(problems, fmt.Sprintf(`Unknown argument %q. body_filters is already set; remove %s.`, key, key))
+				} else {
+					problems = append(problems, fmt.Sprintf(`Unknown argument %q. Use body_filters with an array of message substrings, for example ["timeout"].`, key))
+				}
 			default:
 				if _, known := properties[key]; !known {
 					problems = append(problems, fmt.Sprintf("Unknown argument %q.", key))
