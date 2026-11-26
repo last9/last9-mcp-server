@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - More tools now return a Last9 dashboard deep link in `_meta.reference_url`: Metrics for `prometheus_range_query`, `prometheus_instant_query`, `get_metric_status` and `get_change_events`; Logs for `get_log_attributes`; Traces for `get_trace_attributes`, `get_trace_attribute_values` and `get_trace_attribute_deviations`; Discover Services for `get_service_environments`, `get_service_profile` and `describe_alert_chart`; Discover Databases for `get_database_server_metrics`; Alert Groups for `get_alert_rule_state`; Profiles for `get_profile_services`, `get_profile_summary`, `get_flamegraph` and `get_top_functions`; and Grafana for `grafana_search_dashboards`, `grafana_list_folders`, `grafana_list_folder_dashboards` and `grafana_get_dashboard`. Metrics links use the cluster of the datasource the query ran on (#572).
 
 ### Fixed
+- `get_entity_alert_rules` now explains how to resolve an unsupported `entity_name` through `get_alert_groups` and retry with the selected group ID (#663).
 - Metric label lookups and `get_log_services` reject non-finite or duration-overflowing `lookback_minutes` before querying; huge JSON numbers previously wrapped into unrelated query windows (#612).
 - When a caller supplies `entity_name`, `get_entity_kpis` now explains how to find the intended alert group and retry with its ID (#645).
 - `did_you_mean` accepts `value` for `query` and `kind` for `type` before argument validation. Conflicting spellings return an error before any lookup (#642).
