@@ -135,3 +135,24 @@ func TestServiceOperationsLimit(t *testing.T) {
 		}
 	}
 }
+
+func TestServiceOperationsErrorPercentIndependentOfThroughput(t *testing.T) {
+	for _, category := range []string{"server", "db", "http", "messaging"} {
+		t.Run(category, func(t *testing.T) {
+			low := map[string]string{"span_name": "low-volume"}
+			high := map[string]string{"span_name": "high-volume"}
+			resp := callOpsSummaryHandler(t, map[string]string{
+				category + "_throughput": opsSumRows(opsSumRow(low, "2"), opsSumRow(high, "200")),
+				category + "_errorRate":  opsSumRows(opsSumRow(low, "25"), opsSumRow(high, "25")),
+			}, "")
+			if len(resp.Operations) != 2 {
+				t.Fatalf("got %d operations, want 2", len(resp.Operations))
+			}
+			for _, op := range resp.Operations {
+				if op.ErrorPercent != 25 || op.ErrorRate != 25 {
+					t.Errorf("%s at %g rpm: error_percent=%g, error_rate=%g, want 25 for both", op.Name, op.Throughput, op.ErrorPercent, op.ErrorRate)
+				}
+			}
+		})
+	}
+}
