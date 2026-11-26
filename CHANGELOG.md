@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Dashboard preview and validation now execute log queries against the physical or rehydration index selected by `index_type` and `index_name`. Dashboard tools reject a misplaced query-level `index` before it can silently select the default (#671).
+- When a caller passes `span_name`, `get_service_traces` shows how to retry with `get_traces` while keeping the original scope, time window, and limit (#659).
+- Passing `rule_id` to `describe_alert_chart` now returns the chart inputs and directs callers to inspect the rule with `get_alert_config` when available (#662).
 - `get_service_operations_summary` reports the measured failure percentage directly in `error_percent`. Dividing it by throughput a second time inflated percentages at low traffic and understated them at high traffic (#650).
 - Metric label lookups and `get_log_services` reject non-finite or duration-overflowing `lookback_minutes` before querying; huge JSON numbers previously wrapped into unrelated query windows (#612).
 - When a caller supplies `entity_name`, `get_entity_kpis` now explains how to find the intended alert group and retry with its ID (#645).
