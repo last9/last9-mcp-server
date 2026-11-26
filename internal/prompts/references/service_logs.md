@@ -10,9 +10,9 @@ Use this tool to fetch log entries for a single service using structured filters
 
 ## HTTP status
 
-Pass `http_status_class` (`2xx`/`3xx`/`4xx`/`5xx`) or `http_status_code` (`500`, `401`). The server discovers the status field for this service/env/window via the same path as `get_log_attributes_for_pipeline`.
+Pass `http_status_class` (`2xx`/`3xx`/`4xx`/`5xx`) or `http_status_code` (`500`, `401`). The server discovers the status field in at most the final hour of the requested window via the same path as `get_log_attributes_for_pipeline`.
 
-If discovery finds no status-like field, or more than one, the tool errors and asks you to pass `http_status_field` with the exact logjson field (e.g. `attributes['http.status_code']`). Do not guess a field name.
+If you know the exact status field, pass `http_status_field`. If discovery finds none, inspect a small raw sample for the same service, environment and index in the interval of interest. If the status is in the body, parse its token with `get_logs`. If discovery finds several candidates, choose the intended field from the list.
 
 `http_status_code` takes precedence over `http_status_class` when both are set.
 
