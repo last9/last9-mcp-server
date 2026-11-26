@@ -21,6 +21,7 @@ import (
 var argumentChecks = map[string]argumentCheck{
 	"get_metric_status":        checkMetricStatusArguments,
 	"get_service_environments": withoutToolContext(checkServiceEnvironmentArguments),
+	"get_traces":               withoutToolContext(checkGetTracesArguments),
 	"get_service_traces":       withoutToolContext(checkServiceTraceArguments),
 	"get_alert_config":         withoutToolContext(alerting.PrepareAlertConfigArguments),
 	"did_you_mean":             withoutToolContext(suggest.PrepareArguments),
@@ -50,6 +51,14 @@ func checkServiceTraceArguments(raw json.RawMessage) (json.RawMessage, error) {
 		return nil, errors.New(`unexpected additional properties ["span_name"]. Call get_traces with tracejson_query=[{"type":"filter","query":{"$and":[{"$eq":["ServiceName","<service_name>"]},{"$eq":["SpanName","<span_name>"]}]}}]. ` +
 			`For trace_id, replace the ServiceName condition with {"$eq":["TraceId","<trace_id>"]}. If env was set, add {"$eq":["resources['deployment.environment']","<env>"]} to $and. ` +
 			`Preserve the time window and limit. For omitted values, set lookback_minutes to 60 for service_name or 4320 for trace_id, and limit to 10.`)
+	}
+	return raw, nil
+}
+
+func checkGetTracesArguments(raw json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil && fields["response_mode"] != nil {
+		return nil, errors.New("response_mode is not supported by get_traces. Do not infer which result was intended: to retrieve matching span rows, omit response_mode and preserve the existing tracejson_query stages and time bounds; to obtain a count or percentile, append an aggregate stage and preserve the existing filters and time bounds.")
 	}
 	return raw, nil
 }
