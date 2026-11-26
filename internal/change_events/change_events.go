@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -70,39 +69,44 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 
 		api := last9api.NewClient(client, cfg)
 		datasource := prom.Datasource{ReadURL: cfg.PrometheusReadURL, Username: cfg.PrometheusUsername, Password: cfg.PrometheusPassword}
-		filter := changeEventSelectors(GetChangeEventsArgs{})[0]
-		availableEventNames, err := prom.GetLabelValues(ctx, api, prom.GetLabelValuesInput{
-			Datasource: datasource, Label: "event_name", Matches: []string{filter}, Timestamp: endTimeParam, Window: endTimeParam - startTimeParam,
-		})
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to fetch available event names: %w", err)
-		}
-		availableEventNames = slices.DeleteFunc(availableEventNames, func(name string) bool { return name == "" })
-		sort.Strings(availableEventNames)
-		if availableEventNames == nil {
-			availableEventNames = []string{}
-		}
-
 		// The instant transport uses whole seconds. Cover both endpoints, then
 		// discard any fringe samples outside the caller's precise bounds.
 		evaluation := endTimeParam
 		if endTime.Nanosecond() != 0 {
 			evaluation++
 		}
-		selectors := changeEventSelectors(args)
-		changeEvents := []TimeSeries{}
-		for _, selector := range selectors {
+		queryEvents := func(selector string) ([]TimeSeries, error) {
 			raw, err := prom.QueryInstantRaw(ctx, api, prom.QueryInstantInput{
 				Datasource: datasource, Query: fmt.Sprintf("%s[%ds]", selector, evaluation-startTimeParam+1), Timestamp: evaluation,
 			})
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to query change events: %w", err)
+				return nil, fmt.Errorf("failed to query change events: %w", err)
 			}
 			series, err := parseChangeEventsTimeSeries(raw, startTime, endTime)
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to parse change events: %w", err)
+				return nil, fmt.Errorf("failed to parse change events: %w", err)
 			}
-			changeEvents = append(changeEvents, series...)
+			return series, nil
+		}
+
+		unfilteredSelector := changeEventSelectors(GetChangeEventsArgs{})[0]
+		unfilteredEvents, err := queryEvents(unfilteredSelector)
+		if err != nil {
+			return nil, nil, err
+		}
+		availableEventNames := eventNames(unfilteredEvents)
+
+		selectors := changeEventSelectors(args)
+		changeEvents := unfilteredEvents
+		if len(selectors) != 1 || selectors[0] != unfilteredSelector {
+			changeEvents = []TimeSeries{}
+			for _, selector := range selectors {
+				series, err := queryEvents(selector)
+				if err != nil {
+					return nil, nil, err
+				}
+				changeEvents = append(changeEvents, series...)
+			}
 		}
 
 		result := map[string]any{
@@ -134,6 +138,21 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 			},
 		}, nil, nil
 	}
+}
+
+func eventNames(events []TimeSeries) []string {
+	names := make(map[string]struct{})
+	for _, event := range events {
+		if name := event.Metric["event_name"]; name != "" {
+			names[name] = struct{}{}
+		}
+	}
+	result := make([]string, 0, len(names))
+	for name := range names {
+		result = append(result, name)
+	}
+	sort.Strings(result)
+	return result
 }
 
 const (

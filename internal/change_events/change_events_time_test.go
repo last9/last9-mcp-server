@@ -54,8 +54,9 @@ func TestGetChangeEventsHandler_InvalidTimeOrder(t *testing.T) {
 
 func TestGetChangeEventsHandler_ExplicitRangePrecedence(t *testing.T) {
 	type promReq struct {
-		Timestamp int64 `json:"timestamp"`
-		Window    int64 `json:"window"`
+		Timestamp int64  `json:"timestamp"`
+		Window    int64  `json:"window"`
+		Query     string `json:"query"`
 	}
 	captured := make([]promReq, 0, 2)
 
@@ -97,18 +98,17 @@ func TestGetChangeEventsHandler_ExplicitRangePrecedence(t *testing.T) {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if len(captured) != 2 {
-		t.Fatalf("expected 2 upstream requests (event_name discovery, then range), got %d", len(captured))
+	if len(captured) != 1 {
+		t.Fatalf("expected one unfiltered sample request, got %d", len(captured))
 	}
 
 	// endTimeParam = "2026-02-09T16:04:05Z" = 1770653045
-	// window = endTimeParam - startTimeParam = 3600
-	for i, req := range captured {
+	for _, req := range captured {
 		if req.Timestamp != 1770653045 {
 			t.Fatalf("timestamp = %d, want %d (= endTimeParam)", req.Timestamp, int64(1770653045))
 		}
-		if i == 0 && req.Window != 3600 {
-			t.Fatalf("window = %d, want %d", req.Window, int64(3600))
+		if !strings.HasSuffix(req.Query, "[3601s]") {
+			t.Fatalf("query = %q, want a 3601-second range vector", req.Query)
 		}
 	}
 }
@@ -160,20 +160,15 @@ func TestFractionalEndKeepsReturnedEventNameDiscoverable(t *testing.T) {
 // events exist.
 func TestGetChangeEventsHandler_FiltersUseStoredMetricLabels(t *testing.T) {
 	var capturedQuery string
-	capturedLabels := map[string]bool{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		_ = r.Body.Close()
 		var req struct {
 			Query string `json:"query"`
-			Label string `json:"label"`
 		}
 		_ = json.Unmarshal(body, &req)
 		if req.Query != "" {
 			capturedQuery = req.Query
-		}
-		if req.Label != "" {
-			capturedLabels[req.Label] = true
 		}
 		w.Header().Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
 		_, _ = io.WriteString(w, `[]`)
@@ -198,13 +193,6 @@ func TestGetChangeEventsHandler_FiltersUseStoredMetricLabels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
-	if !capturedLabels["event_name"] {
-		t.Fatalf("available_event_names must read label \"event_name\", got %v", capturedLabels)
-	}
-	// event_type is never stamped, so reading it surfaces unmatchable names.
-	if capturedLabels["event_type"] {
-		t.Fatalf("available_event_names must not read label \"event_type\", got %v", capturedLabels)
-	}
 	for _, want := range []string{
 		`service="checkout"`,
 		`deployment_environment="prod"`,
@@ -218,30 +206,18 @@ func TestGetChangeEventsHandler_FiltersUseStoredMetricLabels(t *testing.T) {
 
 // event_name is stamped on every series, so an event_type value could never be
 // matched by a filter.
-func TestGetChangeEventsHandler_DiscoveryReadsEventNameOnly(t *testing.T) {
-	var capturedMatches []string
+func TestGetChangeEventsHandler_DiscoveryReadsUnfilteredEventSamples(t *testing.T) {
+	var capturedQueries []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		_ = r.Body.Close()
 		w.Header().Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
-		if r.URL.Path != constants.EndpointPromLabelValues {
-			_, _ = io.WriteString(w, `[]`)
-			return
-		}
 		var req struct {
-			Label   string   `json:"label"`
-			Matches []string `json:"matches"`
+			Query string `json:"query"`
 		}
 		_ = json.Unmarshal(body, &req)
-		capturedMatches = append(capturedMatches, req.Matches...)
-		switch req.Label {
-		case "event_name":
-			_, _ = io.WriteString(w, `["deployment"]`)
-		case "event_type":
-			_, _ = io.WriteString(w, `["rollback"]`)
-		default:
-			_, _ = io.WriteString(w, `[]`)
-		}
+		capturedQueries = append(capturedQueries, req.Query)
+		_, _ = io.WriteString(w, `[{"metric":{"event_name":"deployment","event_type":"rollback"},"values":[[1770653045,"1"]]}]`)
 	}))
 	defer server.Close()
 
@@ -255,7 +231,8 @@ func TestGetChangeEventsHandler_DiscoveryReadsEventNameOnly(t *testing.T) {
 
 	handler := NewGetChangeEventsHandler(server.Client(), cfg)
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetChangeEventsArgs{
-		LookbackMinutes: 30,
+		StartTimeISO: "2026-02-09T15:04:05Z",
+		EndTimeISO:   "2026-02-09T16:04:05Z",
 	})
 	if err != nil {
 		t.Fatalf("handler error: %v", err)
@@ -274,10 +251,10 @@ func TestGetChangeEventsHandler_DiscoveryReadsEventNameOnly(t *testing.T) {
 
 	// Discovery must carry the query's exclusions, or it offers names that
 	// every filtered call then rejects.
-	joined := strings.Join(capturedMatches, " ")
+	joined := strings.Join(capturedQueries, " ")
 	for _, want := range []string{excludeBackupEvents, excludeScheduledSearchEvents} {
 		if !strings.Contains(joined, want) {
-			t.Fatalf("event_name discovery must apply %s, got matches %v", want, capturedMatches)
+			t.Fatalf("event_name discovery must apply %s, got queries %v", want, capturedQueries)
 		}
 	}
 }
