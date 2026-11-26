@@ -378,13 +378,10 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 					if valStr, ok := er.Value[1].(string); ok {
 						if errorRateVal, err := strconv.ParseFloat(valStr, 64); err == nil {
 							operation.ErrorRate = errorRateVal
+							operation.ErrorPercent = errorRateVal
 						}
 					}
 				}
-			}
-			// Calculate error percentage
-			if operation.Throughput > 0 {
-				operation.ErrorPercent = (operation.ErrorRate / operation.Throughput) * 100
 			}
 			operationsSummary = append(operationsSummary, operation)
 		}
@@ -438,13 +435,10 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 					if valStr, ok := er.Value[1].(string); ok {
 						if errorRateVal, err := strconv.ParseFloat(valStr, 64); err == nil {
 							operation.ErrorRate = errorRateVal
+							operation.ErrorPercent = errorRateVal
 						}
 					}
 				}
-			}
-			// Calculate error percentage
-			if operation.Throughput > 0 {
-				operation.ErrorPercent = (operation.ErrorRate / operation.Throughput) * 100
 			}
 			operationsSummary = append(operationsSummary, operation)
 		}
@@ -498,13 +492,10 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 					if valStr, ok := er.Value[1].(string); ok {
 						if errorRateVal, err := strconv.ParseFloat(valStr, 64); err == nil {
 							operation.ErrorRate = errorRateVal
+							operation.ErrorPercent = errorRateVal
 						}
 					}
 				}
-			}
-			// Calculate error percentage
-			if operation.Throughput > 0 {
-				operation.ErrorPercent = (operation.ErrorRate / operation.Throughput) * 100
 			}
 			operationsSummary = append(operationsSummary, operation)
 		}
@@ -561,13 +552,10 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 					if valStr, ok := er.Value[1].(string); ok {
 						if errorRateVal, err := strconv.ParseFloat(valStr, 64); err == nil {
 							operation.ErrorRate = errorRateVal
+							operation.ErrorPercent = errorRateVal
 						}
 					}
 				}
-			}
-			// Calculate error percentage
-			if operation.Throughput > 0 {
-				operation.ErrorPercent = (operation.ErrorRate / operation.Throughput) * 100
 			}
 			operationsSummary = append(operationsSummary, operation)
 		}

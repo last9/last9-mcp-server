@@ -9,9 +9,8 @@
 		- service name
 		- environment
 		- throughput in requests per minute (rpm)
-		- error rate in requests per minute (rpm)
 		- response time in milliseconds (p95, p90, p50 quantiles, avg, and max)
-		- error percentage
+		- `error_percent`: percentage of operations that failed; `error_rate` carries the same percentage
 	Database operations contain additional fields:
 		- db_system: Database system (e.g., mysql, postgres, etc.)
 		- net_peer_name: Database host or connection string
