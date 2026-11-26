@@ -48,29 +48,53 @@ func exceptionSeenStep(window time.Duration) time.Duration {
 // one-step bucket has occurrences.
 func fetchExceptionSeen(ctx context.Context, client *http.Client, cfg models.Config, q exceptionSeenQuery) (map[string]exceptionSeen, error) {
 	step := exceptionSeenStep(q.End.Sub(q.Start))
-	stepSeconds := int64(step / time.Second)
-	windowSeconds := q.End.Unix() - q.Start.Unix()
-	windowSeconds = (windowSeconds + stepSeconds - 1) / stepSeconds * stepSeconds
-	query := buildExceptionsPromQL(q.BaseFilter, fmt.Sprintf("%dm", int64(step/time.Minute)))
+	window := q.End.Sub(q.Start)
+	fullWindow := window / step * step
+	requests := make([]prom.QueryInput, 0, 2)
+	if fullWindow > 0 {
+		requests = append(requests, exceptionSeenRangeRequest(cfg, q.BaseFilter, q.Start.Add(fullWindow), fullWindow, step))
+	}
+	if tail := window - fullWindow; tail > 0 {
+		requests = append(requests, exceptionSeenRangeRequest(cfg, q.BaseFilter, q.End, 0, tail))
+	}
 
-	series, err := prom.QuerySeries(ctx, last9api.NewClient(client, cfg), prom.QueryInput{
+	apiClient := last9api.NewClient(client, cfg)
+	seenByKey := make(map[string]exceptionSeen)
+	for _, request := range requests {
+		series, err := prom.QuerySeries(ctx, apiClient, request)
+		if err != nil {
+			return nil, err
+		}
+		reduceExceptionSeen(seenByKey, series, q)
+	}
+	return seenByKey, nil
+}
+
+func exceptionSeenRangeRequest(cfg models.Config, baseFilter string, end time.Time, window, step time.Duration) prom.QueryInput {
+	return prom.QueryInput{
 		Datasource: prom.Datasource{
 			ReadURL:  cfg.PrometheusReadURL,
 			Username: cfg.PrometheusUsername,
 			Password: cfg.PrometheusPassword,
 		},
-		Query:     query,
-		Timestamp: q.End.Unix(),
-		Window:    windowSeconds,
-		Step:      stepSeconds,
-	})
-	if err != nil {
-		return nil, err
+		Query:     buildExceptionsPromQL(baseFilter, prometheusDuration(step)),
+		Timestamp: end.Unix(),
+		Window:    int64(window / time.Second),
+		Step:      int64(step / time.Second),
 	}
+}
 
-	seenByKey := make(map[string]exceptionSeen, len(series))
+func prometheusDuration(d time.Duration) string {
+	if d%time.Minute == 0 {
+		return fmt.Sprintf("%dm", int64(d/time.Minute))
+	}
+	return fmt.Sprintf("%ds", int64(d/time.Second))
+}
+
+func reduceExceptionSeen(seenByKey map[string]exceptionSeen, series []prom.Series, q exceptionSeenQuery) {
 	for _, s := range series {
-		var seen exceptionSeen
+		key := exceptionSeriesKey(s.Metric)
+		seen := seenByKey[key]
 		for _, point := range s.Values {
 			if len(point) < 2 || !isOccurrenceCount(parsePromNumber(point[1])) {
 				continue
@@ -87,10 +111,9 @@ func fetchExceptionSeen(ctx context.Context, client *http.Client, cfg models.Con
 			}
 		}
 		if !seen.First.IsZero() {
-			seenByKey[exceptionSeriesKey(s.Metric)] = seen
+			seenByKey[key] = seen
 		}
 	}
-	return seenByKey, nil
 }
 
 // isOccurrenceCount accepts only finite positive counts. Prometheus can serve "NaN" and "+Inf";
