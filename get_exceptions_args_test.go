@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"last9-mcp/internal/constants"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -23,7 +25,9 @@ func TestGetExceptionsOptionalNulls(t *testing.T) {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
-		requests <- got
+		if r.URL.Path == constants.EndpointPromQueryInstant {
+			requests <- got
+		}
 		_, _ = w.Write([]byte("[]"))
 	}))
 	defer server.Close()

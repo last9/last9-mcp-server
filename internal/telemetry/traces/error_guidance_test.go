@@ -94,7 +94,9 @@ func TestGetExceptionsHandler_EmptyResultIncludesRetryGuidance(t *testing.T) {
 	endTime := time.Date(2026, 1, 20, 12, 0, 0, 0, time.UTC)
 	startTime := endTime.Add(-60 * time.Minute)
 	client := &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Path != constants.EndpointPromQueryInstant {
+		switch r.URL.Path {
+		case constants.EndpointPromQueryInstant, constants.EndpointPromQuery:
+		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
 		return traceJSONResponse(http.StatusOK, `[]`), nil
