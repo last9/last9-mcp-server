@@ -24,6 +24,19 @@ var argumentChecks = map[string]argumentCheck{
 	"create_dashboard":         withoutToolContext(dashboards.PrepareDashboardArguments),
 	"update_dashboard":         withoutToolContext(dashboards.PrepareDashboardArguments),
 	"get_entity_kpis":          checkEntityKPIArguments,
+	"describe_alert_chart":     checkDescribeAlertChartArguments,
+}
+
+func checkDescribeAlertChartArguments(raw json.RawMessage, served func(string) bool) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil && fields["rule_id"] != nil {
+		hint := "Unknown argument rule_id. To inspect a chart, omit rule_id and supply surface, chart_key, and service_name."
+		if served("get_alert_config") {
+			hint += " To inspect an existing rule, call get_alert_config with the same rule_id."
+		}
+		return nil, errors.New(hint)
+	}
+	return raw, nil
 }
 
 func checkServiceTraceArguments(raw json.RawMessage) (json.RawMessage, error) {
