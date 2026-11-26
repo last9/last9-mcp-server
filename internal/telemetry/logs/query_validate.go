@@ -16,7 +16,7 @@ var namedCapturePattern = regexp.MustCompile(`\(\?P<([^>]+)>`)
 // validNamedCaptureName is the Go regexp named-group alphabet (no `$`, hyphens, etc.).
 var validNamedCaptureName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-var quotedJSONParseKey = regexp.MustCompile("^`[A-Za-z0-9_.@/-]+`$")
+var quotedJSONParseKey = regexp.MustCompile("^`[A-Za-z0-9_@][A-Za-z0-9_.@/-]*`$")
 
 // Validation error categories for fail-closed log pipeline checks.
 // Stable strings — safe for metrics labels; never include customer payloads.
