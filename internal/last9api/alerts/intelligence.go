@@ -33,6 +33,7 @@ type IntelligenceRequest struct {
 	Severity          string         `json:"severity,omitempty"`
 	GroupID           string         `json:"group_id,omitempty"`
 	Description       string         `json:"description,omitempty"`
+	OnNoData          string         `json:"on_no_data,omitempty"`
 	last9api.CreatedVia
 }
 

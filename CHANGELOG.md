@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `get_alerts` accepts a positive `limit` across alert instances after state filtering, preserving rule and instance order and reporting how many matches were shown (#641).
+- `get_alerts` accepts an optional `state` of `firing` or `normal` to return only matching instances within the requested window, grouped by rule (#635).
+- Alert rule tools now expose the per-rule `on_no_data` setting: create and chart-create can enable it, full updates preserve it when omitted or clear it explicitly, and both alert read tools show when it is enabled. `patch_alert` points callers to `update_alert` until the partial-update API supports the field (#577).
+- Added the read-only `describe_metric` tool (`metrics` and `investigate` toolsets): for a bare `trace_*` metric name it reads the Discover Services recipe catalog from the Last9 API (GET `/recipes/metrics`) and returns the query the dashboard runs, with `unit`, `filters`, chart and list queries with their rollups, and `forbidden_functions`, so agents stop querying these per-minute gauges with `rate`, `sum_over_time(...)/300` or `histogram_quantile`. When the catalog cannot be read, `trace_endpoint_count` and `trace_service_response_time` return the old manual example marked `legacy_heuristic`; other names return `uncovered` without a query, and non-`trace_*` names make no API call. PromQL selectors are rejected (#589).
 - `get_log_services` lists services that send logs, including log-only services `get_service_summary` never shows: rows of `{name, envs, indexes, last_seen}` plus `total`, `returned` and `truncated`, filterable by `env` and `index`, with `limit` (default 10, at most 100) and the shared `datasource` resolution. A `query` adds a `similarity` percent per row that ignores word order and sorts by it. An empty default window retries over 4 days and says so; an empty or incomplete lookup is never reported as proof a service is absent (#612).
 - `get_databases` accepts an optional exact `db_system` filter and counts only matching trace-backed and metrics-only rows (#632).
 - `get_database_queries` accepts an optional exact `service_name` filter, so throughput, latency and errors for a shared database can be scoped to one calling service (#630).
@@ -20,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `get_alert_rule_state` skips queued HTTP requests after cancellation, a sampling timeout, or an upstream error by checking the shared context when a sampling slot opens (#655).
+- `get_service_operations_summary` reports the measured failure percentage directly in `error_percent`. Dividing it by throughput a second time inflated percentages at low traffic and understated them at high traffic (#650).
 - Metric label lookups and `get_log_services` reject non-finite or duration-overflowing `lookback_minutes` before querying; huge JSON numbers previously wrapped into unrelated query windows (#612).
 - When a caller supplies `entity_name`, `get_entity_kpis` now explains how to find the intended alert group and retry with its ID (#645).
 - `did_you_mean` accepts `value` for `query` and `kind` for `type` before argument validation. Conflicting spellings return an error before any lookup (#642).
