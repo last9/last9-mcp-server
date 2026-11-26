@@ -25,6 +25,7 @@ var argumentChecks = map[string]argumentCheck{
 	"get_alert_config":         withoutToolContext(alerting.PrepareAlertConfigArguments),
 	"did_you_mean":             withoutToolContext(suggest.PrepareArguments),
 	"get_dashboard":            withoutToolContext(dashboards.PrepareGetDashboardArguments),
+	"get_alert_groups":         withoutToolContext(checkAlertGroupArguments),
 	"create_dashboard":         withoutToolContext(dashboards.PrepareDashboardArguments),
 	"update_dashboard":         withoutToolContext(dashboards.PrepareDashboardArguments),
 	"get_entity_kpis":          checkEntityNameArguments("get_entity_kpis"),
@@ -70,6 +71,14 @@ func checkServiceEnvironmentArguments(raw json.RawMessage) (json.RawMessage, err
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) == nil && fields["service"] != nil {
 		return nil, errors.New("unknown argument \"service\". Use service_name to filter environments by service.")
+	}
+	return raw, nil
+}
+
+func checkAlertGroupArguments(raw json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil && fields["query"] != nil {
+		return nil, errors.New(`validating "arguments": validating root: unexpected additional properties ["query"]. To search by group name, pass alert_group_name. For team or tier, use team or tier.`)
 	}
 	return raw, nil
 }
