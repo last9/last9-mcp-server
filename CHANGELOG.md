@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - JSON parse stages accept backtick-quoted source keys that begin with `@`, such as `` `@timestamp` ``, while preserving the requested output alias; an unquoted leading-`@` key is rejected with the quoted correction before any upstream call (#684).
+- When `get_metric_status` rejects `metric_name_pattern`, its error shows how to check matching series with a selector and how to list metric names when discovery is available (#665).
 - `get_log_patterns` now explains how to replace unsupported `service` and `body` arguments with `service_name` and an array of substrings in `body_filters`, including both corrections when needed (#660).
 - When `did_you_mean` receives `service_name`, its error now shows how to look up a service by name and how to scope a log attribute lookup to a service (#656).
 - Dashboard writes reject query execution modes outside `range` and `instant`. `validate_dashboard` flags an invalid mode on the affected target before executing its expression (#670).
