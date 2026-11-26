@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"unicode"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -83,13 +84,36 @@ func (b *Builder) BuildTracesLink(fromMs, toMs int64, pipeline any, traceID, spa
 	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteTraces, params.Encode())
 }
 
-// BuildExceptionsLink creates an exceptions dashboard deep link
-func (b *Builder) BuildExceptionsLink(fromMs, toMs int64) string {
+type ExceptionsLinkOptions struct {
+	FromMs      int64
+	ToMs        int64
+	ServiceName string
+	Env         string
+}
+
+// BuildExceptionsLink creates an exceptions dashboard deep link.
+func (b *Builder) BuildExceptionsLink(options ExceptionsLinkOptions) string {
+	if options.ServiceName != "" && safeFilterValue(options.ServiceName) == "" ||
+		options.Env != "" && safeFilterValue(options.Env) == "" {
+		return ""
+	}
 	params := url.Values{}
-	params.Set("from", fmt.Sprintf("%d", fromMs/1000))
-	params.Set("to", fmt.Sprintf("%d", toMs/1000))
+	params.Set("from", fmt.Sprintf("%d", options.FromMs/1000))
+	params.Set("to", fmt.Sprintf("%d", options.ToMs/1000))
 	if b.clusterID != "" {
 		params.Set("cluster", b.clusterID)
+	}
+	var filters []string
+	if service := safeFilterValue(options.ServiceName); service != "" {
+		filters = append(filters, fmt.Sprintf(`service_name="%s"`, service))
+	}
+	if exceptionEnv := safeFilterValue(options.Env); exceptionEnv != "" {
+		filters = append(filters, fmt.Sprintf(`deployment_environment="%s"`, exceptionEnv))
+	}
+	if len(filters) > 0 {
+		if filterValue, err := json.Marshal(filters); err == nil {
+			params.Set("filter", string(filterValue))
+		}
 	}
 	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteExceptions, params.Encode())
 }
@@ -151,6 +175,13 @@ func (b *Builder) BuildDropRulesLink() string {
 // apmCatalogEnvRegexMeta are characters that make an env argument a pattern,
 // not a single catalog filter value.
 const apmCatalogEnvRegexMeta = `.*+?()[]{}|\^$`
+
+func safeFilterValue(value string) string {
+	if value == "" || strings.ContainsRune(value, '"') || strings.IndexFunc(value, unicode.IsControl) >= 0 {
+		return ""
+	}
+	return value
+}
 
 // APMCatalogEnvExact returns a catalog filter for callers that pass an exact
 // environment name (not a PromQL regex). Only empty and ".*" are screened out;
