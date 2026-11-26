@@ -17,11 +17,22 @@ import (
 // which stops at the first violation; each check names every problem it finds.
 var argumentChecks = map[string]func(json.RawMessage) (json.RawMessage, error){
 	"get_service_environments": checkServiceEnvironmentArguments,
+	"get_service_traces":       checkServiceTraceArguments,
 	"get_alert_config":         alerting.PrepareAlertConfigArguments,
 	"did_you_mean":             suggest.PrepareArguments,
 	"get_dashboard":            dashboards.PrepareGetDashboardArguments,
 	"create_dashboard":         dashboards.PrepareDashboardArguments,
 	"update_dashboard":         dashboards.PrepareDashboardArguments,
+}
+
+func checkServiceTraceArguments(raw json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil && fields["span_name"] != nil {
+		return nil, errors.New(`unexpected additional properties ["span_name"]. Call get_traces with tracejson_query=[{"type":"filter","query":{"$and":[{"$eq":["ServiceName","<service_name>"]},{"$eq":["SpanName","<span_name>"]}]}}]. ` +
+			`For trace_id, replace the ServiceName condition with {"$eq":["TraceId","<trace_id>"]}. If env was set, add {"$eq":["resources['deployment.environment']","<env>"]} to $and. ` +
+			`Preserve the time window and limit. For omitted values, set lookback_minutes to 60 for service_name or 4320 for trace_id, and limit to 10.`)
+	}
+	return raw, nil
 }
 
 func checkServiceEnvironmentArguments(raw json.RawMessage) (json.RawMessage, error) {
