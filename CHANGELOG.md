@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `get_alert_config` accepts `alert_group_id` to return rules belonging to one exact group, including when several groups share a name (#661).
 - `get_log_services` lists services that send logs, including log-only services `get_service_summary` never shows: rows of `{name, envs, indexes, last_seen}` plus `total`, `returned` and `truncated`, filterable by `env` and `index`, with `limit` (default 10, at most 100) and the shared `datasource` resolution. A `query` adds a `similarity` percent per row that ignores word order and sorts by it. An empty default window retries over 4 days and says so; an empty or incomplete lookup is never reported as proof a service is absent (#612).
 - `get_databases` accepts an optional exact `db_system` filter and counts only matching trace-backed and metrics-only rows (#632).
 - `get_database_queries` accepts an optional exact `service_name` filter, so throughput, latency and errors for a shared database can be scoped to one calling service (#630).
