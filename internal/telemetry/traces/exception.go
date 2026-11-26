@@ -179,8 +179,8 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 				"count":                  exceptionData.Count,
 			}
 			if seen, ok := seenByKey[exceptionData.SeriesKey]; ok {
-				row["first_seen"] = seen.First.Format(time.RFC3339)
-				row["last_seen"] = seen.Last.Format(time.RFC3339)
+				row["first_seen"] = seen.First.Format(time.RFC3339Nano)
+				row["last_seen"] = seen.Last.Format(time.RFC3339Nano)
 			}
 			exceptions = append(exceptions, row)
 		}
