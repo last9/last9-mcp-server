@@ -59,6 +59,12 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 		wantText  string // substring the surfaced error content should contain
 	}{
 		{
+			name:      "service environment filter correction",
+			tool:      "get_service_environments",
+			arguments: map[string]any{"service": "example"},
+			wantText:  "Use service_name to filter environments by service",
+		},
+		{
 			name:      "unknown parameter name",
 			tool:      "prometheus_labels",
 			arguments: map[string]any{"selector": "up"},

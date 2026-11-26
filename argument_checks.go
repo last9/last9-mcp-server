@@ -16,12 +16,21 @@ import (
 // argumentChecks run before the SDK validates a tool's arguments against its schema,
 // which stops at the first violation; each check names every problem it finds.
 var argumentChecks = map[string]argumentCheck{
-	"get_alert_config": withoutToolContext(alerting.PrepareAlertConfigArguments),
-	"did_you_mean":     withoutToolContext(suggest.PrepareArguments),
-	"get_dashboard":    withoutToolContext(dashboards.PrepareGetDashboardArguments),
-	"create_dashboard": withoutToolContext(dashboards.PrepareDashboardArguments),
-	"update_dashboard": withoutToolContext(dashboards.PrepareDashboardArguments),
-	"get_entity_kpis":  checkEntityKPIArguments,
+	"get_service_environments": withoutToolContext(checkServiceEnvironmentArguments),
+	"get_alert_config":         withoutToolContext(alerting.PrepareAlertConfigArguments),
+	"did_you_mean":             withoutToolContext(suggest.PrepareArguments),
+	"get_dashboard":            withoutToolContext(dashboards.PrepareGetDashboardArguments),
+	"create_dashboard":         withoutToolContext(dashboards.PrepareDashboardArguments),
+	"update_dashboard":         withoutToolContext(dashboards.PrepareDashboardArguments),
+	"get_entity_kpis":          checkEntityKPIArguments,
+}
+
+func checkServiceEnvironmentArguments(raw json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil && fields["service"] != nil {
+		return nil, errors.New("unknown argument \"service\". Use service_name to filter environments by service.")
+	}
+	return raw, nil
 }
 
 type argumentCheck func(json.RawMessage, func(string) bool) (json.RawMessage, error)
