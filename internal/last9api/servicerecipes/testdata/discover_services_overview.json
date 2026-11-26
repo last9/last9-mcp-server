@@ -1,0 +1,42 @@
+{
+  "scope": "discover_services_overview",
+  "recipes": [
+    {
+      "indicator": "throughput",
+      "metric": "trace_endpoint_count",
+      "unit": "rpm",
+      "filters": ["span_kind='SPAN_KIND_SERVER'"],
+      "forbidden_functions": ["rate", "irate", "increase", "histogram_quantile"],
+      "queries": {
+        "chart": {
+          "rollup": "none",
+          "promql": "((sum by (service_name, http_status_code)(trace_endpoint_count{span_kind='SPAN_KIND_SERVER', http_status_code!=''}) or sum by (service_name)(trace_endpoint_count{span_kind='SPAN_KIND_SERVER', rpc_system='grpc'})) default 0)"
+        },
+        "list": {
+          "rollup": "quantile_over_time(0.95)",
+          "promql": "quantile_over_time(0.95, sum by (service_name)(trace_endpoint_count{service_name=~'.*'})[{duration}m])"
+        }
+      },
+      "recommended_query": "(sum(trace_endpoint_count{span_kind='SPAN_KIND_SERVER'})) default 0"
+    },
+    {
+      "indicator": "response_time_p95",
+      "metric": "trace_service_response_time",
+      "unit": "ms",
+      "filters": ["quantile='p95'"],
+      "quantile_label": "p95",
+      "forbidden_functions": ["rate", "irate", "increase", "histogram_quantile"],
+      "queries": {
+        "chart": {
+          "rollup": "none",
+          "promql": "sum by (quantile)(trace_service_response_time{quantile='p95'})"
+        },
+        "list": {
+          "rollup": "quantile_over_time(0.95)",
+          "promql": "quantile_over_time(0.95, sum by (service_name) (trace_service_response_time{quantile=\"p95\"})[{duration}m])"
+        }
+      },
+      "recommended_query": "sum by (quantile)(trace_service_response_time{quantile='p95'})"
+    }
+  ]
+}

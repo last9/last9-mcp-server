@@ -116,6 +116,29 @@ func TestCreateAlertFromChartExplicitScoreUnitThreshold(t *testing.T) { // AE4
 	}
 }
 
+func TestCreateAlertFromChartSendsOnNoData(t *testing.T) {
+	var gotBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			gotBody, _ = io.ReadAll(r.Body)
+		}
+		_, _ = w.Write([]byte(`{"id":"rule-9","group_id":"grp-2"}`))
+	}))
+	defer server.Close()
+
+	handler := NewCreateAlertFromChartHandler(server.Client(), createAlertFromChartTestConfig(server.URL))
+	_, _, err := handler(context.Background(), nil, CreateAlertFromChartArgs{
+		Surface: "discover-service", ChartKey: "error_rate", ServiceName: "checkout",
+		SignalKey: "error_ratio", Name: "checkout-errors", OnNoData: "alert",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(gotBody, []byte(`"on_no_data":"alert"`)) {
+		t.Fatalf("on_no_data not passed through: %s", gotBody)
+	}
+}
+
 func float64Ptr(v float64) *float64 { return &v }
 
 func TestCreateAlertFromChartLocalValidationRejects(t *testing.T) {
@@ -137,6 +160,7 @@ func TestCreateAlertFromChartLocalValidationRejects(t *testing.T) {
 		name   string
 		mutate func(*CreateAlertFromChartArgs)
 	}{
+		{"invalid on_no_data", func(a *CreateAlertFromChartArgs) { a.OnNoData = "resolve" }},
 		{"empty name", func(a *CreateAlertFromChartArgs) { a.Name = "   " }},
 		{"negative threshold", func(a *CreateAlertFromChartArgs) { a.Threshold = float64Ptr(-0.5) }},
 		{"bad_minutes exceeds eval_window", func(a *CreateAlertFromChartArgs) {
