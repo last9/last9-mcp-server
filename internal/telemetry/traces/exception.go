@@ -183,10 +183,19 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 
 		// Build deep link URL
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		dashboardURL := dlBuilder.BuildExceptionsLink(startMs, endMs)
+		dashboardURL := dlBuilder.BuildExceptionsLink(deeplink.ExceptionsLinkOptions{
+			FromMs:      startMs,
+			ToMs:        endMs,
+			ServiceName: args.ServiceName,
+			Env:         args.Env,
+		})
+		var meta mcp.Meta
+		if dashboardURL != "" {
+			meta = deeplink.ToMeta(dashboardURL)
+		}
 
 		return &mcp.CallToolResult{
-			Meta: deeplink.ToMeta(dashboardURL),
+			Meta: meta,
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(jsonData),
