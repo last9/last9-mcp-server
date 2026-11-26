@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `get_traces` and the `last9://reference/tracejson` manual show grouping by a transform output with its qualified key, `"groupby":{"attributes['endpoint']":"endpoint"}`; the bare output name is rejected with HTTP 400 (#613).
+- `did_you_mean` accepts `value` for `query` and `kind` for `type` before argument validation. Conflicting spellings return an error before any lookup (#642).
 - `get_service_environments` now names `service_name` in its validation error when a caller sends `service`, so the caller can retry with the intended filter (#643).
 - `get_alert_config` accepts `alert_rule_id` as an alias for `rule_id` and explains how to find the triggering rule when passed an `alert_id` (#622).
 - `get_dashboard` accepts the `dashboard_id` returned by `patch_dashboard` as an alias for `id` and rejects conflicting IDs before lookup (#623).
