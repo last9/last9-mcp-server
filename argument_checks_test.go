@@ -9,10 +9,45 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"last9-mcp/internal/toolsets"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const grafanaPanel = `{"title":"p","type":"timeseries","gridPos":{"x":0,"y":0,"w":24,"h":8},"queries":[{"legend":"l","query":"up","type":"prometheus"}]}`
+
+func TestEntityKPIArgumentGuidanceNamesOnlyServedTools(t *testing.T) {
+	for _, tc := range []struct {
+		toolsets string
+		contains []string
+		absent   []string
+	}{
+		{
+			toolsets: "alerts",
+			contains: []string{"Call get_alert_groups with alert_group_name", "pass its id as entity_id to get_entity_kpis"},
+		},
+		{
+			toolsets: "investigate",
+			contains: []string{"Ask for the alert group ID", "pass it as entity_id to get_entity_kpis"},
+			absent:   []string{"get_alert_groups"},
+		},
+	} {
+		t.Run(tc.toolsets, func(t *testing.T) {
+			filter, err := toolsets.NewFilter(tc.toolsets, false, "")
+			if err != nil {
+				t.Fatalf("NewFilter: %v", err)
+			}
+			cfg := testToolRegistrationConfig()
+			cfg.ToolFilter = filter
+			session := connectTestSession(t, cfg, http.DefaultClient)
+			result := callRegisteredTool(t, session, &mcp.CallToolParams{
+				Name:      "get_entity_kpis",
+				Arguments: json.RawMessage(`{"entity_name":"example"}`),
+			})
+			assertToolError(t, result, toolErrorExpectation{contains: tc.contains, absent: tc.absent})
+		})
+	}
+}
 
 func TestDashboardWritesNameEveryWrongFieldBeforeSchemaValidation(t *testing.T) {
 	session := newInMemoryClientSession(t)

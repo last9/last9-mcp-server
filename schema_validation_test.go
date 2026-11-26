@@ -71,6 +71,12 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 			wantText:  "selector",
 		},
 		{
+			name:      "KPI group name recovery",
+			tool:      "get_entity_kpis",
+			arguments: map[string]any{"entity_name": "example"},
+			wantText:  "Call get_alert_groups with alert_group_name, select the intended group, then pass its id as entity_id to get_entity_kpis.",
+		},
+		{
 			name:      "wrong value type",
 			tool:      "prometheus_instant_query",
 			arguments: map[string]any{"query": 123},

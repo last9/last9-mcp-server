@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `get_service_operations_summary` reports the measured failure percentage directly in `error_percent`. Dividing it by throughput a second time inflated percentages at low traffic and understated them at high traffic (#650).
+- When a caller supplies `entity_name`, `get_entity_kpis` now explains how to find the intended alert group and retry with its ID (#645).
 - `did_you_mean` accepts `value` for `query` and `kind` for `type` before argument validation. Conflicting spellings return an error before any lookup (#642).
 - `get_service_environments` now names `service_name` in its validation error when a caller sends `service`, so the caller can retry with the intended filter (#643).
 - `get_alert_config` accepts `alert_rule_id` as an alias for `rule_id` and explains how to find the triggering rule when passed an `alert_id` (#622).
