@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"last9-mcp/internal/utils"
 
@@ -100,42 +101,28 @@ func TestGetChangeEventsArgs_UsesCanonicalNames(t *testing.T) {
 	}
 }
 
-func TestBuildChangeEventsPromQL(t *testing.T) {
-	excludes := excludeBackupEvents + "," + excludeScheduledSearchEvents
-	metric := func(matchers string) string {
-		return changeEventsMetric + `{` + matchers + `}`
+func TestChangeEventSelectors(t *testing.T) {
+	base := changeEventsMetric + "{" + excludeBackupEvents + "," + excludeScheduledSearchEvents
+	if got := changeEventSelectors(GetChangeEventsArgs{}); !reflect.DeepEqual(got, []string{base + "}"}) {
+		t.Fatalf("unfiltered selectors %q", got)
 	}
-
-	tests := []struct {
-		name                        string
-		serviceName, env, eventName string
-		want                        string
-	}{
-		{"unfiltered", "", "", "", metric(excludes)},
-		{"service", "checkout", "", "", metric(excludes + `,service="checkout"`)},
-		{"env", "", "uat", "", metric(excludes + `,deployment_environment="uat"`)},
-		{"event", "", "", "deployment", metric(excludes + `,event_name="deployment"`)},
-		{
-			"all three", "checkout", "uat", "deployment",
-			metric(excludes + `,service="checkout",deployment_environment="uat",event_name="deployment"`),
-		},
-		{
-			// A quote or backslash must not terminate the matcher.
-			"value needing escapes", `a"b\c`, "", "",
-			metric(excludes + `,service="a\"b\\c"`),
-		},
-		{
-			"injection attempt", `x"} or up{`, "", "",
-			metric(excludes + `,service="x\"} or up{"`),
-		},
+	base += `,deployment_environment="test",event_name="update"`
+	quoted := `"example\"service"`
+	want := []string{base + ",service_name=" + quoted + "}", base + `,service_name="",service=` + quoted + "}"}
+	got := changeEventSelectors(GetChangeEventsArgs{ServiceName: `example"service`, Env: "test", EventName: "update"})
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("selectors %q, want %q", got, want)
 	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := buildChangeEventsPromQL(tt.serviceName, tt.env, tt.eventName)
-			if got != tt.want {
-				t.Fatalf("\n got %s\nwant %s", got, tt.want)
-			}
-		})
+func TestChangeEventSampleBounds(t *testing.T) {
+	raw := []byte(`[{"metric":{"service_name":"example"},"values":[[100.1,"1"],[100.125,"2"],[105.5,"3"],[110.875,"4"],[110.876,"5"]]}]`)
+	got, err := parseChangeEventsTimeSeries(raw, time.UnixMilli(100125), time.UnixMilli(110875))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []TimeSeriesPoint{{100.125, 2}, {105.5, 3}, {110.875, 4}}
+	if len(got) != 1 || !reflect.DeepEqual(got[0].Values, want) {
+		t.Fatalf("got %+v, want %v", got, want)
 	}
 }

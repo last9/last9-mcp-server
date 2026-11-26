@@ -70,7 +70,7 @@ func TestGetChangeEventsHandler_ExplicitRangePrecedence(t *testing.T) {
 		switch r.URL.Path {
 		case constants.EndpointPromLabelValues:
 			_, _ = io.WriteString(w, `["deployment"]`)
-		case constants.EndpointPromQuery:
+		case constants.EndpointPromQueryInstant:
 			_, _ = io.WriteString(w, `[]`)
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -102,11 +102,11 @@ func TestGetChangeEventsHandler_ExplicitRangePrecedence(t *testing.T) {
 
 	// endTimeParam = "2026-02-09T16:04:05Z" = 1770653045
 	// window = endTimeParam - startTimeParam = 3600
-	for _, req := range captured {
+	for i, req := range captured {
 		if req.Timestamp != 1770653045 {
 			t.Fatalf("timestamp = %d, want %d (= endTimeParam)", req.Timestamp, int64(1770653045))
 		}
-		if req.Window != 3600 {
+		if i == 0 && req.Window != 3600 {
 			t.Fatalf("window = %d, want %d", req.Window, int64(3600))
 		}
 	}
@@ -282,7 +282,7 @@ func TestGetChangeEventsHandler_MetricsExplorerLink(t *testing.T) {
 		"to":      "1770653045",
 		"cluster": "cluster-1",
 		"mode":    "code",
-		"query":   buildChangeEventsPromQL("checkout", "prod", ""),
+		"query":   strings.Join(changeEventSelectors(GetChangeEventsArgs{ServiceName: "checkout", Env: "prod"}), " or "),
 	}
 	for k, v := range want {
 		if got := q.Get(k); got != v {

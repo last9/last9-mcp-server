@@ -39,7 +39,7 @@ func TestInputValidationRejectsBeforeAnyRequest(t *testing.T) {
 	change := recentChange()
 	event := &change_events.TimeSeries{
 		Metric: map[string]string{"service": "checkout"},
-		Values: []change_events.TimeSeriesPoint{{Timestamp: uint64(change.Unix()), Value: 1}},
+		Values: []change_events.TimeSeriesPoint{{Timestamp: float64(change.Unix()), Value: 1}},
 	}
 	cases := map[string]struct {
 		args AnalyzeChangeImpactArgs
@@ -73,10 +73,10 @@ func TestChangeEventFormUsesServiceEnvAndEarliestPoint(t *testing.T) {
 	change := recentChange()
 	f := &fakeLast9{change: change, baseline: flatWindow(), after: flatWindow()}
 	report, err := runTool(t, f, AnalyzeChangeImpactArgs{ChangeEvent: &change_events.TimeSeries{
-		Metric: map[string]string{"service": "checkout", "deployment_environment": "prod", "event_name": "deploy"},
+		Metric: map[string]string{"service_name": "checkout", "service": "legacy", "deployment_environment": "prod", "event_name": "deploy"},
 		Values: []change_events.TimeSeriesPoint{
-			{Timestamp: uint64(change.Add(time.Minute).Unix()), Value: 1},
-			{Timestamp: uint64(change.Unix()), Value: 1},
+			{Timestamp: float64(change.Add(time.Minute).Unix()), Value: 1},
+			{Timestamp: float64(change.Unix()), Value: 1},
 		},
 	}})
 	if err != nil {
