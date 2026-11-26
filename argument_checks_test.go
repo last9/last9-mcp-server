@@ -20,7 +20,7 @@ func TestMetricStatusPatternGuidance(t *testing.T) {
 	for _, discovery := range []bool{true, false} {
 		cfg := testToolRegistrationConfig()
 		cfg.ToolFilter.Tools = toolsets.Set{"get_metric_status": {}}
-		want := toolErrorExpectation{contains: []string{"metric_name_pattern", "metric", `{__name__=~"example_.+"}`, "window_minutes"}, absent: []string{"private-pattern"}}
+		want := toolErrorExpectation{contains: []string{"metric_name_pattern", "metric", `{__name__=~"example_.+"}`, "window_minutes", "narrower selector", "smaller window"}, absent: []string{"private-pattern"}}
 		if discovery {
 			cfg.ToolFilter.Tools["prometheus_label_values"] = struct{}{}
 			want.contains = append(want.contains, "prometheus_label_values", "__name__", "match_query")

@@ -54,7 +54,7 @@ func checkServiceTraceArguments(raw json.RawMessage) (json.RawMessage, error) {
 func checkMetricStatusArguments(raw json.RawMessage, served func(string) bool) (json.RawMessage, error) {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) == nil && fields["metric_name_pattern"] != nil {
-		hint := `Unknown argument metric_name_pattern. To check status across matching series, put your regex in a PromQL selector in metric (for example {__name__=~"example_.+"}) and supply window_minutes.`
+		hint := `Unknown argument metric_name_pattern. To check status across matching series, put your regex in a PromQL selector in metric (for example {__name__=~"example_.+"}) and supply window_minutes. Use a narrower selector or smaller window if the query is too broad.`
 		if served("prometheus_label_values") {
 			hint += ` To list matching metric names, call prometheus_label_values with label "__name__" and the selector in match_query.`
 		}
