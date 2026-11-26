@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - More tools now return a Last9 dashboard deep link in `_meta.reference_url`: Metrics for `prometheus_range_query`, `prometheus_instant_query`, `get_metric_status` and `get_change_events`; Logs for `get_log_attributes`; Traces for `get_trace_attributes`, `get_trace_attribute_values` and `get_trace_attribute_deviations`; Discover Services for `get_service_environments`, `get_service_profile` and `describe_alert_chart`; Discover Databases for `get_database_server_metrics`; Alert Groups for `get_alert_rule_state`; Profiles for `get_profile_services`, `get_profile_summary`, `get_flamegraph` and `get_top_functions`; and Grafana for `grafana_search_dashboards`, `grafana_list_folders`, `grafana_list_folder_dashboards` and `grafana_get_dashboard`. Metrics links use the cluster of the datasource the query ran on (#572).
 
 ### Fixed
+- `did_you_mean` accepts `value` for `query` and `kind` for `type` before argument validation. Conflicting spellings return an error before any lookup (#642).
 - `get_service_environments` now names `service_name` in its validation error when a caller sends `service`, so the caller can retry with the intended filter (#643).
 - `get_alert_config` accepts `alert_rule_id` as an alias for `rule_id` and explains how to find the triggering rule when passed an `alert_id` (#622).
 - `get_dashboard` accepts the `dashboard_id` returned by `patch_dashboard` as an alias for `id` and rejects conflicting IDs before lookup (#623).
