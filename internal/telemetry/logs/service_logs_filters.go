@@ -150,7 +150,12 @@ func resolveHTTPStatusField(ctx context.Context, client *http.Client, cfg models
 	}
 
 	if len(matches) == 0 {
-		return "", nil, fmt.Errorf("no HTTP status field found for this service/env/window; pass http_status_field with the logjson field to use (e.g. attributes['http.status_code'])")
+		coverage := ""
+		if startSec > startTime.Unix() {
+			coverage = " Earlier logs in the requested window were not checked."
+		}
+		return "", nil, fmt.Errorf("no HTTP status field found during discovery from %s to %s.%s If you know the structured field, pass http_status_field. Otherwise inspect a small raw sample from the relevant interval with the same service, environment and index, then parse the status from Body if present",
+			time.Unix(startSec, 0).UTC().Format(time.RFC3339), time.Unix(endSec, 0).UTC().Format(time.RFC3339), coverage)
 	}
 	if len(matches) > 1 {
 		names := make([]string, 0, len(matches))
