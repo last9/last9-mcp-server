@@ -19,6 +19,7 @@ import (
 // argumentChecks run before the SDK validates a tool's arguments against its schema,
 // which stops at the first violation; each check names every problem it finds.
 var argumentChecks = map[string]argumentCheck{
+	"get_metric_status":        checkMetricStatusArguments,
 	"get_service_environments": withoutToolContext(checkServiceEnvironmentArguments),
 	"get_service_traces":       withoutToolContext(checkServiceTraceArguments),
 	"get_alert_config":         withoutToolContext(alerting.PrepareAlertConfigArguments),
@@ -26,7 +27,6 @@ var argumentChecks = map[string]argumentCheck{
 	"get_dashboard":            withoutToolContext(dashboards.PrepareGetDashboardArguments),
 	"create_dashboard":         withoutToolContext(dashboards.PrepareDashboardArguments),
 	"update_dashboard":         withoutToolContext(dashboards.PrepareDashboardArguments),
-	"get_metric_status":        withoutToolContext(checkMetricStatusArguments),
 	"get_entity_kpis":          checkEntityNameArguments("get_entity_kpis"),
 	"get_entity_alert_rules":   checkEntityNameArguments("get_entity_alert_rules"),
 	"describe_alert_chart":     checkDescribeAlertChartArguments,
@@ -50,6 +50,24 @@ func checkServiceTraceArguments(raw json.RawMessage) (json.RawMessage, error) {
 		return nil, errors.New(`unexpected additional properties ["span_name"]. Call get_traces with tracejson_query=[{"type":"filter","query":{"$and":[{"$eq":["ServiceName","<service_name>"]},{"$eq":["SpanName","<span_name>"]}]}}]. ` +
 			`For trace_id, replace the ServiceName condition with {"$eq":["TraceId","<trace_id>"]}. If env was set, add {"$eq":["resources['deployment.environment']","<env>"]} to $and. ` +
 			`Preserve the time window and limit. For omitted values, set lookback_minutes to 60 for service_name or 4320 for trace_id, and limit to 10.`)
+	}
+	return raw, nil
+}
+
+func checkMetricStatusArguments(raw json.RawMessage, served func(string) bool) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return raw, nil
+	}
+	if fields["metric_name"] != nil {
+		return nil, errors.New(`unknown argument "metric_name". Use metric for the metric name or PromQL selector.`)
+	}
+	if fields["metric_name_pattern"] != nil {
+		hint := `Unknown argument metric_name_pattern. To check status across matching series, put your regex in a PromQL selector in metric (for example {__name__=~"example_.+"}) and supply window_minutes. Use a narrower selector or smaller window if the query is too broad.`
+		if served("prometheus_label_values") {
+			hint += ` To list matching metric names, call prometheus_label_values with label "__name__" and the selector in match_query.`
+		}
+		return nil, errors.New(hint)
 	}
 	return raw, nil
 }
@@ -135,12 +153,4 @@ func argumentCheckMiddleware(tool string, check argumentCheck, served func(strin
 			return next(ctx, method, req)
 		}
 	}
-}
-
-func checkMetricStatusArguments(raw json.RawMessage) (json.RawMessage, error) {
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(raw, &fields) == nil && fields["metric_name"] != nil {
-		return nil, errors.New(`unknown argument "metric_name". Use metric for the metric name or PromQL selector.`)
-	}
-	return raw, nil
 }
