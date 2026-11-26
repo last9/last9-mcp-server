@@ -85,6 +85,13 @@ func panelVisualizationTypeSchema(kind string) map[string]interface{} {
 	}
 }
 
+func queryModeSchema() map[string]any {
+	return map[string]any{
+		"type": "string", "enum": []string{"range", "instant"},
+		"description": "Execution mode. Set telemetry to metrics, logs, or traces.",
+	}
+}
+
 func queriesArraySchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "array",
@@ -92,7 +99,7 @@ func queriesArraySchema() map[string]interface{} {
 			"type":     "object",
 			"required": []string{"name", "type", "query_type", "telemetry", "expr", "legend"},
 			"properties": map[string]interface{}{
-				"name": map[string]interface{}{"type": "string"}, "type": map[string]interface{}{"type": "string"},
+				"name": map[string]interface{}{"type": "string"}, "type": queryModeSchema(),
 				"query_type": map[string]interface{}{
 					"type":        "string",
 					"enum":        []string{"promql", "log_json", "log_ql", "log_raw", "trace_json", "trace_ql"},
