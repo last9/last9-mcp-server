@@ -162,6 +162,19 @@ func TestGetAlertConfigHandler_RuleOnlyFilters(t *testing.T) {
 			expectedIDs: []string{"rule-1"},
 		},
 		{
+			name:        "alert_group_id matches a whole ID",
+			args:        GetAlertConfigArgs{AlertGroupID: " ENTITY-2 "},
+			expectedIDs: []string{"rule-2"},
+		},
+		{
+			name: "alert_group_id prefix matches nothing",
+			args: GetAlertConfigArgs{AlertGroupID: "entity-"},
+		},
+		{
+			name: "alert_group_id and rule_id must both match",
+			args: GetAlertConfigArgs{AlertGroupID: "entity-1", RuleID: "rule-2"},
+		},
+		{
 			name: "rule_id exact match",
 			args: GetAlertConfigArgs{
 				RuleID: "rule-2",
@@ -202,9 +215,11 @@ func TestGetAlertConfigHandler_RuleOnlyFilters(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			entities := sampleAlertGroupEntities()
+			entities[0].Entities[0].Name = entities[0].Entities[1].Name + " Canary"
 			state := alertConfigTestServerState{
 				alertRules:         sampleAlertConfigRules(),
-				entityGroups:       sampleAlertGroupEntities(),
+				entityGroups:       entities,
 				alertRulesStatus:   http.StatusOK,
 				entityLookupStatus: http.StatusOK,
 			}

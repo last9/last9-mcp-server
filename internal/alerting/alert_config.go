@@ -401,7 +401,11 @@ func filterAlertConfigByRuleFields(
 	args GetAlertConfigArgs,
 ) AlertConfigResponse {
 	filtered := make(AlertConfigResponse, 0, len(alertConfig))
+	groupID := strings.TrimSpace(args.AlertGroupID)
 	for _, rule := range alertConfig {
+		if groupID != "" && !strings.EqualFold(rule.EntityID, groupID) {
+			continue
+		}
 		if ruleID := strings.TrimSpace(args.RuleID); ruleID != "" && !strings.EqualFold(rule.ID, ruleID) {
 			continue
 		}
