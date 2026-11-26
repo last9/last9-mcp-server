@@ -182,11 +182,16 @@ func TestDescribeMetricTreatsCatalogLessBodyAsReadFailure(t *testing.T) {
 
 func TestDescribeMetricTreatsUndecodableBodyAsReadFailure(t *testing.T) {
 	const marker = "QA_MARKER_7f3a"
+	fixture, err := os.ReadFile(recipeFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
 	bodies := map[string]string{
 		"malformed JSON": `{"recipes": [` + marker,
 		// The shape guessed before the backend golden: queries as bare strings.
 		"string queries": `{"recipes":[{"metric":"trace_endpoint_count","recommended_query":"q",` +
 			`"queries":{"chart":"` + marker + `","list":"` + marker + `"}}]}`,
+		"trailing data": string(fixture) + marker,
 	}
 	for name, body := range bodies {
 		t.Run(name, func(t *testing.T) {

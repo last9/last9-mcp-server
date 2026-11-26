@@ -76,6 +76,19 @@ func TestListMetricRecipesRejectsBodiesWithoutCatalog(t *testing.T) {
 	}
 }
 
+func TestListMetricRecipesRejectsTrailingData(t *testing.T) {
+	fixture, err := os.ReadFile("testdata/discover_services_overview.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := append(fixture, []byte("broken")...)
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(body) })
+
+	if got, err := ListMetricRecipes(context.Background(), c); err == nil || got != nil {
+		t.Fatalf("got %d recipes, err %v; want an error and no recipes", len(got), err)
+	}
+}
+
 func TestListMetricRecipesSanitizesErrors(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal-detail-leak", http.StatusBadGateway)
