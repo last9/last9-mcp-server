@@ -11,10 +11,10 @@ import (
 )
 
 type promRangeRequest struct {
-	Query     string `json:"query"`
-	Timestamp int64  `json:"timestamp"`
-	Window    int64  `json:"window"`
-	Step      int64  `json:"step"`
+	Query     string  `json:"query"`
+	Timestamp float64 `json:"timestamp"`
+	Window    float64 `json:"window"`
+	Step      int64   `json:"step"`
 }
 
 func decodeRangeRequest(t *testing.T, r *http.Request) promRangeRequest {
@@ -51,7 +51,7 @@ func TestGetExceptionsHandler_FirstAndLastSeenComeFromRangeData(t *testing.T) {
 		!strings.Contains(request.Query, "trace_endpoint_count{exception_type!=''}[1m]") {
 		t.Errorf("range query must keep the instant query's grouping and filters with a one-step range: %s", request.Query)
 	}
-	if request.Timestamp != end || request.Window != 3600 || request.Step != 60 {
+	if request.Timestamp != float64(end) || request.Window != 3600 || request.Step != 60 {
 		t.Errorf("range request = %+v, want timestamp=end, window=3600, step=60", request)
 	}
 

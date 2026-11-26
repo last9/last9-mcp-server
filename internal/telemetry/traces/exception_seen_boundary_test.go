@@ -40,14 +40,15 @@ func TestExceptionSeenKeepsBucketsInsideRequestedWindow(t *testing.T) {
 				requests++
 				request := decodeRangeRequest(t, r)
 				step := time.Duration(request.Step) * time.Second
-				requestStart := time.Unix(request.Timestamp-request.Window, 0).UTC()
+				requestStart := timeFromUnixSeconds(request.Timestamp - request.Window)
 				if requestStart.Before(start) {
 					t.Errorf("request starts at %s, before requested start %s", requestStart, start)
 				}
 				values := make([][2]any, 0)
-				for at := requestStart; !at.After(time.Unix(request.Timestamp, 0)); at = at.Add(step) {
+				requestEnd := timeFromUnixSeconds(request.Timestamp)
+				for at := requestStart; !at.After(requestEnd); at = at.Add(step) {
 					if tc.occurrence.After(at.Add(-step)) && !tc.occurrence.After(at) {
-						values = append(values, [2]any{at.Unix(), tc.value})
+						values = append(values, [2]any{unixSeconds(at), tc.value})
 					}
 				}
 				_ = json.NewEncoder(w).Encode([]any{map[string]any{

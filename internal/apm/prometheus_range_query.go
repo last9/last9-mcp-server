@@ -47,8 +47,8 @@ func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(con
 		raw, err := prom.Query(ctx, last9api.NewClient(client, choice.cfg), prom.QueryInput{
 			Datasource: promDatasource(choice.cfg),
 			Query:      query,
-			Timestamp:  endTimeParam,
-			Window:     window,
+			Timestamp:  float64(endTimeParam),
+			Window:     float64(window),
 			Step:       args.Step,
 		})
 		res, out, err := promToolResult(raw, err, choice.note)

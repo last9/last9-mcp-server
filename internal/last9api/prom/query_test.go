@@ -25,15 +25,15 @@ func TestQuerySeriesSendsBodyAndDecodesResponse(t *testing.T) {
 	got, err := QuerySeries(context.Background(), c, QueryInput{
 		Datasource: testDatasource,
 		Query:      "up",
-		Timestamp:  220,
-		Window:     120,
+		Timestamp:  220.9,
+		Window:     120.5,
 		Step:       30,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	wantBody := map[string]any{
-		"query": "up", "timestamp": float64(220), "window": float64(120), "step": float64(30),
+		"query": "up", "timestamp": 220.9, "window": 120.5, "step": float64(30),
 		"read_url": "https://prom.example", "username": "u", "password": "p",
 	}
 	for key, want := range wantBody {

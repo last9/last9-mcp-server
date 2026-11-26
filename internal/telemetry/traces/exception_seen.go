@@ -78,10 +78,18 @@ func exceptionSeenRangeRequest(cfg models.Config, baseFilter string, end time.Ti
 			Password: cfg.PrometheusPassword,
 		},
 		Query:     buildExceptionsPromQL(baseFilter, prometheusDuration(step)),
-		Timestamp: end.Unix(),
-		Window:    int64(window / time.Second),
+		Timestamp: unixSeconds(end),
+		Window:    float64(window) / float64(time.Second),
 		Step:      int64(step / time.Second),
 	}
+}
+
+func unixSeconds(at time.Time) float64 {
+	return float64(at.Unix()) + float64(at.Nanosecond())/float64(time.Second)
+}
+
+func timeFromUnixSeconds(seconds float64) time.Time {
+	return time.Unix(0, int64(math.Round(seconds*float64(time.Second)))).UTC()
 }
 
 func prometheusDuration(d time.Duration) string {
@@ -99,7 +107,7 @@ func reduceExceptionSeen(seenByKey map[string]exceptionSeen, series []prom.Serie
 			if len(point) < 2 || !isOccurrenceCount(parsePromNumber(point[1])) {
 				continue
 			}
-			at := time.Unix(int64(parsePromNumber(point[0])), 0).UTC()
+			at := timeFromUnixSeconds(parsePromNumber(point[0]))
 			if !at.After(q.Start) || at.After(q.End) {
 				continue
 			}

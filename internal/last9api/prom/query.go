@@ -16,8 +16,8 @@ type QueryInput struct {
 	Datasource
 	Query string `json:"query"`
 	// End of the window, Unix seconds; Window is its length in seconds.
-	Timestamp int64 `json:"timestamp"`
-	Window    int64 `json:"window"`
+	Timestamp float64 `json:"timestamp"`
+	Window    float64 `json:"window"`
 	// Seconds between samples; zero leaves the resolution to the backend.
 	Step int64 `json:"step,omitempty"`
 }
