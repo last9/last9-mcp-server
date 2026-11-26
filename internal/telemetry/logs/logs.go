@@ -67,10 +67,23 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to parse time range: %v", err)
 		}
-		verdict := guard.Check(ctx, req, guardrail.Query{
+		queries := []guardrail.Query{{
 			Tool: "get_logs", Signal: guardrail.Logs, Pipeline: sanitizedQuery,
 			StartMs: startTime, EndMs: endTime, Index: args.Index,
-		})
+		}}
+		if utils.HasCountAggregateStage(sanitizedQuery) {
+			queries = append(queries, guardrail.Query{
+				Tool: "get_logs", Signal: guardrail.Logs, Pipeline: sanitizedQuery,
+				StartMs: startTime, EndMs: endTime, Index: args.Index,
+			})
+		}
+		if control, _, _, ok := parseCheckPlan(sanitizedQuery); ok {
+			queries = append(queries, guardrail.Query{
+				Tool: "get_logs", Signal: guardrail.Logs, Pipeline: control,
+				StartMs: startTime, EndMs: endTime, Index: args.Index,
+			})
+		}
+		verdict := guard.CheckAll(ctx, req, queries)
 		if verdict.Blocked {
 			return verdict.RejectionResult(), nil, nil
 		}

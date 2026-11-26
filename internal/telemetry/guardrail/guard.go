@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"time"
 
@@ -73,11 +74,21 @@ type Verdict struct {
 // runs, on the locally detected scope; the scope threshold and the budgets
 // need the estimate's bytes and are skipped.
 func (g *Guard) Check(ctx context.Context, req *mcp.CallToolRequest, q Query) Verdict {
+	return g.CheckAll(ctx, req, []Query{q})
+}
+
+// CheckAll admits a query plan atomically: every scan is estimated before any
+// session usage is charged, so a rejected plan records no usage.
+func (g *Guard) CheckAll(ctx context.Context, req *mcp.CallToolRequest, queries []Query) Verdict {
 	var v Verdict
 	mode, err := ParseMode(g.limits.Mode)
 	if err != nil {
 		// Validate rejects a bad mode at startup, so this one was set after it: fail closed.
-		slog.Error("query guardrail mode invalid; enforcing", "tool", q.Tool, "err", err)
+		tool := ""
+		if len(queries) > 0 {
+			tool = queries[0].Tool
+		}
+		slog.Error("query guardrail mode invalid; enforcing", "tool", tool, "err", err)
 		mode = ModeEnforce
 		v.Hints = append(v.Hints, hint(ReasonInvalidMode, "", fmt.Sprintf("The configured guardrail mode %q is invalid, so the checks ran in enforce mode.", g.limits.Mode)))
 	}
@@ -85,36 +96,54 @@ func (g *Guard) Check(ctx context.Context, req *mcp.CallToolRequest, q Query) Ve
 		return Verdict{Decision: Decision{Action: Allow}}
 	}
 
-	s := scan{Range: time.Duration(q.EndMs-q.StartMs) * time.Millisecond, Scoped: PipelineScoped(q.Pipeline)}
-	// The range cap needs no estimate; shadow still fetches one to account the run.
-	if d := decide(g.limits, s); d.Action == Reject && mode == ModeEnforce {
-		v.Decision, v.Blocked = d, true
-		logDecision(mode, q, s, v)
-		v.Hints = append([]string{decisionHint(mode, d)}, v.Hints...)
-		return v
-	}
-	if est, err := g.fetchEstimate(ctx, q); err != nil {
-		slog.Info("query guardrail estimate unavailable", "tool", q.Tool, "mode", mode, "err", err)
-		v.Hints = append(v.Hints, hint(ReasonEstimateUnavailable, "", "The scan estimate could not be fetched, so only the range cap was checked; the scope threshold and the scan and session budgets were not."))
-	} else {
-		s.Estimate = &est.Bytes
-		s.ServerScoped = est.Scoped
-	}
+	totalEstimate := int64(0)
+	for _, q := range queries {
+		s := scan{Range: time.Duration(q.EndMs-q.StartMs) * time.Millisecond, Scoped: PipelineScoped(q.Pipeline)}
+		// The range cap needs no estimate; shadow still fetches one to account the run.
+		if d := decide(g.limits, s); d.Action == Reject && mode == ModeEnforce {
+			v.Decision, v.Blocked = d, true
+			logDecision(mode, q, s, v)
+			v.Hints = append([]string{decisionHint(mode, d)}, v.Hints...)
+			return v
+		}
+		if est, err := g.fetchEstimate(ctx, q); err != nil {
+			slog.Info("query guardrail estimate unavailable", "tool", q.Tool, "mode", mode, "err", err)
+			v.Hints = append(v.Hints, hint(ReasonEstimateUnavailable, "", "The scan estimate could not be fetched, so only the range cap was checked; the scope threshold and the scan and session budgets were not."))
+		} else {
+			s.Estimate = &est.Bytes
+			s.ServerScoped = est.Scoped
+			if est.Bytes > math.MaxInt64-totalEstimate {
+				totalEstimate = math.MaxInt64
+			} else {
+				totalEstimate += est.Bytes
+			}
+		}
 
-	d := decide(g.limits, s)
-	v.Blocked = d.Action == Reject && mode == ModeEnforce
-	if !v.Blocked && s.Estimate != nil && g.limits.SessionBudgetBytes > 0 {
+		d := decide(g.limits, s)
+		blocked := d.Action == Reject && mode == ModeEnforce
+		if d.Action != Allow {
+			logDecision(mode, q, s, Verdict{Decision: d, Blocked: blocked})
+			v.Hints = append(v.Hints, decisionHint(mode, d))
+			if v.Decision.Action == "" {
+				v.Decision = d
+			}
+		}
+		if blocked {
+			v.Decision, v.Blocked = d, true
+			return v
+		}
+	}
+	if totalEstimate > 0 && g.limits.SessionBudgetBytes > 0 {
 		if key, ok := sessionKey(req); ok {
-			used := g.sessions.add(key, *s.Estimate)
-			if d.Action == Allow {
-				d = sessionDecision(g.limits.SessionBudgetBytes, used)
+			d := sessionDecision(g.limits.SessionBudgetBytes, g.sessions.add(key, totalEstimate))
+			if d.Action != Allow {
+				v.Decision = d
+				v.Hints = append(v.Hints, decisionHint(mode, d))
 			}
 		}
 	}
-	v.Decision = d
-	if d.Action != Allow {
-		logDecision(mode, q, s, v)
-		v.Hints = append([]string{decisionHint(mode, d)}, v.Hints...)
+	if v.Decision.Action == "" {
+		v.Decision = Decision{Action: Allow}
 	}
 	return v
 }
