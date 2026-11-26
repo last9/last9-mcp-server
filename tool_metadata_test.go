@@ -244,6 +244,33 @@ func TestServedToolMetadata(t *testing.T) {
 	}
 }
 
+func TestGetAlertsServedSchemaLimitsStateValues(t *testing.T) {
+	tools, _ := servedSurface(t)
+	for _, tool := range tools {
+		if tool.Name != "get_alerts" {
+			continue
+		}
+		schema, ok := schemaAsAny(tool.InputSchema).(map[string]any)
+		if !ok {
+			t.Fatalf("input schema = %#v, want an object", tool.InputSchema)
+		}
+		properties, ok := schema["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("properties = %#v, want an object", schema["properties"])
+		}
+		state, ok := properties["state"].(map[string]any)
+		if !ok {
+			t.Fatalf("state schema = %#v, want an object", properties["state"])
+		}
+		got, ok := state["enum"].([]any)
+		if want := []any{"firing", "normal"}; !ok || !slices.Equal(got, want) {
+			t.Fatalf("state enum = %v, want %v", got, want)
+		}
+		return
+	}
+	t.Fatal("get_alerts is not served")
+}
+
 // Each fixture breaks exactly one rule, so a check that stops firing fails here.
 func TestToolMetadataViolationsCatchBadFixtures(t *testing.T) {
 	resources := map[string]bool{"last9://reference/logjson": true}
