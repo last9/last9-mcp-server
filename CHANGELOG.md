@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Metric label lookups and `get_log_services` reject non-finite or duration-overflowing `lookback_minutes` before querying; huge JSON numbers previously wrapped into unrelated query windows (#612).
+- `get_service_environments` now names `service_name` in its validation error when a caller sends `service`, so the caller can retry with the intended filter (#643).
 - `get_alert_config` accepts `alert_rule_id` as an alias for `rule_id` and explains how to find the triggering rule when passed an `alert_id` (#622).
 - `get_dashboard` accepts the `dashboard_id` returned by `patch_dashboard` as an alias for `id` and rejects conflicting IDs before lookup (#623).
 - `get_log_attributes_for_pipeline` logfmt body-field hints now map the key in the parse stage's `labels`, so the hint runs as returned instead of failing with HTTP 400 `invalid JSON pipeline`. A body field seen in under half of the sampled rows is marked `confidence: "low"` with `sample_formats` counting the sampled rows per format (json, logfmt, text), since its parser was inferred from a minority of rows (#617).
