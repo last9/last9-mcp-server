@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -110,6 +111,17 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
+	}
+	referenceURL, ok := result.Meta["reference_url"].(string)
+	if !ok {
+		t.Fatalf("missing reference_url in meta: %v", result.Meta)
+	}
+	parsedReference, err := url.Parse(referenceURL)
+	if err != nil {
+		t.Fatalf("parse reference_url: %v", err)
+	}
+	if got, want := parsedReference.Query().Get("filter"), `["service_name=\"checkout\"","deployment_environment=\"prod\""]`; got != want {
+		t.Fatalf("reference_url filter = %q, want %q", got, want)
 	}
 
 	if instantCalls != 1 {
