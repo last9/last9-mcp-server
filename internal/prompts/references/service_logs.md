@@ -43,6 +43,7 @@ Do not invent org-specific attribute names. Discover fields with `get_log_attrib
 - `env` (optional): Deployment environment string.
 - `index` (optional): Explicit log index in the form `physical_index:<name>` or `rehydration_index:<block_name>`.
 - `response_mode` (optional): `summary` (default) or `raw`. Over 20 lines, `summary` replaces `logs` with a `summary` object: `lines_summarized`, `severity_counts`, `first_timestamp`/`last_timestamp`, a 10-bucket `histogram`, and the top `patterns` (`template`, `count`, up to two `samples`), at most 4000 characters; `truncated: true` when the limit cut the result. `raw` returns entries; 20 lines or fewer also return entries in summary mode. Entry responses are capped at 32000 serialized MCP-result bytes, including metadata. `logs_truncated` and the hint identify omitted entries. If no whole entry fits, the tool returns an error; narrow the query or use summary mode.
+- Ranges over 336 hours (only when the server operator enabled server-side log search; otherwise no `pieces` are reported): read as contiguous pieces of at most 336 hours, newest first, merged up to `limit`. `search_stats.pieces` lists each piece's `start`, `end` and `status` (`complete`, `partial` when rows were cut, `failed` with `error`); report a `failed` piece's span as not searched.
 
 ## Log service inventory and index selection
 

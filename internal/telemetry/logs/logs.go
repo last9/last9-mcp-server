@@ -50,6 +50,9 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 		if err != nil {
 			return nil, nil, err
 		}
+		if err := utils.NormalizeWindowAggregateDays(sanitizedQuery); err != nil {
+			return nil, nil, err
+		}
 		args.LogjsonQuery = sanitizedQuery
 		if args.LookbackMinutes < 0 {
 			return nil, nil, fmt.Errorf("lookback_minutes must be at least 1")
@@ -141,10 +144,21 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 			cancelLink()
 			<-resolvedIndexCh
 		}
+		if stages, ok := logjsonQuery.([]map[string]interface{}); ok {
+			if rangeResult := rangeLimitResult(err, stages, utils.TimeChunk{StartMs: startTime, EndMs: endTime}); rangeResult != nil {
+				return rangeResult, nil
+			}
+		}
 		if scanResult := scanErrorResult(err, getLogsScanSteps); scanResult != nil {
 			return scanResult, nil
 		}
 		return nil, err
+	}
+	if stages, ok := logjsonQuery.([]map[string]interface{}); ok {
+		endParseCheck := utils.StartToolPhase(ctx, "get_logs", "parse_check")
+		scope := parseCheckScope{client: client, cfg: cfg, startMs: startTime, endMs: endTime, index: args.Index}
+		appendParseCheck(ctx, scope, stages, result)
+		endParseCheck(nil)
 	}
 	endProcess := utils.StartToolPhase(ctx, "get_logs", "post_process")
 	defaultWindow := args.StartTimeISO == "" && args.EndTimeISO == "" && args.LookbackMinutes == 0

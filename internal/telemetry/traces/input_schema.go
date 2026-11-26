@@ -168,7 +168,7 @@ func windowAggregateStageSchema() map[string]interface{} {
 			},
 			"window": map[string]interface{}{
 				"type":        "array",
-				"description": "Window duration as [\"duration\", \"unit\"]. Units: minutes, seconds, hours. Example: [\"5\", \"minutes\"]",
+				"description": "Window duration as [\"duration\", \"unit\"]. Units: minutes, seconds, hours, days. Example: [\"5\", \"minutes\"]",
 			},
 			"groupby": map[string]interface{}{
 				"type":        "object",

@@ -17,9 +17,12 @@ import (
 
 // hangingUpstream never answers until the test ends, then releases its handlers
 // before closing so a regression fails the test instead of hanging the suite.
-func hangingUpstream(t *testing.T) *httptest.Server {
+// arrived receives one value per request it starts holding.
+func hangingUpstream(t *testing.T) (srv *httptest.Server, arrived <-chan struct{}) {
 	stop := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	held := make(chan struct{}, alertRuleStateMaxPoints)
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		held <- struct{}{}
 		select {
 		case <-r.Context().Done():
 		case <-stop:
@@ -27,7 +30,7 @@ func hangingUpstream(t *testing.T) *httptest.Server {
 	}))
 	t.Cleanup(srv.Close)
 	t.Cleanup(func() { close(stop) })
-	return srv
+	return srv, held
 }
 
 func TestAlertRuleStateHandler_ReturnsGuidanceWhenSamplingTimesOut(t *testing.T) {
@@ -35,7 +38,7 @@ func TestAlertRuleStateHandler_ReturnsGuidanceWhenSamplingTimesOut(t *testing.T)
 	alertRuleStateTimeout = 100 * time.Millisecond
 	t.Cleanup(func() { alertRuleStateTimeout = restore })
 
-	upstream := hangingUpstream(t)
+	upstream, _ := hangingUpstream(t)
 
 	handler := NewAlertRuleStateHandler(upstream.Client(), newAlertRuleStateTestConfig(upstream.URL))
 	done := make(chan struct{})
@@ -66,7 +69,7 @@ func TestAlertRuleStateHandler_ReturnsGuidanceWhenSamplingTimesOut(t *testing.T)
 }
 
 func TestAlertRuleStateHandler_CallerCancellationIsNotATimeout(t *testing.T) {
-	upstream := hangingUpstream(t)
+	upstream, _ := hangingUpstream(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()

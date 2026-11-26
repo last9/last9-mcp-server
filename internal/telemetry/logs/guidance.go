@@ -41,13 +41,15 @@ func addGetLogsGuidance(result map[string]interface{}, args GetLogsArgs, guidanc
 	if err != nil {
 		return false
 	}
-	if len(items) == 0 || (kind == "streams" && countLogEntriesInResultItems(items) == 0) {
+	// Aggregate rows carry no log lines, so emptiness follows the pipeline sent, not the response's resultType label.
+	lines := kind == "streams" && !utils.PipelineHasAggregateStage(args.LogjsonQuery)
+	if len(items) == 0 || (lines && countLogEntriesInResultItems(items) == 0) {
 		result["l9_guidance"] = utils.EmptyResultGuidanceMap("logs", logsGuidanceOptions(args, guidance.startMs, guidance.endMs))
 		return false
 	}
 	returned := countLogEntriesInResultItems(items)
 	totalMatching := logTotalMatching(result)
-	if kind == "streams" && isLogResultTruncated(result, logTruncationState{
+	if lines && isLogResultTruncated(result, logTruncationState{
 		returned:       returned,
 		totalMatching:  totalMatching,
 		effectiveLimit: guidance.effectiveLimit,
@@ -79,7 +81,10 @@ func addGetLogsAggregateGuidance(result map[string]interface{}, guidance utils.T
 
 func addServiceLogsGuidance(response *ServiceLogsResponse, args GetServiceLogsArgs, limit int) {
 	opts := utils.ResultGuidanceOptions{
-		Window:      utils.WindowFromRange(parseServiceLogTime(response.StartTime), parseServiceLogTime(response.EndTime)),
+		Window: logWindowPhrase(
+			parseServiceLogTime(response.StartTime), parseServiceLogTime(response.EndTime),
+			args.StartTimeISO != "" || args.EndTimeISO != "",
+		),
 		ServiceName: args.ServiceName,
 		Environment: args.Env,
 		AdditionalChecks: []string{
@@ -123,9 +128,21 @@ func addServiceLogsGuidance(response *ServiceLogsResponse, args GetServiceLogsAr
 	}
 }
 
+// logWindowPhrase names a window anchored by a caller-supplied boundary by its
+// UTC bounds; "last 5m" would misdescribe a historical interval as recent.
+func logWindowPhrase(start, end time.Time, explicit bool) string {
+	if !explicit {
+		return utils.WindowFromRange(start, end)
+	}
+	return fmt.Sprintf("the range %s to %s", start.UTC().Format(time.RFC3339Nano), end.UTC().Format(time.RFC3339Nano))
+}
+
 func logsGuidanceOptions(args GetLogsArgs, startMs, endMs int64) utils.ResultGuidanceOptions {
 	return utils.ResultGuidanceOptions{
-		Window:      utils.WindowFromRange(time.UnixMilli(startMs).UTC(), time.UnixMilli(endMs).UTC()),
+		Window: logWindowPhrase(
+			time.UnixMilli(startMs), time.UnixMilli(endMs),
+			args.StartTimeISO != "" || args.EndTimeISO != "",
+		),
 		ServiceName: utils.FindStringFilter(args.LogjsonQuery, "ServiceName", "service_name", "service"),
 		Environment: utils.FindStringFilter(
 			args.LogjsonQuery,
