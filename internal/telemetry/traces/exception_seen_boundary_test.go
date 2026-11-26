@@ -9,25 +9,31 @@ import (
 )
 
 func TestExceptionSeenKeepsBucketsInsideRequestedWindow(t *testing.T) {
-	start := time.Date(2026, 1, 20, 10, 0, 0, 0, time.UTC)
+	wholeSecondStart := time.Date(2026, 1, 20, 10, 0, 0, 0, time.UTC)
 	key := exceptionSeriesKey(map[string]string{
 		"exception_type": "TypeError", "service_name": "web", "span_name": "View",
 		"span_kind": "SPAN_KIND_SERVER", "env": "prod",
 	})
 	for _, tc := range []struct {
 		name       string
+		start      time.Time
 		window     time.Duration
 		occurrence time.Time
 		value      string
 		wantSeen   bool
 	}{
-		{name: "divisible window excludes start", window: 60 * time.Minute, occurrence: start},
-		{name: "divisible window includes end", window: 60 * time.Minute, occurrence: start.Add(60 * time.Minute), value: "1", wantSeen: true},
-		{name: "non-divisible window excludes pre-window evidence", window: 61 * time.Minute, occurrence: start.Add(-30 * time.Second), value: "1"},
-		{name: "non-divisible window includes final tail", window: 61 * time.Minute, occurrence: start.Add(60*time.Minute + 30*time.Second), value: "1", wantSeen: true},
-		{name: "invalid sample is not an occurrence", window: 61 * time.Minute, occurrence: start.Add(30 * time.Minute), value: "+Inf"},
+		{name: "divisible window excludes start", start: wholeSecondStart, window: 60 * time.Minute, occurrence: wholeSecondStart},
+		{name: "divisible window includes end", start: wholeSecondStart, window: 60 * time.Minute, occurrence: wholeSecondStart.Add(60 * time.Minute), value: "1", wantSeen: true},
+		{name: "non-divisible window excludes pre-window evidence", start: wholeSecondStart, window: 61 * time.Minute, occurrence: wholeSecondStart.Add(-30 * time.Second), value: "1"},
+		{name: "non-divisible window includes final tail", start: wholeSecondStart, window: 61 * time.Minute, occurrence: wholeSecondStart.Add(60*time.Minute + 30*time.Second), value: "1", wantSeen: true},
+		{name: "invalid sample is not an occurrence", start: wholeSecondStart, window: 61 * time.Minute, occurrence: wholeSecondStart.Add(30 * time.Minute), value: "+Inf"},
+		{name: "fractional window excludes pre-window evidence", start: wholeSecondStart.Add(900 * time.Millisecond), window: 60 * time.Minute, occurrence: wholeSecondStart.Add(700 * time.Millisecond), value: "1"},
+		{name: "fractional window includes first bucket", start: wholeSecondStart.Add(900 * time.Millisecond), window: 60 * time.Minute, occurrence: wholeSecondStart.Add(30*time.Second + 900*time.Millisecond), value: "1", wantSeen: true},
+		{name: "fractional window includes last full bucket", start: wholeSecondStart.Add(900 * time.Millisecond), window: 60 * time.Minute, occurrence: wholeSecondStart.Add(59*time.Minute + 30*time.Second + 900*time.Millisecond), value: "1", wantSeen: true},
+		{name: "fractional window includes end fraction", start: wholeSecondStart.Add(900 * time.Millisecond), window: 60 * time.Minute, occurrence: wholeSecondStart.Add(60*time.Minute + 700*time.Millisecond), value: "1", wantSeen: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			start := tc.start
 			end := start.Add(tc.window)
 			requests := 0
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
