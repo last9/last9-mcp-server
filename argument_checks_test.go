@@ -38,6 +38,20 @@ func TestGetAlertsRangeGuidance(t *testing.T) {
 	}
 }
 
+func TestDescribeAlertChartRuleIDGuidance(t *testing.T) {
+	session := newInMemoryClientSession(t)
+	for _, args := range []string{
+		`{"rule_id":"example-rule"}`,
+		`{"rule_id":"example-rule","surface":"discover-service","chart_key":"apdex","service_name":"example"}`,
+	} {
+		result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: "describe_alert_chart", Arguments: json.RawMessage(args)})
+		assertToolError(t, result, toolErrorExpectation{
+			contains: []string{"get_alert_config", "same rule_id", "surface", "chart_key", "service_name"},
+			absent:   []string{"example-rule"},
+		})
+	}
+}
+
 func TestEntityKPIArgumentGuidanceNamesOnlyServedTools(t *testing.T) {
 	for _, tc := range []struct {
 		toolsets string
