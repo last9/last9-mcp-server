@@ -88,7 +88,7 @@ func dashboardLogIndex(query map[string]any) (string, error) {
 	name = strings.TrimSpace(name)
 	if strings.HasPrefix(name, "physical_index:") || strings.HasPrefix(name, "rehydration_index:") {
 		// Earlier dashboards passed a qualified index_name directly to the log query.
-		if query["index_type"] == nil {
+		if query["index_type"] == nil || query["index_type"] == "" {
 			return utils.NormalizeLogIndex(name)
 		}
 		return "", errors.New("index_name must be a bare name when index_type is supplied")
