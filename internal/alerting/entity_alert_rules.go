@@ -124,6 +124,9 @@ func formatEntityAlertRulesResponse(rules AlertConfigResponse) string {
 		if rule.EvalWindow > 0 {
 			out += fmt.Sprintf("  Eval Window: %d minutes\n", rule.EvalWindow)
 		}
+		if rule.OnNoData != nil && *rule.OnNoData == "alert" {
+			out += "  On No Data: alert\n"
+		}
 		if len(rule.ExpressionArgs) > 0 {
 			out += "  Indicators:\n"
 			indicatorNames := make([]string, 0, len(rule.ExpressionArgs))

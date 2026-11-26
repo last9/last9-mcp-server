@@ -29,6 +29,7 @@ type AlertRule struct {
 	GroupName  string          `json:"group_name,omitempty"`
 	RuleName   string          `json:"rule_name"`
 	Properties json.RawMessage `json:"properties"`
+	OnNoData   *string         `json:"on_no_data"`
 }
 
 // ListAlertRules calls GET /entities/{entity_id}/alert-rules.
