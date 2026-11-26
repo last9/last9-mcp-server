@@ -65,10 +65,22 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 			wantText:  "call get_service_performance_details with service_name",
 		},
 		{
+			name:      "service environment filter correction",
+			tool:      "get_service_environments",
+			arguments: map[string]any{"service": "example"},
+			wantText:  "Use service_name to filter environments by service",
+		},
+		{
 			name:      "unknown parameter name",
 			tool:      "prometheus_labels",
 			arguments: map[string]any{"selector": "up"},
 			wantText:  "selector",
+		},
+		{
+			name:      "KPI group name recovery",
+			tool:      "get_entity_kpis",
+			arguments: map[string]any{"entity_name": "example"},
+			wantText:  "Call get_alert_groups with alert_group_name, select the intended group, then pass its id as entity_id to get_entity_kpis.",
 		},
 		{
 			name:      "wrong value type",

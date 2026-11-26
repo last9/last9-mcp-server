@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added the read-only `describe_metric` tool (`metrics` and `investigate` toolsets): for a bare `trace_*` metric name it reads the Discover Services recipe catalog from the Last9 API (GET `/recipes/metrics`) and returns the query the dashboard runs, with `unit`, `filters`, chart and list queries with their rollups, and `forbidden_functions`, so agents stop querying these per-minute gauges with `rate`, `sum_over_time(...)/300` or `histogram_quantile`. When the catalog cannot be read, `trace_endpoint_count` and `trace_service_response_time` return the old manual example marked `legacy_heuristic`; other names return `uncovered` without a query, and non-`trace_*` names make no API call. PromQL selectors are rejected (#589).
+- `get_log_services` lists services that send logs, including log-only services `get_service_summary` never shows: rows of `{name, envs, indexes, last_seen}` plus `total`, `returned` and `truncated`, filterable by `env` and `index`, with `limit` (default 10, at most 100) and the shared `datasource` resolution. A `query` adds a `similarity` percent per row that ignores word order and sorts by it. An empty default window retries over 4 days and says so; an empty or incomplete lookup is never reported as proof a service is absent (#612).
 - `get_databases` accepts an optional exact `db_system` filter and counts only matching trace-backed and metrics-only rows (#632).
 - `get_database_queries` accepts an optional exact `service_name` filter, so throughput, latency and errors for a shared database can be scoped to one calling service (#630).
 - `get_alert_rule_state` accepts an optional exact `rule_id` to return one rule’s firing history, including when multiple rules share a name. An ID absent from every sample returns guidance to check the filters and time range (#631).
@@ -19,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Passing `service_name` to `get_service_summary` now returns a validation error that directs single-service performance requests to `get_service_performance_details` (#649).
+- Metric label lookups and `get_log_services` reject non-finite or duration-overflowing `lookback_minutes` before querying; huge JSON numbers previously wrapped into unrelated query windows (#612).
+- When a caller supplies `entity_name`, `get_entity_kpis` now explains how to find the intended alert group and retry with its ID (#645).
+- `did_you_mean` accepts `value` for `query` and `kind` for `type` before argument validation. Conflicting spellings return an error before any lookup (#642).
+- `get_service_environments` now names `service_name` in its validation error when a caller sends `service`, so the caller can retry with the intended filter (#643).
 - `get_alert_config` accepts `alert_rule_id` as an alias for `rule_id` and explains how to find the triggering rule when passed an `alert_id` (#622).
 - `get_dashboard` accepts the `dashboard_id` returned by `patch_dashboard` as an alias for `id` and rejects conflicting IDs before lookup (#623).
 - `get_log_attributes_for_pipeline` logfmt body-field hints now map the key in the parse stage's `labels`, so the hint runs as returned instead of failing with HTTP 400 `invalid JSON pipeline`. A body field seen in under half of the sampled rows is marked `confidence: "low"` with `sample_formats` counting the sampled rows per format (json, logfmt, text), since its parser was inferred from a minority of rows (#617).
