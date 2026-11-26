@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -21,6 +22,7 @@ func TestExceptionSeenKeepsBucketsInsideRequestedWindow(t *testing.T) {
 		occurrence time.Time
 		value      string
 		wantSeen   bool
+		wantTail   time.Duration
 	}{
 		{name: "divisible window excludes start", start: wholeSecondStart, window: 60 * time.Minute, occurrence: wholeSecondStart},
 		{name: "divisible window includes end", start: wholeSecondStart, window: 60 * time.Minute, occurrence: wholeSecondStart.Add(60 * time.Minute), value: "1", wantSeen: true},
@@ -31,10 +33,16 @@ func TestExceptionSeenKeepsBucketsInsideRequestedWindow(t *testing.T) {
 		{name: "fractional window includes first bucket", start: wholeSecondStart.Add(900 * time.Millisecond), window: 60 * time.Minute, occurrence: wholeSecondStart.Add(30*time.Second + 900*time.Millisecond), value: "1", wantSeen: true},
 		{name: "fractional window includes last full bucket", start: wholeSecondStart.Add(900 * time.Millisecond), window: 60 * time.Minute, occurrence: wholeSecondStart.Add(59*time.Minute + 30*time.Second + 900*time.Millisecond), value: "1", wantSeen: true},
 		{name: "fractional window includes end fraction", start: wholeSecondStart.Add(900 * time.Millisecond), window: 60 * time.Minute, occurrence: wholeSecondStart.Add(60*time.Minute + 700*time.Millisecond), value: "1", wantSeen: true},
+		{name: "subsecond tail includes first fraction", start: wholeSecondStart, window: 60*time.Minute + 500*time.Millisecond, occurrence: wholeSecondStart.Add(60*time.Minute + 100*time.Millisecond), value: "1", wantSeen: true, wantTail: 500 * time.Millisecond},
+		{name: "minute tail includes first fraction", start: wholeSecondStart, window: 61*time.Minute + 500*time.Millisecond, occurrence: wholeSecondStart.Add(60*time.Minute + 100*time.Millisecond), value: "1", wantSeen: true, wantTail: 60*time.Second + 500*time.Millisecond},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			start := tc.start
 			end := start.Add(tc.window)
+			tail := tc.wantTail
+			if tail == 0 {
+				tail = tc.window % exceptionSeenStep(tc.window)
+			}
 			requests := 0
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				requests++
@@ -46,9 +54,19 @@ func TestExceptionSeenKeepsBucketsInsideRequestedWindow(t *testing.T) {
 				}
 				values := make([][2]any, 0)
 				requestEnd := timeFromUnixSeconds(request.Timestamp)
-				for at := requestStart; !at.After(requestEnd); at = at.Add(step) {
-					if tc.occurrence.After(at.Add(-step)) && !tc.occurrence.After(at) {
-						values = append(values, [2]any{unixSeconds(at), tc.value})
+				if request.Window == 0 {
+					wantSelector := "[" + prometheusDuration(tail) + "]"
+					if !strings.Contains(request.Query, wantSelector) {
+						t.Errorf("tail query = %q, want selector %q", request.Query, wantSelector)
+					}
+					if tc.occurrence.After(requestEnd.Add(-tail)) && !tc.occurrence.After(requestEnd) {
+						values = append(values, [2]any{unixSeconds(requestEnd), tc.value})
+					}
+				} else {
+					for at := requestStart; !at.After(requestEnd); at = at.Add(step) {
+						if tc.occurrence.After(at.Add(-step)) && !tc.occurrence.After(at) {
+							values = append(values, [2]any{unixSeconds(at), tc.value})
+						}
 					}
 				}
 				_ = json.NewEncoder(w).Encode([]any{map[string]any{

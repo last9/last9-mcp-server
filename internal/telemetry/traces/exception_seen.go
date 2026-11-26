@@ -96,6 +96,9 @@ func prometheusDuration(d time.Duration) string {
 	if d%time.Minute == 0 {
 		return fmt.Sprintf("%dm", int64(d/time.Minute))
 	}
+	if d%time.Second != 0 {
+		return fmt.Sprintf("%dms", int64(d/time.Millisecond))
+	}
 	return fmt.Sprintf("%ds", int64(d/time.Second))
 }
 
