@@ -65,6 +65,12 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 			wantText:  `validating "arguments": validating root: unexpected additional properties ["query"]. To search by group name, pass alert_group_name. For team or tier, use team or tier.`,
 		},
 		{
+			name:      "service environment filter correction",
+			tool:      "get_service_environments",
+			arguments: map[string]any{"service": "example"},
+			wantText:  "Use service_name to filter environments by service",
+		},
+		{
 			name:      "unknown parameter name",
 			tool:      "prometheus_labels",
 			arguments: map[string]any{"selector": "up"},
