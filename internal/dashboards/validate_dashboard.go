@@ -44,7 +44,7 @@ func GetValidateDashboardInputSchema() map[string]any {
 			},
 			"dashboard_definition": map[string]any{
 				"type":        "object",
-				"description": "Inline dashboard object (name, panels[].queries[], variables). Query type is range or instant; query_type identifies the language. Mutually exclusive with dashboard_id. Dry run — nothing is persisted.",
+				"description": "Inline dashboard object (name, panels[].queries[], variables). Query type is range or instant; query_type identifies the language. Log queries use index_type (physical or rehydration) and bare index_name. Mutually exclusive with dashboard_id. Dry run — nothing is persisted.",
 			},
 			"start_time_iso": map[string]any{
 				"type":        "string",
@@ -539,6 +539,13 @@ func validateTarget(
 		return target
 	}
 
+	logIndex, indexErr := dashboardLogIndex(query)
+	if indexErr != nil {
+		target["status"] = "invalid_query"
+		target["lint"] = []any{lintFinding("invalid_log_index", severityError, indexErr.Error())}
+		return target
+	}
+
 	var resolved any
 	var used map[string]map[string]any
 	var unresolved []string
@@ -593,8 +600,7 @@ func validateTarget(
 		exprStr, _ := resolved.(string)
 		outcome = exec.runPromQL(ctx, exprStr, window, vizType)
 	case "log_json":
-		indexName, _ := query["index_name"].(string)
-		outcome = exec.runLogJSON(ctx, resolved, window, indexName)
+		outcome = exec.runLogJSON(ctx, resolved, window, logIndex)
 	default:
 		target["status"] = "unsupported_execution"
 		target["note"] = queryType + " execution is not supported; lint-only"

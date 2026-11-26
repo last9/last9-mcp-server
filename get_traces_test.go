@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -69,7 +70,7 @@ func TestGetTracesRegisteredWaiterReportsBusy(t *testing.T) {
 			t.Fatal("held calls did not arrive")
 		}
 	}
-	for _, scenario := range []string{"deadline", "cancellation", "invalid start", "invalid end"} {
+	for _, scenario := range []string{"deadline", "cancellation", "invalid start", "invalid end", "unsupported response mode"} {
 		t.Run(scenario, func(t *testing.T) {
 			fixture.timeout = 100 * time.Millisecond
 			fixture.middleware = nil
@@ -95,6 +96,26 @@ func TestGetTracesRegisteredWaiterReportsBusy(t *testing.T) {
 					contains: []string{"failed to parse time range", "not-a-time"},
 					absent:   []string{"get_traces is busy", "tool-call deadline", "Retry shortly"},
 				}
+			case "unsupported response mode":
+				session := connectToolFixture(t, fixture, traces.NewGetTracesHandler(upstream.Client(), cfg))
+				result := callRegisteredTool(t, session, &mcp.CallToolParams{
+					Name:      "get_traces",
+					Arguments: json.RawMessage(`{"response_mode":"raw"}`),
+				})
+				assertToolError(t, result, toolErrorExpectation{
+					contains: []string{
+						"omit response_mode",
+						"preserve the existing tracejson_query stages and time bounds",
+						"matching span rows",
+						"append an aggregate stage",
+						"count or percentile",
+					},
+					absent: []string{"get_traces is busy", "tool-call deadline", "Retry shortly"},
+				})
+				if got := arrived.Load(); got != 3 {
+					t.Fatalf("upstream requests=%d, want only the 3 held calls", got)
+				}
+				return
 			}
 			session := connectToolFixture(t, fixture, traces.NewGetTracesHandler(upstream.Client(), cfg))
 			result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: "get_traces", Arguments: in})
