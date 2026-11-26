@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"sort"
+	"strings"
 
 	"last9-mcp/internal/alerting"
 	"last9-mcp/internal/dashboards"
@@ -56,6 +59,45 @@ func checkServiceEnvironmentArguments(raw json.RawMessage) (json.RawMessage, err
 		return nil, errors.New("unknown argument \"service\". Use service_name to filter environments by service.")
 	}
 	return raw, nil
+}
+
+func logPatternArgumentCheck(properties map[string]any) argumentCheck {
+	return withoutToolContext(func(raw json.RawMessage) (json.RawMessage, error) {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) != nil {
+			return raw, nil
+		}
+		hasAlias := false
+		for key := range fields {
+			hasAlias = hasAlias || strings.EqualFold(key, "service") || strings.EqualFold(key, "body")
+		}
+		if !hasAlias {
+			return raw, nil
+		}
+		var problems []string
+		for key := range fields {
+			switch strings.ToLower(key) {
+			case "service":
+				if fields["service_name"] != nil {
+					problems = append(problems, fmt.Sprintf(`Unknown argument %q. service_name is already set; remove %s.`, key, key))
+				} else {
+					problems = append(problems, fmt.Sprintf(`Unknown argument %q. Use service_name to select the service.`, key))
+				}
+			case "body":
+				if fields["body_filters"] != nil {
+					problems = append(problems, fmt.Sprintf(`Unknown argument %q. body_filters is already set; remove %s.`, key, key))
+				} else {
+					problems = append(problems, fmt.Sprintf(`Unknown argument %q. Use body_filters with an array of message substrings, for example ["timeout"].`, key))
+				}
+			default:
+				if _, known := properties[key]; !known {
+					problems = append(problems, fmt.Sprintf("Unknown argument %q.", key))
+				}
+			}
+		}
+		sort.Strings(problems)
+		return nil, errors.New(strings.Join(problems, " "))
+	})
 }
 
 type argumentCheck func(json.RawMessage, func(string) bool) (json.RawMessage, error)
