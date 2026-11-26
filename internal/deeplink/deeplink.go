@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"unicode"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -83,11 +84,6 @@ func (b *Builder) BuildTracesLink(fromMs, toMs int64, pipeline any, traceID, spa
 	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteTraces, params.Encode())
 }
 
-// BuildExceptionsLink creates an exceptions dashboard deep link
-func (b *Builder) BuildExceptionsLink(fromMs, toMs int64) string {
-	return b.exceptionsLink(b.exceptionsParams(fromMs, toMs))
-}
-
 // ExceptionRow names one row of the exceptions page. The link narrows the page to Env (empty is
 // the dashboard's Not Set), so ID is the row's id without the env suffix the All view adds.
 type ExceptionRow struct {
@@ -99,10 +95,42 @@ type ExceptionRow struct {
 // opens it only if the row is among those it loads for the window. The env filter is always set:
 // without one the page applies the environment the reader last picked, which can hide the row.
 func (b *Builder) BuildExceptionLink(fromMs, toMs int64, row ExceptionRow) string {
+	if row.Env != "" && safeFilterValue(row.Env) == "" {
+		return ""
+	}
 	params := b.exceptionsParams(fromMs, toMs)
 	params.Set("exception_id", row.ID)
 	if filterValue, err := json.Marshal([]string{fmt.Sprintf(`deployment_environment="%s"`, row.Env)}); err == nil {
 		params.Set("filter", string(filterValue))
+	}
+	return b.exceptionsLink(params)
+}
+
+type ExceptionsLinkOptions struct {
+	FromMs      int64
+	ToMs        int64
+	ServiceName string
+	Env         string
+}
+
+// BuildExceptionsLink creates an exceptions dashboard deep link.
+func (b *Builder) BuildExceptionsLink(options ExceptionsLinkOptions) string {
+	if options.ServiceName != "" && safeFilterValue(options.ServiceName) == "" ||
+		options.Env != "" && safeFilterValue(options.Env) == "" {
+		return ""
+	}
+	params := b.exceptionsParams(options.FromMs, options.ToMs)
+	var filters []string
+	if service := safeFilterValue(options.ServiceName); service != "" {
+		filters = append(filters, fmt.Sprintf(`service_name="%s"`, service))
+	}
+	if exceptionEnv := safeFilterValue(options.Env); exceptionEnv != "" {
+		filters = append(filters, fmt.Sprintf(`deployment_environment="%s"`, exceptionEnv))
+	}
+	if len(filters) > 0 {
+		if filterValue, err := json.Marshal(filters); err == nil {
+			params.Set("filter", string(filterValue))
+		}
 	}
 	return b.exceptionsLink(params)
 }
@@ -178,6 +206,13 @@ func (b *Builder) BuildDropRulesLink() string {
 // apmCatalogEnvRegexMeta are characters that make an env argument a pattern,
 // not a single catalog filter value.
 const apmCatalogEnvRegexMeta = `.*+?()[]{}|\^$`
+
+func safeFilterValue(value string) string {
+	if value == "" || strings.ContainsRune(value, '"') || strings.IndexFunc(value, unicode.IsControl) >= 0 {
+		return ""
+	}
+	return value
+}
 
 // APMCatalogEnvExact returns a catalog filter for callers that pass an exact
 // environment name (not a PromQL regex). Only empty and ".*" are screened out;
