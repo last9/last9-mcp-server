@@ -18,5 +18,8 @@ Parameters:
 - start_time_iso: (Optional) Start time in RFC3339 format.
 - end_time_iso: (Optional) End time in RFC3339 format.
 
+Output: every key metric of an available database is listed in `metrics`; a key whose query returned no series (or only NaN/Inf samples) is `null` and also named in `missing_metrics`, so a missing exporter metric is not mistaken for an unqueried one. In a per-instance object, an instance whose sample is NaN/Inf is left out.
+
 Example metrics:
+- Oracle (oracledb exporter), each an object keyed by `oracledb_instance_name`: active_sessions, executions_per_sec, user_commits_per_sec, user_rollbacks_per_sec, parse_calls_per_sec, hard_parses_per_sec, logical_reads_per_sec, consistent_gets_per_sec, db_block_gets_per_sec, physical_reads_per_sec, cpu_time_seconds_per_sec, tablespace_used_pct (max per instance).
 - Aerospike: open_connections, memory_free_pct, namespace_memory_free_pct, namespace_memory_used_bytes, reads_per_sec, writes_per_sec, errors_per_sec, disk_available_pct.

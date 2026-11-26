@@ -3,12 +3,17 @@ package dashboards
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"last9-mcp/internal/constants"
+	"last9-mcp/internal/utils"
+	"last9-mcp/internal/writefault"
 )
 
 func TestDoJSONRequest_4xxWithBody(t *testing.T) {
@@ -157,6 +162,52 @@ func TestDoJSONRequest_RejectsOversizedSuccessBody(t *testing.T) {
 	}
 }
 
+func TestDoJSONRequest_MarksWriteFaultsAsUnknownOutcome(t *testing.T) {
+	for _, fault := range writefault.All {
+		t.Run(string(fault), func(t *testing.T) {
+			var requests atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				writefault.Serve(w, r, fault)
+			}))
+			defer srv.Close()
+
+			client := &http.Client{Timeout: 200 * time.Millisecond}
+			_, _, err := doJSONRequest(context.Background(), client, testDashboardConfig(srv.URL), http.MethodPost, srv.URL+constants.EndpointDashboards+"/", []byte(`{}`))
+			var unknown *utils.WriteOutcomeUnknownError
+			if !errors.As(mapDashboardAPIError(err), &unknown) {
+				t.Fatalf("outcome not marked unknown: %v", err)
+			}
+			if n := requests.Load(); n != 1 {
+				t.Errorf("server saw %d requests, want exactly 1", n)
+			}
+		})
+	}
+}
+
+func TestDoJSONRequest_MarksGatewayStatusOnWriteOnly(t *testing.T) {
+	for _, tt := range []struct {
+		method string
+		status int
+		want   bool
+	}{
+		{http.MethodDelete, http.StatusGatewayTimeout, true},
+		{http.MethodPut, http.StatusBadGateway, true},
+		{http.MethodPut, http.StatusServiceUnavailable, false},
+		{http.MethodGet, http.StatusGatewayTimeout, false},
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(tt.status)
+		}))
+		_, _, err := doJSONRequest(context.Background(), srv.Client(), testDashboardConfig(srv.URL), tt.method, srv.URL+constants.EndpointDashboards, nil)
+		srv.Close()
+		var unknown *utils.WriteOutcomeUnknownError
+		if got := errors.As(err, &unknown); got != tt.want {
+			t.Errorf("%s %d: marked unknown = %v, want %v (%v)", tt.method, tt.status, got, tt.want, err)
+		}
+	}
+}
+
 func TestDoJSONRequest_GETSuccess(t *testing.T) {
 	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -186,5 +237,23 @@ func TestDoJSONRequest_GETSuccess(t *testing.T) {
 	}
 	if !strings.HasPrefix(gotAuth, constants.BearerPrefix) {
 		t.Fatalf("auth header %q", gotAuth)
+	}
+}
+
+func TestDoJSONRequest_ErrorBodyIsSanitized(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"bad","auth":"Bearer abc123","url":"https://internal.example/x","token=sekret"}`))
+	}))
+	defer srv.Close()
+
+	_, _, err := doJSONRequest(context.Background(), srv.Client(), testDashboardConfig(srv.URL), http.MethodGet, srv.URL+constants.EndpointDashboards, nil)
+	if err == nil {
+		t.Fatal("expected error for 400")
+	}
+	for _, secret := range []string{"abc123", "internal.example", "sekret"} {
+		if strings.Contains(err.Error(), secret) {
+			t.Fatalf("error leaked %q: %v", secret, err)
+		}
 	}
 }

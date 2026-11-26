@@ -13,7 +13,7 @@ func TestCreateAlertAlwaysCreatesDisabledDraft(t *testing.T) {
 	for name, in := range map[string]*bool{"omitted": nil, "false": &f, "true": &tr} {
 		t.Run(name, func(t *testing.T) {
 			server := newAlertRuleServer(t, http.MethodPost, "/entities/entity-1/alert-rules",
-				`{"primary_indicator":"latency","expression_args":{"latency":{"id":"kpi-1"}},"is_disabled":true,"rule_name":"latency"}`)
+				`{"primary_indicator":"latency","expression_args":{"latency":{"id":"kpi-1"}},"is_disabled":true,"rule_name":"latency","properties":{"annotations":{"_l9_created_via_":"last9-mcp","_l9_created_via_client_":"unknown/unknown"}}}`)
 			rn := "latency"
 			payload := validAlertRulePayload(&rn)
 			payload.IsDisabled = in
@@ -21,6 +21,7 @@ func TestCreateAlertAlwaysCreatesDisabledDraft(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			assertAlertLinkMeta(t, result, expectedAlertLink{URL: "/v2/organizations//alerting/groups?group_id=entity-1&rule=rule-1", Label: "Open alert"})
 			text := resultText(result)
 			if !strings.HasPrefix(text, `{"id":"rule-1"}`) || !strings.Contains(text, "disabled draft") || !strings.Contains(text, "patch_alert is_disabled=false") {
 				t.Fatalf("unexpected result: %s", text)
@@ -37,6 +38,18 @@ func TestCreateAlertValidationReturnsToolError(t *testing.T) {
 	create, _, err := NewCreateAlertHandler(http.DefaultClient, cfg)(context.Background(), nil, CreateAlertArgs{})
 	if err != nil || !create.IsError {
 		t.Fatalf("create validation: result=%+v err=%v", create, err)
+	}
+}
+
+func TestCreateAlertSendsOnNoData(t *testing.T) {
+	server := newAlertRuleServer(t, http.MethodPost, "/entities/entity-1/alert-rules",
+		`{"primary_indicator":"latency","expression_args":{"latency":{"id":"kpi-1"}},"is_disabled":true,"properties":{"annotations":{"_l9_created_via_":"last9-mcp","_l9_created_via_client_":"unknown/unknown"}},"on_no_data":"alert"}`)
+	payload := validAlertRulePayload(nil)
+	payload.OnNoData = ptrString("alert")
+	_, _, err := NewCreateAlertHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil,
+		CreateAlertArgs{EntityID: "entity-1", AlertRuleMutation: AlertRuleMutation{AlertRule: payload}})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

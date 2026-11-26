@@ -2,11 +2,12 @@ Gets the historical firing state of alert rules over a specified time range, gro
 It samples alert state at each step within the time range and returns 1 for firing and 0 otherwise at each timestamp.
 
 Required parameters:
-- start_time: Unix epoch start of the range (inclusive)
-- end_time: Unix epoch end of the range (inclusive)
+- start_time: start of the range (inclusive), Unix epoch seconds (e.g. 1718000000) or RFC3339 (e.g. 2024-06-10T06:13:20Z); epoch milliseconds, microseconds and nanoseconds are converted to seconds
+- end_time: end of the range (inclusive), same formats
 - step: Resolution in seconds between samples
 
-Optional filters forwarded to the upstream API (no client-side filtering is applied):
+Optional filters (omit to include all matching rules):
+- rule_id: Exact rule ID from `get_alert_config` or `get_alerts`. Selects that rule from each sample after the other filters apply.
 - alert_group_id: Filter by alert group ID
 - rule_name: Regex filter on rule name
 - alert_group_name: Regex filter on alert group name
@@ -15,4 +16,23 @@ Optional filters forwarded to the upstream API (no client-side filtering is appl
 
 Output is a JSON map of rule_id -> [{timestamp, is_firing}]. A timestamp at which a rule is absent from the upstream
 response is reported as is_firing=0; this reflects "not observed as firing" and not necessarily a confirmed normal state.
-The number of samples ((end_time - start_time) / step + 1) is capped at 100.
+The number of samples ((end_time - start_time) / step + 1) is capped at 100. Each sample is one upstream call covering
+the min(step, 3600) seconds ending at its timestamp. The call gives up after 60s and says how to retry with fewer samples.
+
+## When to use
+Whether alert rules were firing at each step of a past range.
+
+## When not to use
+- Alerts firing now: `get_alerts`
+- Rule configuration: `get_alert_config`
+
+## Pairs well with
+- `get_current_time` (epoch bounds)
+- `get_alert_config` (rule ids and names)
+
+## Output shape
+JSON map of rule_id to `[{timestamp, is_firing}]`.
+If a rule_id, alert_group_id, rule_name or alert_group_name filter matches no rules across all samples, returns a tool error with recovery guidance. This does not prove the group or rule is nonexistent. Without these filters, no matches returns `{}`.
+
+## Known traps
+`start_time` and `end_time` are absolute times, never durations or offsets like `now-1h`; values before 2000 are rejected. Keep end_time at or before now: a call is rejected before polling if any sample (start_time + n·step) lands after now. At most 100 samples per call; fewer samples answer faster.

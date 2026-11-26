@@ -6,19 +6,26 @@ import (
 	"strings"
 	"text/template"
 
+	"last9-mcp/internal/prompts"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // renderWorkflow errors if any Required arg is blank, then renders the embedded
 // text/template body with the string args into one user message. Optional args
-// are gated with {{if .env}}...{{end}}; missing keys render empty.
+// are gated with {{if .env}}...{{end}}; missing keys render empty. Every
+// template can call the defines in prompts.WorkflowPartials.
 func renderWorkflow(name, description, tmpl string, args map[string]string, declared []*mcp.PromptArgument) (*mcp.GetPromptResult, error) {
 	for _, a := range declared {
 		if a.Required && strings.TrimSpace(args[a.Name]) == "" {
 			return nil, fmt.Errorf("required argument %q is missing", a.Name)
 		}
 	}
-	t, err := template.New(name).Option("missingkey=zero").Parse(tmpl)
+	t, err := template.New(name).Option("missingkey=zero").Parse(prompts.WorkflowPartials)
+	if err != nil {
+		return nil, fmt.Errorf("parse workflow partials: %w", err)
+	}
+	t, err = t.Parse(tmpl)
 	if err != nil {
 		return nil, fmt.Errorf("parse %s template: %w", name, err)
 	}

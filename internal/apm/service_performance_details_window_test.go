@@ -274,10 +274,11 @@ func TestServicePerformanceDetails_RejectsWindowOverMaxDays(t *testing.T) {
 
 	now := time.Now().UTC()
 	args := ServicePerformanceDetailsArgs{
-		ServiceName:  "svc",
-		StartTimeISO: now.Add(-400 * 24 * time.Hour).Format(time.RFC3339),
-		EndTimeISO:   now.Format(time.RFC3339),
-		Env:          "prod",
+		IncludeSeries: true,
+		ServiceName:   "svc",
+		StartTimeISO:  now.Add(-400 * 24 * time.Hour).Format(time.RFC3339),
+		EndTimeISO:    now.Format(time.RFC3339),
+		Env:           "prod",
 	}
 
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
@@ -310,10 +311,11 @@ func TestServicePerformanceDetails_NoChunkingUnder35Days(t *testing.T) {
 
 	now := time.Now().UTC()
 	args := ServicePerformanceDetailsArgs{
-		ServiceName:  "svc",
-		StartTimeISO: now.Add(-10 * 24 * time.Hour).Format(time.RFC3339),
-		EndTimeISO:   now.Format(time.RFC3339),
-		Env:          "prod",
+		IncludeSeries: true,
+		ServiceName:   "svc",
+		StartTimeISO:  now.Add(-10 * 24 * time.Hour).Format(time.RFC3339),
+		EndTimeISO:    now.Format(time.RFC3339),
+		Env:           "prod",
 	}
 
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
@@ -348,10 +350,11 @@ func TestServicePerformanceDetails_SplitsWiderWindowIntoChunks(t *testing.T) {
 
 	now := time.Now().UTC()
 	args := ServicePerformanceDetailsArgs{
-		ServiceName:  "svc",
-		StartTimeISO: now.Add(-90 * 24 * time.Hour).Format(time.RFC3339),
-		EndTimeISO:   now.Format(time.RFC3339),
-		Env:          "prod",
+		IncludeSeries: true,
+		ServiceName:   "svc",
+		StartTimeISO:  now.Add(-90 * 24 * time.Hour).Format(time.RFC3339),
+		EndTimeISO:    now.Format(time.RFC3339),
+		Env:           "prod",
 	}
 
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
@@ -413,10 +416,11 @@ func TestServicePerformanceDetails_FailingChunkRecordsPartialErrorButOthersMerge
 	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 
 	args := ServicePerformanceDetailsArgs{
-		ServiceName:  "svc",
-		StartTimeISO: time.Unix(start, 0).UTC().Format(time.RFC3339),
-		EndTimeISO:   time.Unix(end, 0).UTC().Format(time.RFC3339),
-		Env:          "prod",
+		IncludeSeries: true,
+		ServiceName:   "svc",
+		StartTimeISO:  time.Unix(start, 0).UTC().Format(time.RFC3339),
+		EndTimeISO:    time.Unix(end, 0).UTC().Format(time.RFC3339),
+		Env:           "prod",
 	}
 
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
@@ -489,10 +493,11 @@ func TestServicePerformanceDetails_FailingChunkStillMergesOthers_Throughput(t *t
 	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 
 	args := ServicePerformanceDetailsArgs{
-		ServiceName:  "svc",
-		StartTimeISO: time.Unix(start, 0).UTC().Format(time.RFC3339),
-		EndTimeISO:   time.Unix(end, 0).UTC().Format(time.RFC3339),
-		Env:          "prod",
+		IncludeSeries: true,
+		ServiceName:   "svc",
+		StartTimeISO:  time.Unix(start, 0).UTC().Format(time.RFC3339),
+		EndTimeISO:    time.Unix(end, 0).UTC().Format(time.RFC3339),
+		Env:           "prod",
 	}
 
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
@@ -559,10 +564,11 @@ func TestServicePerformanceDetails_FailingChunkStillMergesOthers_TopRTQuery(t *t
 	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 
 	args := ServicePerformanceDetailsArgs{
-		ServiceName:  "svc",
-		StartTimeISO: time.Unix(start, 0).UTC().Format(time.RFC3339),
-		EndTimeISO:   time.Unix(end, 0).UTC().Format(time.RFC3339),
-		Env:          "prod",
+		IncludeSeries: true,
+		ServiceName:   "svc",
+		StartTimeISO:  time.Unix(start, 0).UTC().Format(time.RFC3339),
+		EndTimeISO:    time.Unix(end, 0).UTC().Format(time.RFC3339),
+		Env:           "prod",
 	}
 
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
@@ -635,10 +641,11 @@ func TestServicePerformanceDetails_Exactly366Days_Accepted(t *testing.T) {
 
 	now := time.Now().UTC()
 	args := ServicePerformanceDetailsArgs{
-		ServiceName:  "svc",
-		StartTimeISO: now.Add(-time.Duration(maxServicePerformanceWindowDays) * 24 * time.Hour).Format(time.RFC3339),
-		EndTimeISO:   now.Format(time.RFC3339),
-		Env:          "prod",
+		IncludeSeries: true,
+		ServiceName:   "svc",
+		StartTimeISO:  now.Add(-time.Duration(maxServicePerformanceWindowDays) * 24 * time.Hour).Format(time.RFC3339),
+		EndTimeISO:    now.Format(time.RFC3339),
+		Env:           "prod",
 	}
 
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
@@ -663,10 +670,11 @@ func TestServicePerformanceDetails_366DaysPlus1Second_Rejected(t *testing.T) {
 
 	now := time.Now().UTC()
 	args := ServicePerformanceDetailsArgs{
-		ServiceName:  "svc",
-		StartTimeISO: now.Add(-(time.Duration(maxServicePerformanceWindowDays)*24*time.Hour + time.Second)).Format(time.RFC3339),
-		EndTimeISO:   now.Format(time.RFC3339),
-		Env:          "prod",
+		IncludeSeries: true,
+		ServiceName:   "svc",
+		StartTimeISO:  now.Add(-(time.Duration(maxServicePerformanceWindowDays)*24*time.Hour + time.Second)).Format(time.RFC3339),
+		EndTimeISO:    now.Format(time.RFC3339),
+		Env:           "prod",
 	}
 
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
@@ -717,10 +725,11 @@ func TestServicePerformanceDetails_QueryStrings_SingleChunkUsesRateInterval(t *t
 
 	now := time.Now().UTC()
 	args := ServicePerformanceDetailsArgs{
-		ServiceName:  "svc",
-		StartTimeISO: now.Add(-10 * 24 * time.Hour).Format(time.RFC3339), // 10 days = 240h outer window
-		EndTimeISO:   now.Format(time.RFC3339),
-		Env:          "prod",
+		IncludeSeries: true,
+		ServiceName:   "svc",
+		StartTimeISO:  now.Add(-10 * 24 * time.Hour).Format(time.RFC3339), // 10 days = 240h outer window
+		EndTimeISO:    now.Format(time.RFC3339),
+		Env:           "prod",
 	}
 
 	if _, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args); err != nil {
@@ -789,10 +798,11 @@ func TestServicePerformanceDetails_QueryStrings_ChunkedUsesRateIntervalAndChunkW
 	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 
 	args := ServicePerformanceDetailsArgs{
-		ServiceName:  "svc",
-		StartTimeISO: time.Unix(start, 0).UTC().Format(time.RFC3339),
-		EndTimeISO:   time.Unix(end, 0).UTC().Format(time.RFC3339),
-		Env:          "prod",
+		IncludeSeries: true,
+		ServiceName:   "svc",
+		StartTimeISO:  time.Unix(start, 0).UTC().Format(time.RFC3339),
+		EndTimeISO:    time.Unix(end, 0).UTC().Format(time.RFC3339),
+		Env:           "prod",
 	}
 	if _, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args); err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -919,10 +929,11 @@ func TestServicePerformanceDetails_MultiChunkTopKMergeAtHandlerLevel(t *testing.
 	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 
 	args := ServicePerformanceDetailsArgs{
-		ServiceName:  "svc",
-		StartTimeISO: time.Unix(start, 0).UTC().Format(time.RFC3339),
-		EndTimeISO:   time.Unix(end, 0).UTC().Format(time.RFC3339),
-		Env:          "prod",
+		IncludeSeries: true,
+		ServiceName:   "svc",
+		StartTimeISO:  time.Unix(start, 0).UTC().Format(time.RFC3339),
+		EndTimeISO:    time.Unix(end, 0).UTC().Format(time.RFC3339),
+		Env:           "prod",
 	}
 
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
@@ -998,10 +1009,11 @@ func TestServicePerformanceDetails_ThreeChunkWindow_MergedSeriesOrderedContiguou
 	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 
 	args := ServicePerformanceDetailsArgs{
-		ServiceName:  "svc",
-		StartTimeISO: time.Unix(start, 0).UTC().Format(time.RFC3339),
-		EndTimeISO:   time.Unix(end, 0).UTC().Format(time.RFC3339),
-		Env:          "prod",
+		IncludeSeries: true,
+		ServiceName:   "svc",
+		StartTimeISO:  time.Unix(start, 0).UTC().Format(time.RFC3339),
+		EndTimeISO:    time.Unix(end, 0).UTC().Format(time.RFC3339),
+		Env:           "prod",
 	}
 
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
@@ -1083,10 +1095,11 @@ func TestServicePerformanceDetails_MalformedJSONChunk_RecordsPartialErrorOthersM
 	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 
 	args := ServicePerformanceDetailsArgs{
-		ServiceName:  "svc",
-		StartTimeISO: time.Unix(start, 0).UTC().Format(time.RFC3339),
-		EndTimeISO:   time.Unix(end, 0).UTC().Format(time.RFC3339),
-		Env:          "prod",
+		IncludeSeries: true,
+		ServiceName:   "svc",
+		StartTimeISO:  time.Unix(start, 0).UTC().Format(time.RFC3339),
+		EndTimeISO:    time.Unix(end, 0).UTC().Format(time.RFC3339),
+		Env:           "prod",
 	}
 
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
@@ -1177,11 +1190,12 @@ func TestServicePerformanceDetails_TopN(t *testing.T) {
 				t.Run(tc.name, func(t *testing.T) {
 					now := time.Now().UTC()
 					args := ServicePerformanceDetailsArgs{
-						ServiceName:  "svc",
-						StartTimeISO: now.Add(-time.Duration(windowCase.windowDays) * 24 * time.Hour).Format(time.RFC3339),
-						EndTimeISO:   now.Format(time.RFC3339),
-						Env:          "prod",
-						TopN:         tc.topN,
+						IncludeSeries: true,
+						ServiceName:   "svc",
+						StartTimeISO:  now.Add(-time.Duration(windowCase.windowDays) * 24 * time.Hour).Format(time.RFC3339),
+						EndTimeISO:    now.Format(time.RFC3339),
+						Env:           "prod",
+						TopN:          tc.topN,
 					}
 					result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
 					if err != nil {
@@ -1236,11 +1250,12 @@ func TestServicePerformanceDetails_TopNClampsToMax(t *testing.T) {
 
 	now := time.Now().UTC()
 	args := ServicePerformanceDetailsArgs{
-		ServiceName:  "svc",
-		StartTimeISO: now.Add(-90 * 24 * time.Hour).Format(time.RFC3339), // 90 days -> multi-chunk
-		EndTimeISO:   now.Format(time.RFC3339),
-		Env:          "prod",
-		TopN:         1000000,
+		IncludeSeries: true,
+		ServiceName:   "svc",
+		StartTimeISO:  now.Add(-90 * 24 * time.Hour).Format(time.RFC3339), // 90 days -> multi-chunk
+		EndTimeISO:    now.Format(time.RFC3339),
+		Env:           "prod",
+		TopN:          1000000,
 	}
 
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
@@ -1327,10 +1342,11 @@ func TestServicePerformanceDetails_PerChunkTimeoutOnlyAppliedWhenChunked(t *test
 		handler := NewServicePerformanceDetailsHandler(client, apmTestConfig(server.URL))
 		now := time.Now().UTC()
 		args := ServicePerformanceDetailsArgs{
-			ServiceName:  "svc",
-			Env:          "prod",
-			StartTimeISO: now.Add(-1 * time.Hour).Format(time.RFC3339),
-			EndTimeISO:   now.Format(time.RFC3339),
+			IncludeSeries: true,
+			ServiceName:   "svc",
+			Env:           "prod",
+			StartTimeISO:  now.Add(-1 * time.Hour).Format(time.RFC3339),
+			EndTimeISO:    now.Format(time.RFC3339),
 		}
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
 		if err != nil {
@@ -1359,10 +1375,11 @@ func TestServicePerformanceDetails_PerChunkTimeoutOnlyAppliedWhenChunked(t *test
 		handler := NewServicePerformanceDetailsHandler(client, apmTestConfig(server.URL))
 		now := time.Now().UTC()
 		args := ServicePerformanceDetailsArgs{
-			ServiceName:  "svc",
-			Env:          "prod",
-			StartTimeISO: now.Add(-90 * 24 * time.Hour).Format(time.RFC3339),
-			EndTimeISO:   now.Format(time.RFC3339),
+			IncludeSeries: true,
+			ServiceName:   "svc",
+			Env:           "prod",
+			StartTimeISO:  now.Add(-90 * 24 * time.Hour).Format(time.RFC3339),
+			EndTimeISO:    now.Format(time.RFC3339),
 		}
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
 		if err != nil {
@@ -1418,10 +1435,11 @@ func TestServicePerformanceDetails_EnvMatcherScope(t *testing.T) {
 
 			now := time.Now().UTC()
 			args := ServicePerformanceDetailsArgs{
-				ServiceName:  "svc",
-				Env:          tc.env,
-				StartTimeISO: now.Add(-60 * time.Minute).Format(time.RFC3339),
-				EndTimeISO:   now.Format(time.RFC3339),
+				IncludeSeries: true,
+				ServiceName:   "svc",
+				Env:           tc.env,
+				StartTimeISO:  now.Add(-60 * time.Minute).Format(time.RFC3339),
+				EndTimeISO:    now.Format(time.RFC3339),
 			}
 
 			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)

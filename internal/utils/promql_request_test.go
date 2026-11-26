@@ -130,24 +130,6 @@ func TestMakePromLabelValuesAPIQuery_AnchorsOnEndTime(t *testing.T) {
 	assertRightAnchored(t, decodeBody(t, captured))
 }
 
-func TestMakePromLabelsAPIQuery_AnchorsOnEndTime(t *testing.T) {
-	var captured []byte
-	srv := newCapturingServer(t, &captured)
-	defer srv.Close()
-
-	cfg := stubTokenManagerCfg(t, srv.URL)
-	resp, err := MakePromLabelsAPIQuery(
-		context.Background(), srv.Client(), "up",
-		testStartUnix, testEndUnix, cfg,
-	)
-	if err != nil {
-		t.Fatalf("MakePromLabelsAPIQuery: %v", err)
-	}
-	defer resp.Body.Close()
-
-	assertRightAnchored(t, decodeBody(t, captured))
-}
-
 // The resolution fields are opt-in — a zero PromResolution must put neither
 // on the wire, which is what callers with fixed selectors rely on.
 func TestMakePromRangeAPIQuery_OmitsResolutionFieldsByDefault(t *testing.T) {

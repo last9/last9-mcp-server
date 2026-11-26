@@ -1,0 +1,1 @@
+Searches Last9 product docs. Use it before linking any Last9 docs page, and cite only URLs returned by this tool. If there is no result, say Last9 has no docs page on the topic instead of guessing URLs. `query` is required and non-empty. `limit` defaults to 5 and is clamped to 1–5 pages.

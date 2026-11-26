@@ -20,7 +20,7 @@ func GetAPMServiceDeviationsInputSchema() map[string]interface{} {
 			},
 			"datasource": map[string]interface{}{
 				"type":        "string",
-				"description": "One datasource to query. Omit to use the configured default datasource; data from multiple datasources is never combined.",
+				"description": "One datasource to query. Omit for the default; a near miss uses its closest match (named in an additional content block). Ambiguous names return candidates without querying.",
 			},
 			"start_time_iso": map[string]interface{}{
 				"type":        "string",

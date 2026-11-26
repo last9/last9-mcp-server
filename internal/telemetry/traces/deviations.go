@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"last9-mcp/internal/constants"
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -94,9 +95,26 @@ type deviationAPILimits struct {
 	MaximumRankedResults int `json:"maximum_ranked_results"`
 }
 
+// AttributeDeviation is one ranked attribute value from the deviations endpoint.
+type AttributeDeviation struct {
+	Attribute            string  `json:"attribute"`
+	Value                any     `json:"value"`
+	TargetCount          float64 `json:"target_count"`
+	ControlCount         float64 `json:"control_count"`
+	PercentagePointDelta float64 `json:"percentage_point_delta"`
+	Rank                 int     `json:"rank"`
+	Interpretation       string  `json:"interpretation,omitempty"`
+}
+
+// AttributeDeviations is the ranked part of an attribute-deviations response.
+type AttributeDeviations struct {
+	Deviations []AttributeDeviation
+	Warnings   []string
+}
+
 func NewGetTraceAttributeDeviationsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetTraceAttributeDeviationsArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args GetTraceAttributeDeviationsArgs) (*mcp.CallToolResult, any, error) {
-		request, err := buildDeviationAPIRequest(args, time.Now())
+		request, err := buildDeviationAPIRequest(args, utils.Now())
 		if err != nil {
 			return nil, nil, err
 		}
@@ -104,8 +122,65 @@ func NewGetTraceAttributeDeviationsHandler(client *http.Client, cfg models.Confi
 		if err != nil {
 			return nil, nil, err
 		}
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(body)}}}, nil, nil
+		return &mcp.CallToolResult{
+			Meta:    deeplink.ToMeta(deviationTracesLink(cfg, request)),
+			Content: []mcp.Content{&mcp.TextContent{Text: string(body)}},
+		}, nil, nil
 	}
+}
+
+// deviationTracesLink opens the Traces explorer over the analysis window,
+// scoped to the same service, environment, operation, and filters.
+func deviationTracesLink(cfg models.Config, request deviationAPIRequest) string {
+	scope := request.Scope
+	conditions := []interface{}{
+		map[string]interface{}{"$eq": []interface{}{"ServiceName", scope.ServiceName}},
+		map[string]interface{}{"$eq": []interface{}{ResourceAttributeField("deployment.environment"), scope.Environment}},
+	}
+	if scope.Operation != "" {
+		conditions = append(conditions, map[string]interface{}{"$eq": []interface{}{"SpanName", scope.Operation}})
+	}
+	for _, filter := range scope.Filters {
+		conditions = append(conditions, filter)
+	}
+	pipeline := []map[string]interface{}{
+		{"type": "filter", "query": map[string]interface{}{"$and": conditions}},
+	}
+	target := request.Comparison.Target
+	return deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildTracesLink(target.Start.UnixMilli(), target.End.UnixMilli(), pipeline, "", "")
+}
+
+// QueryTraceAttributeDeviations runs the get_trace_attribute_deviations analysis
+// and returns its ranked values and evidence warnings.
+func QueryTraceAttributeDeviations(ctx context.Context, client *http.Client, cfg models.Config, args GetTraceAttributeDeviationsArgs) (AttributeDeviations, error) {
+	body, err := fetchAttributeDeviations(ctx, client, cfg, args)
+	if err != nil {
+		return AttributeDeviations{}, err
+	}
+	var envelope struct {
+		Evidence struct {
+			Warnings []string `json:"warnings"`
+		} `json:"evidence"`
+		Data struct {
+			Deviations []AttributeDeviation `json:"deviations"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return AttributeDeviations{}, newTraceInvalidResponseError(err)
+	}
+	result := AttributeDeviations{Deviations: envelope.Data.Deviations, Warnings: envelope.Evidence.Warnings}
+	if result.Warnings == nil {
+		result.Warnings = []string{}
+	}
+	return result, nil
+}
+
+func fetchAttributeDeviations(ctx context.Context, client *http.Client, cfg models.Config, args GetTraceAttributeDeviationsArgs) ([]byte, error) {
+	request, err := buildDeviationAPIRequest(args, utils.Now())
+	if err != nil {
+		return nil, err
+	}
+	return callAttributeDeviationsAPI(ctx, client, cfg, request)
 }
 
 func buildDeviationAPIRequest(args GetTraceAttributeDeviationsArgs, now time.Time) (deviationAPIRequest, error) {
@@ -330,29 +405,8 @@ func callAttributeDeviationsAPI(ctx context.Context, client *http.Client, cfg mo
 	if !json.Valid(responseBody) {
 		return nil, newTraceInvalidResponseError(nil)
 	}
-	if err := checkDeviationResponseContract(responseBody); err != nil {
+	if err := checkEvidenceContract(responseBody, attributeDeviationsVersion); err != nil {
 		return nil, err
 	}
 	return responseBody, nil
-}
-
-// The handler forwards this body verbatim, so a payload that is not the promised
-// envelope would have the model reasoning over fields that do not exist.
-func checkDeviationResponseContract(body []byte) error {
-	var envelope struct {
-		ContractVersion string `json:"contract_version"`
-		AnalysisVersion string `json:"analysis_version"`
-	}
-	if err := json.Unmarshal(body, &envelope); err != nil {
-		return newTraceInvalidResponseError(err)
-	}
-	if envelope.ContractVersion != investigationEvidenceVersion {
-		return newTraceInvalidResponseError(fmt.Errorf(
-			"expected contract_version %q, got %q", investigationEvidenceVersion, envelope.ContractVersion))
-	}
-	if envelope.AnalysisVersion != attributeDeviationsVersion {
-		return newTraceInvalidResponseError(fmt.Errorf(
-			"expected analysis_version %q, got %q", attributeDeviationsVersion, envelope.AnalysisVersion))
-	}
-	return nil
 }

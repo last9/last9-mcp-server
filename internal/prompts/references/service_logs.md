@@ -1,4 +1,4 @@
-Use this tool to fetch raw log entries for a single service using structured filters. Do not write a `logjson_query`.
+Use this tool to fetch log entries for a single service using structured filters. Do not write a `logjson_query`.
 
 ## When to use this tool vs `get_logs`
 
@@ -32,8 +32,8 @@ Do not invent org-specific attribute names. Discover fields with `get_log_attrib
 
 - `service_name` (required): Service name to query.
 - `start_time_iso` / `end_time_iso` (optional): Absolute time range in RFC3339 / ISO8601 format. Use these when the user gives explicit timestamps or dates.
-- `lookback_minutes` (optional): Relative time range only when the user did not give explicit timestamps.
-- `limit` (optional): Maximum number of log entries to return.
+- `lookback_minutes` (optional, default 60, minimum 1): Relative time range only when the user did not give explicit timestamps. Required with `body_filters` unless `start_time_iso` is set.
+- `limit` (optional): Maximum number of log entries to return. Default: 100 in `summary` mode, 20 in `raw` mode.
 - `severity_filters` (optional): Array of severity strings such as `["error", "fatal", "critical"]`.
 - `http_status_class` (optional): `2xx`, `3xx`, `4xx`, or `5xx`.
 - `http_status_code` (optional): Exact 3-digit HTTP status such as `500` or `401`.
@@ -42,6 +42,8 @@ Do not invent org-specific attribute names. Discover fields with `get_log_attrib
 - `body_filters` (optional): Array of substrings that should appear in the log body. Last resort only.
 - `env` (optional): Deployment environment string.
 - `index` (optional): Explicit log index in the form `physical_index:<name>` or `rehydration_index:<block_name>`.
+- `response_mode` (optional): `summary` (default) or `raw`. Over 20 lines, `summary` replaces `logs` with a `summary` object: `lines_summarized`, `severity_counts`, `first_timestamp`/`last_timestamp`, a 10-bucket `histogram`, and the top `patterns` (`template`, `count`, up to two `samples`), at most 4000 characters; `truncated: true` when the limit cut the result. `raw` returns entries; 20 lines or fewer also return entries in summary mode. Entry responses are capped at 32000 serialized MCP-result bytes, including metadata. `logs_truncated` and the hint identify omitted entries. If no whole entry fits, the tool returns an error; narrow the query or use summary mode.
+- Ranges over 336 hours (only when the server operator enabled server-side log search; otherwise no `pieces` are reported): read as contiguous pieces of at most 336 hours, newest first, merged up to `limit`. `search_stats.pieces` lists each piece's `start`, `end` and `status` (`complete`, `partial` when rows were cut, `failed` with `error`); report a `failed` piece's span as not searched.
 
 ## Log service inventory and index selection
 

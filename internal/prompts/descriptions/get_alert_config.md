@@ -1,56 +1,26 @@
+List alert rules and their metadata. Use it to discover rule and entity ids; use `get_entity_alert_rules` for each indicator's PromQL and full properties.
 
-	Get alert configurations (alert rules) from Last9.
-	Returns configured alert rules with metadata and supports both typed filters and free-text search.
-	Use this tool first to discover rules and entity IDs, then if required, use get_entity_alert_rules
-	with an entity_id to get the PromQL for the indicator and other details of the alert group (entity) of the alert rule.
+Filters: `rule_id` is a case-insensitive exact match that ignores surrounding spaces; `alert_rule_id` is its alias, and `rule_id` is preferred; `search_term` searches rule/group names and types, datasource, tags, team, tier and labels; `rule_name`, `alert_group_name`, `alert_group_type`, and `data_source_name` are case-insensitive substrings; `severity` and `rule_type` (`static`, `anomaly`, `adaptive`) are case-insensitive exact matches; every `tags` entry must match.
 
-	Optional filters:
-	- rule_id: Exact match on alert rule ID
-	- search_term: Case-insensitive substring search across rule name, alert group name/type, data source name, tags, team, tier, and labels (label keys and values)
-	- rule_name: Case-insensitive substring match on rule name
-	- severity: Exact case-insensitive match
-	- rule_type: Exact case-insensitive match on derived rule type ("static", "anomaly", or "adaptive")
-	- alert_group_name: Case-insensitive substring match on alert group name
-	- alert_group_type: Case-insensitive substring match on alert group type
-	- data_source_name: Case-insensitive substring match on alert group data source name
-	- tags: Array of case-insensitive substring matches; all provided tags must match
-	- only_without_notification_channel: Include rules whose alert group has no per-entity channel
-	  binding (dashboard "Not configured"). OR-combined with notification_channel_types when both
-	  are set. Global org-wide channels do not satisfy per-entity filters; listed when this filter is used.
-	- notification_channel_types: Include rules whose alert group has a per-entity channel with any
-	  listed type (case-insensitive, e.g. slack, email, pagerduty, generic_webhook). OR-combined with
-	  only_without_notification_channel when both are set.
-	- notification_channel_names: Include rules whose alert group has a per-entity channel with any
-	  listed name (case-insensitive exact match). AND-combined with other notification_channel_* filters
-	  on the same binding row.
-	- notification_channel_severities: Include rules whose alert group has a per-entity channel with any
-	  listed severity (breach or threat). AND-combined with notification_channel_types and
-	  notification_channel_names on the same binding row. OR-combined with only_without_notification_channel
-	  when both are set.
+Channel filters inspect per-entity bindings only. `only_without_notification_channel` is OR-combined with `notification_channel_types`. Names and severities (`breach` or `threat`) are AND constraints on the same binding row. Global org-wide channels do not satisfy these filters.
 
-	Each alert rule includes notification channel status for its alert group (dashboard Alert Studio
-	rules table column): Notification Channels shows configured types in dashboard order (opsgenie,
-	pagerduty, slack, generic_webhook, email) or "Not configured" when no per-entity binding exists.
-	Notification Channel Bindings lists each binding row (type, name, severity) with snooze/in_use flags
-	when set. Global org-wide channels do not appear here; they are listed only in the global advisory
-	when using only_without_notification_channel.
+Each rule includes id, name, primary indicator, entity id, group metadata, severity, algorithm, lifecycle state, channel summary and timestamps. Recent evaluations contain 5 one-minute samples, newest first; the newest ends 1-2 minutes before the call. States are firing; ok (normal, resolved, pending or empty state); or unknown (missing row, failed lookup or unrecognized state, e.g. no_data, silenced). Failures noted at top. Disabled rules show none; history is omitted when more than 25 enabled rules match.
+Rules with No data alerting enabled include `On No Data: alert`; absent means off. It fires after 2x `eval_window` minutes without samples and resolves about 11 minutes after data returns.
 
-	Each alert rule also includes:
-	- id: Unique identifier for the alert rule
-	- name: Human-readable name of the alert
-	- primary_indicator: Name of the primary KPI (metric) being monitored
-	- entity_id: Use this with get_entity_alert_rules to fetch the full PromQL for this entity's rules
-	- alert_group: Human-readable name of the entity (alert group) this rule belongs to, when resolved
-	- data_source: The alert group's data source name, when set
-	- tags: The alert group's tags, comma-separated, when set
-	- team: The alert group's configured team, when set
-	- tier: The alert group's configured tier, when set
-	- labels: The alert group's configured metadata labels as k=v pairs, when set
-	  For a full inventory of groups (including zero-rule groups) use get_alert_groups.
-	- state: Current state of the alert rule (active, inactive, etc.)
-	- severity: Alert severity level
-	- algorithm: Detection algorithm (static_threshold, high_spike, inc_trend, etc.)
-	- created_at: When the alert rule was created
-	- updated_at: When the alert rule was last modified
-	- mute_until and recurring_mute_schedule, when set; properties show only annotations here, so read
-	  description and runbook with get_entity_alert_rules
+## When to use
+Find alert rules by name, severity, group, metadata or notification channel.
+
+## When not to use
+- What is firing now: `get_alerts`
+- Longer firing history: `get_alert_rule_state`
+- Group inventory including zero-rule groups: `get_alert_groups`
+
+## Pairs well with
+- `get_entity_alert_rules`
+- `get_notification_channels`
+
+## Output shape
+Matching rules with ids, group, severity, state, evaluations, channels and indicators.
+
+## Known traps
+Read `last9://reference/tool_recipes` when combining channel filters or interpreting evaluation history.

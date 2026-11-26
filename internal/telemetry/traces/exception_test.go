@@ -99,10 +99,10 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 
 	handler := NewGetExceptionsHandler(server.Client(), cfg)
 	args := GetExceptionsArgs{
-		StartTimeISO: startTime.Format(time.RFC3339),
+		StartTimeISO: new(startTime.Format(time.RFC3339)),
 		EndTimeISO:   endTime.Format(time.RFC3339),
 		ServiceName:  "checkout",
-		SpanName:     "POST /orders",
+		SpanName:     new("POST /orders"),
 		Env:          "prod",
 		Limit:        10,
 	}
@@ -211,7 +211,7 @@ func TestGetExceptionsHandler_UsesDashboardShapeForEnvOnlyFilters(t *testing.T) 
 
 	handler := NewGetExceptionsHandler(server.Client(), cfg)
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetExceptionsArgs{
-		StartTimeISO: startTime.Format(time.RFC3339),
+		StartTimeISO: new(startTime.Format(time.RFC3339)),
 		EndTimeISO:   endTime.Format(time.RFC3339),
 		Env:          "alpha",
 	})
@@ -280,7 +280,7 @@ func TestGetExceptionsHandler_EscapesHyphenatedServiceNamesLikeFrontend(t *testi
 
 	handler := NewGetExceptionsHandler(server.Client(), cfg)
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetExceptionsArgs{
-		StartTimeISO: startTime.Format(time.RFC3339),
+		StartTimeISO: new(startTime.Format(time.RFC3339)),
 		EndTimeISO:   endTime.Format(time.RFC3339),
 		ServiceName:  "last9-api",
 		Env:          "prod",
@@ -341,7 +341,7 @@ func TestGetExceptionsHandler_BuildsUnfilteredSelector(t *testing.T) {
 
 	handler := NewGetExceptionsHandler(server.Client(), cfg)
 	args := GetExceptionsArgs{
-		StartTimeISO: startTime.Format(time.RFC3339),
+		StartTimeISO: new(startTime.Format(time.RFC3339)),
 		EndTimeISO:   endTime.Format(time.RFC3339),
 	}
 
@@ -404,7 +404,7 @@ func TestGetExceptionsHandler_DoesNotExposeInstantTimestampAsLastSeen(t *testing
 
 	handler := NewGetExceptionsHandler(server.Client(), cfg)
 	args := GetExceptionsArgs{
-		StartTimeISO: startTime.Format(time.RFC3339),
+		StartTimeISO: new(startTime.Format(time.RFC3339)),
 		EndTimeISO:   endTime.Format(time.RFC3339),
 	}
 
@@ -487,7 +487,7 @@ func TestGetExceptionsHandler_DoesNotCapLargeLimit(t *testing.T) {
 
 	handler := NewGetExceptionsHandler(server.Client(), cfg)
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetExceptionsArgs{
-		StartTimeISO: startTime.Format(time.RFC3339),
+		StartTimeISO: new(startTime.Format(time.RFC3339)),
 		EndTimeISO:   endTime.Format(time.RFC3339),
 		Limit:        150,
 	})
@@ -622,10 +622,10 @@ func TestGetExceptionsHandler_EscapesSingleQuoteInFilters(t *testing.T) {
 
 	handler := NewGetExceptionsHandler(server.Client(), cfg)
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetExceptionsArgs{
-		StartTimeISO: startTime.Format(time.RFC3339),
+		StartTimeISO: new(startTime.Format(time.RFC3339)),
 		EndTimeISO:   endTime.Format(time.RFC3339),
 		ServiceName:  "o'brien",
-		SpanName:     "GET /o'reilly",
+		SpanName:     new("GET /o'reilly"),
 		Env:          "prod'env",
 	})
 	if err != nil {

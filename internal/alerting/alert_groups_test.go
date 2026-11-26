@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -228,6 +229,60 @@ func TestGetAlertGroupsHandler_EmptyInventory(t *testing.T) {
 	}
 }
 
+// get_workspace_overview reports CountAlertGroups as the count get_alert_groups
+// returns with no filters; the two must not drift.
+func TestCountAlertGroupsMatchesUnfilteredGetAlertGroups(t *testing.T) {
+	inventories := map[string][]groupedAlertGroupEntitiesResponse{
+		"with zero-rule entity":   sampleAlertGroupsWithZeroRuleEntity(),
+		"case-variant label keys": sampleAlertGroupsWithCaseVariantLabelKeys(),
+		"empty":                   {{Entities: []alertGroupEntity{}}},
+	}
+	for name, groups := range inventories {
+		t.Run(name, func(t *testing.T) {
+			state := alertConfigTestServerState{
+				alertRules:         sampleAlertConfigRules(),
+				entityGroups:       groups,
+				alertRulesStatus:   http.StatusOK,
+				entityLookupStatus: http.StatusOK,
+			}
+			body, _, err := executeGetAlertGroups(t, &state, GetAlertGroupsArgs{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			server, cfg := newAlertGroupsTestServer(t, &state)
+			n, err := CountAlertGroups(context.Background(), server.Client(), cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := decodeAlertGroupsResponse(t, body).Count; n != want {
+				t.Fatalf("CountAlertGroups = %d, get_alert_groups count = %d", n, want)
+			}
+		})
+	}
+}
+
+// The overview counts groups from the lookup alone: get_alert_groups' rule
+// fetch only adds per-group rule counts, so an unreadable rules endpoint
+// fails get_alert_groups but leaves the count known.
+func TestCountAlertGroupsNeedsNoAlertRules(t *testing.T) {
+	state := alertConfigTestServerState{
+		entityGroups:       sampleAlertGroupsWithZeroRuleEntity(),
+		alertRulesStatus:   http.StatusInternalServerError,
+		entityLookupStatus: http.StatusOK,
+	}
+	if _, _, err := executeGetAlertGroups(t, &state, GetAlertGroupsArgs{}); err == nil {
+		t.Fatal("get_alert_groups succeeded with alert rules unreadable")
+	}
+	server, cfg := newAlertGroupsTestServer(t, &state)
+	n, err := CountAlertGroups(context.Background(), server.Client(), cfg)
+	if err != nil {
+		t.Fatalf("CountAlertGroups failed on the rules endpoint it does not need: %v", err)
+	}
+	if n == 0 {
+		t.Fatal("CountAlertGroups = 0, want the looked-up groups")
+	}
+}
+
 func executeGetAlertGroups(
 	t *testing.T,
 	state *alertConfigTestServerState,
@@ -235,9 +290,20 @@ func executeGetAlertGroups(
 ) (string, *mcp.CallToolResult, error) {
 	t.Helper()
 
+	server, cfg := newAlertGroupsTestServer(t, state)
+	handler := NewGetAlertGroupsHandler(server.Client(), cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
+	if err != nil {
+		return "", result, err
+	}
+
+	return utils.GetTextContent(t, result), result, nil
+}
+
+func newAlertGroupsTestServer(t *testing.T, state *alertConfigTestServerState) (*httptest.Server, models.Config) {
+	t.Helper()
 	server := newAlertConfigTestServer(t, state)
 	t.Cleanup(server.Close)
-
 	cfg := models.Config{
 		APIBaseURL: server.URL,
 		OrgSlug:    "last9",
@@ -247,14 +313,7 @@ func executeGetAlertGroups(
 		AccessToken: "test-access-token",
 		ExpiresAt:   time.Now().Add(24 * time.Hour),
 	}
-
-	handler := NewGetAlertGroupsHandler(server.Client(), cfg)
-	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
-	if err != nil {
-		return "", result, err
-	}
-
-	return utils.GetTextContent(t, result), result, nil
+	return server, cfg
 }
 
 func decodeAlertGroupsResponse(t *testing.T, body string) alertGroupsResponse {

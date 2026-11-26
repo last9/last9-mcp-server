@@ -104,7 +104,7 @@ func TestGetExceptionsHandler_FirstAndLastSeenNeedFinitePositiveCounts(t *testin
 
 func TestGetExceptionsHandler_FirstAndLastSeenRangeFiltersMatchInstantQuery(t *testing.T) {
 	var query string
-	runGetExceptions(t, GetExceptionsArgs{ServiceName: "last9-api", SpanName: "GET /a", Env: "prod"}, `[]`, func(w http.ResponseWriter, r *http.Request) {
+	runGetExceptions(t, GetExceptionsArgs{ServiceName: "last9-api", SpanName: new("GET /a"), Env: "prod"}, `[]`, func(w http.ResponseWriter, r *http.Request) {
 		query = decodeRangeRequest(t, r).Query
 		io.WriteString(w, `[]`)
 	})

@@ -12,6 +12,7 @@ import (
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/alerts"
+	"last9-mcp/internal/last9api/entities"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -49,18 +50,19 @@ type CreateAlertFromChartArgs struct {
 	Severity          string            `json:"severity,omitempty" jsonschema:"Severity: breach or threat; when omitted the backend derives it from the algorithm and static chart rules default to breach"`
 	GroupID           string            `json:"group_id,omitempty" jsonschema:"Alert group UUID the chart resolves to; normally omit. The backend rejects any group other than the chart's own, so use only a group_id already returned for this chart"`
 	Description       string            `json:"description,omitempty" jsonschema:"Responder-facing symptom, impact, and intended action stored on the rule as properties.description"`
+	OnNoData          string            `json:"on_no_data,omitempty" jsonschema:"Set to alert to fire a No data alert after 2x eval_window minutes without samples; omit to leave off"`
 }
 
 // NewCreateAlertFromChartHandler returns the MCP tool handler for
 // create_alert_from_chart: one-call static-threshold rule creation from a
 // covered Discover chart identity.
 func NewCreateAlertFromChartHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, CreateAlertFromChartArgs) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, args CreateAlertFromChartArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, mcpReq *mcp.CallToolRequest, args CreateAlertFromChartArgs) (*mcp.CallToolResult, any, error) {
 		surface := strings.TrimSpace(args.Surface)
 		if surface == "" {
 			return utils.ToolErrorResult("surface is required"), nil, nil
 		}
-		if msg := uncoveredSurfaceError(surface); msg != "" {
+		if msg := uncoveredSurfaceError(surface, cfg.ToolFilter); msg != "" {
 			return utils.ToolErrorResult(msg), nil, nil
 		}
 		chartKey := strings.TrimSpace(args.ChartKey)
@@ -98,13 +100,17 @@ func NewCreateAlertFromChartHandler(client *http.Client, cfg models.Config) func
 		if args.Severity != "" && args.Severity != severityBreach && args.Severity != severityThreat {
 			return utils.ToolErrorResult("severity must be breach or threat"), nil, nil
 		}
+		if args.OnNoData != "" && args.OnNoData != "alert" {
+			return utils.ToolErrorResult("on_no_data must be alert or omitted"), nil, nil
+		}
 
 		req := alerts.IntelligenceRequest{
-			Surface:   surface,
-			ChartKey:  chartKey,
-			Entity:    alertIntelEntity(serviceName, args.Env, args.Attributes),
-			SignalKey: signalKey,
-			Name:      name,
+			Surface:    surface,
+			ChartKey:   chartKey,
+			Entity:     alertIntelEntity(serviceName, args.Env, args.Attributes),
+			SignalKey:  signalKey,
+			Name:       name,
+			CreatedVia: newCreatedViaFields(mcpReq),
 		}
 		// Omitted optionals stay zero-valued so omitempty drops them from the
 		// wire payload and the backend defaults apply untouched.
@@ -121,34 +127,79 @@ func NewCreateAlertFromChartHandler(client *http.Client, cfg models.Config) func
 		req.Severity = args.Severity
 		req.GroupID = strings.TrimSpace(args.GroupID)
 		req.Description = args.Description
+		req.OnNoData = args.OnNoData
 
-		body, err := alerts.CreateAlertFromChart(ctx, last9api.NewClient(client, cfg), req)
+		api := last9api.NewClient(client, cfg)
+		body, err := alerts.CreateAlertFromChart(ctx, api, req)
 		if err != nil {
 			var apiErr *utils.UpstreamHTTPError
-			if errors.As(err, &apiErr) {
+			var unknown *utils.WriteOutcomeUnknownError
+			if errors.As(err, &apiErr) && !errors.As(err, &unknown) {
 				return utils.ToolErrorResult(alertIntelGuidance(apiErr)), nil, nil
 			}
-			return utils.ToolErrorResult("alert intelligence request failed at the transport level and may or may not have been applied - verify whether the rule exists (get_alert_config filtered by rule name) before retrying"), nil, nil
+			return nil, nil, err
 		}
 
 		var resp alerts.IntelligenceResponse
 		if err := json.Unmarshal(body, &resp); err != nil {
-			return nil, nil, fmt.Errorf("failed to parse alert intelligence response: %w", err)
+			return nil, nil, utils.MarkUnusableWriteResponse(fmt.Errorf("failed to parse alert intelligence response: %w", err))
 		}
 		if strings.TrimSpace(resp.ID) == "" {
-			return utils.ToolErrorResult("alert intelligence create returned success but no rule id; do not assume the rule was created - verify via get_alert_config before retrying"), nil, nil
+			return nil, nil, utils.MarkUnusableWriteResponse(errors.New("alert intelligence create returned success but no rule id"))
 		}
-		link := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildAlertingGroupsLink()
-		return &mcp.CallToolResult{
-			Meta:    deeplink.ToMeta(link),
-			Content: []mcp.Content{&mcp.TextContent{Text: createFromChartReport(resp, args)}},
-		}, nil, nil
+		if resp.GroupID == "" {
+			resp.GroupID = req.GroupID
+		}
+		if failure := disableChartRule(ctx, api, resp.GroupID, resp.ID); failure != nil {
+			return failure, nil, nil
+		}
+		return alertRuleMutationResult(cfg, createFromChartReport(resp, args), deeplink.AlertRuleReference{
+			RuleID: resp.ID, GroupID: resp.GroupID, GroupName: resp.GroupName,
+		}), nil, nil
+	}
+}
+
+// disableChartRule turns the just-created rule into a draft, as create_alert creates one.
+// The chart create takes no is_disabled, so the rule is live until this lands; a failure
+// is reported as such, never as a failed create the agent would retry into a duplicate.
+func disableChartRule(ctx context.Context, api *last9api.Client, groupID, ruleID string) *mcp.CallToolResult {
+	const noRetry = "; do not retry create_alert_from_chart, which would create a duplicate rule."
+	if groupID == "" {
+		return utils.ToolErrorResult(fmt.Sprintf("Created alert rule %s, but the response named no alert group, so it was not disabled and may be live. "+
+			"Find its entity_id with get_alert_config (rule_name), then run patch_alert with that entity_id, id=%s and is_disabled=true, or remove it with delete_alert"+noRetry, ruleID, ruleID))
+	}
+	disabled := true
+	err := entities.PatchAlertRule(ctx, api, entities.AlertRuleInput{
+		EntityID: groupID,
+		RuleID:   ruleID,
+		Body:     alertPatchBody{IsDisabled: &disabled},
+	})
+	if err == nil {
+		return nil
+	}
+	return utils.ToolErrorResult(fmt.Sprintf("Created alert rule %s in group %s, but %s. "+
+		"Run patch_alert entity_id=%s id=%s is_disabled=true (safe to repeat), or remove it with delete_alert"+noRetry,
+		ruleID, groupID, disableFailure(err), groupID, ruleID))
+}
+
+// disableFailure states what is known about the failed disable from the error's type alone:
+// the raw error carries the request URL and the client's generic retry advice.
+func disableFailure(err error) string {
+	var unknown *utils.WriteOutcomeUnknownError
+	var apiErr *utils.UpstreamHTTPError
+	switch {
+	case errors.As(err, &unknown):
+		return fmt.Sprintf("whether the disable landed is unknown (%s), so it may be live and can fire", unknown.Cause)
+	case errors.As(err, &apiErr):
+		return fmt.Sprintf("the disable was refused (HTTP %d), so it is live and can fire", apiErr.StatusCode)
+	default:
+		return "the disable request failed without an answer from the API, so it may be live and can fire"
 	}
 }
 
 // createFromChartReport renders the post-create summary: rule/group linkage,
 // the effective condition with each applied backend default called out, and
-// an immediate-fire note so callers know the rule is live.
+// the draft note so callers know the rule will not fire until promoted.
 func createFromChartReport(resp alerts.IntelligenceResponse, args CreateAlertFromChartArgs) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Created alert rule %s", resp.ID)
@@ -196,6 +247,6 @@ func createFromChartReport(resp alerts.IntelligenceResponse, args CreateAlertFro
 
 	b.WriteString("\n\nApplied settings:\n")
 	b.WriteString(strings.Join(settings, "\n"))
-	b.WriteString("\n\nThis rule is active now and can fire immediately — delete_alert removes it.")
+	b.WriteString("\n\n" + draftCreatedNote)
 	return b.String()
 }

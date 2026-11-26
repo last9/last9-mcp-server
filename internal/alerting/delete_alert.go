@@ -29,7 +29,7 @@ func NewDeleteAlertHandler(client *http.Client, cfg models.Config) func(context.
 			return utils.ToolErrorResult(err.Error()), nil, nil
 		}
 		api := last9api.NewClient(client, cfg)
-		if refusal, err := requireRuleInGroup(ctx, api, args.EntityID, args.ID); refusal != nil || err != nil {
+		if _, refusal, err := requireRuleInGroup(ctx, api, args.EntityID, args.ID); refusal != nil || err != nil {
 			return refusal, nil, err
 		}
 		body, err := entities.DeleteAlertRule(ctx, api,

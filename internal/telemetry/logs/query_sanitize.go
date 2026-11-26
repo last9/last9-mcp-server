@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"last9-mcp/internal/otelids"
+	"last9-mcp/internal/utils"
 )
 
 var (
@@ -212,9 +213,23 @@ func sanitizeLogFieldOperatorArgs(value interface{}, operator string, fieldArgIn
 		if err != nil {
 			return nil, err
 		}
+		if err := checkLogRegexArg(operator, normalized, fmt.Sprintf("%s[%d]", path, valueIndex)); err != nil {
+			return nil, err
+		}
 		sanitized[valueIndex] = normalized
 	}
 	return sanitized, nil
+}
+
+func checkLogRegexArg(operator string, value interface{}, path string) error {
+	pattern, ok := value.(string)
+	if !ok || !utils.IsRegexFilterOperator(operator) {
+		return nil
+	}
+	if err := utils.CheckPipelineRegex(pattern, path); err != nil {
+		return newLogValidationError(LogValidationInvalidField, path, err.Error())
+	}
+	return nil
 }
 
 // Unvalidated, a malformed ID on these fields returns an empty result set with

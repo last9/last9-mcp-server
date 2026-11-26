@@ -1,0 +1,333 @@
+package alerting
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"slices"
+	"strings"
+	"time"
+
+	"last9-mcp/internal/deeplink"
+	"last9-mcp/internal/last9api"
+	"last9-mcp/internal/last9api/alerts"
+	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+const defaultCoverageMutedDays = 7
+
+// The API rejects larger values with a 400.
+const maxCoverageMutedDays = 3650
+
+// Keeps an org-wide result under 32 KiB (a fully populated gap renders to ~540 bytes);
+// counts stay exact.
+const maxCoverageGapsPerKind = 10
+
+// The alert group labels the API scopes service and environment by.
+const (
+	coverageServiceLabel     = "service_name"
+	coverageEnvironmentLabel = "env"
+)
+
+// Kinds outside this list are still rendered, after these, so a gap kind the API adds
+// later is never dropped.
+var coverageKindOrder = []string{
+	alerts.CoverageGapUncoveredSignal,
+	alerts.CoverageGapAllRulesDisabled,
+	alerts.CoverageGapNoNotificationChannel,
+	alerts.CoverageGapMutedTooLong,
+}
+
+type GetAlertCoverageArgs struct {
+	Service     string `json:"service,omitempty" jsonschema:"Service name to check (optional)"`
+	Environment string `json:"environment,omitempty" jsonschema:"Deployment environment to check, e.g. prod (optional)"`
+	EntityID    string `json:"entity_id,omitempty" jsonschema:"Alert group (entity) UUID from get_alert_groups (optional)"`
+	MutedDays   int    `json:"muted_days,omitempty" jsonschema:"A rule muted for more than this many days is a gap (default: 7, 0 means the default, minimum: 1, maximum: 3650)"`
+}
+
+type alertCoverageScope struct {
+	Service     string `json:"service,omitempty"`
+	Environment string `json:"environment,omitempty"`
+	EntityID    string `json:"entity_id,omitempty"`
+	MutedDays   int    `json:"muted_days"`
+}
+
+type alertCoverageResult struct {
+	Scope       alertCoverageScope   `json:"scope"`
+	GeneratedAt string               `json:"generated_at,omitempty"`
+	Complete    bool                 `json:"complete"`
+	Summary     string               `json:"summary"`
+	Counts      map[string]int       `json:"counts"`
+	Groups      []alertCoverageGroup `json:"groups"`
+}
+
+type alertCoverageGroup struct {
+	Kind  string             `json:"kind"`
+	Count int                `json:"count"`
+	Gaps  []alertCoverageGap `json:"gaps"`
+	// Omitted counts gaps past maxCoverageGapsPerKind, included in Count.
+	Omitted int `json:"omitted,omitempty"`
+}
+
+type alertCoverageGap struct {
+	EntityID      string         `json:"entity_id,omitempty"`
+	EntityName    string         `json:"entity_name,omitempty"`
+	Service       string         `json:"service,omitempty"`
+	Signal        string         `json:"signal,omitempty"`
+	RuleID        string         `json:"rule_id,omitempty"`
+	RuleName      string         `json:"rule_name,omitempty"`
+	Severity      string         `json:"severity,omitempty"`
+	MutedSince    string         `json:"muted_since,omitempty"`
+	MuteUntil     string         `json:"mute_until,omitempty"`
+	Detail        string         `json:"detail,omitempty"`
+	SuggestedTool string         `json:"suggested_tool,omitempty"`
+	SuggestedArgs map[string]any `json:"suggested_args,omitempty"`
+}
+
+func NewGetAlertCoverageHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetAlertCoverageArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, args GetAlertCoverageArgs) (*mcp.CallToolResult, any, error) {
+		in, err := parseAlertCoverageArgs(args)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		resp, err := alerts.GetAlertCoverage(ctx, last9api.NewClient(client, cfg), in)
+		if err != nil {
+			return nil, nil, alertCoverageError(err)
+		}
+
+		result := buildAlertCoverageResult(in, resp)
+		if result.Complete {
+			confirmCoverageScope(ctx, client, cfg, &result)
+		}
+		payload, err := json.Marshal(result)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
+		}
+		return &mcp.CallToolResult{
+			Meta:    deeplink.ToMeta(deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildAlertingGroupsLink()),
+			Content: []mcp.Content{&mcp.TextContent{Text: string(payload)}},
+		}, nil, nil
+	}
+}
+
+func parseAlertCoverageArgs(args GetAlertCoverageArgs) (alerts.GetAlertCoverageInput, error) {
+	mutedDays := args.MutedDays
+	if mutedDays == 0 {
+		mutedDays = defaultCoverageMutedDays
+	}
+	if mutedDays < 1 || mutedDays > maxCoverageMutedDays {
+		return alerts.GetAlertCoverageInput{}, fmt.Errorf("muted_days must be between 1 and %d, got %d", maxCoverageMutedDays, args.MutedDays)
+	}
+	return alerts.GetAlertCoverageInput{
+		Service:     strings.TrimSpace(args.Service),
+		Environment: strings.TrimSpace(args.Environment),
+		EntityID:    strings.TrimSpace(args.EntityID),
+		MutedDays:   mutedDays,
+	}, nil
+}
+
+// The route is org-scoped and takes no path params, so a 404 means the deployment
+// predates it; say so plainly so an agent never reads the failure as "no gaps".
+func alertCoverageError(err error) error {
+	var upstream *utils.UpstreamHTTPError
+	if errors.As(err, &upstream) && upstream.StatusCode == http.StatusNotFound {
+		return errors.New("alert coverage is not available on this Last9 deployment yet (HTTP 404), so coverage was not checked; do not report it as complete")
+	}
+	return err
+}
+
+func buildAlertCoverageResult(in alerts.GetAlertCoverageInput, resp *alerts.GetAlertCoverageResponse) alertCoverageResult {
+	scope := alertCoverageScope{
+		Service:     in.Service,
+		Environment: in.Environment,
+		EntityID:    in.EntityID,
+		MutedDays:   in.MutedDays,
+	}
+	if resp.MutedDays > 0 {
+		scope.MutedDays = resp.MutedDays
+	}
+	counts := resp.Counts
+	if counts == nil {
+		counts = map[string]int{}
+	}
+	result := alertCoverageResult{
+		Scope:       scope,
+		GeneratedAt: formatCoverageTime(resp.GeneratedAt),
+		Counts:      counts,
+		Groups:      groupCoverageGaps(resp.Gaps),
+	}
+
+	counted := 0
+	for _, n := range counts {
+		counted += n
+	}
+	switch {
+	case len(resp.Gaps) == 0 && counted == 0:
+		result.Complete = true
+		result.Summary = fmt.Sprintf("Alert coverage is complete for %s: no uncovered signals, fully disabled alert groups, unrouted alert groups, or rules muted for more than %s.",
+			describeCoverageScope(scope), pluralize(scope.MutedDays, "day", "days"))
+	case len(resp.Gaps) == 0:
+		result.Summary = fmt.Sprintf("The API counted %s for %s but listed none; coverage is not confirmed complete.",
+			pluralize(counted, "coverage gap", "coverage gaps"), describeCoverageScope(scope))
+	default:
+		result.Summary = fmt.Sprintf("%s for %s.", pluralize(len(resp.Gaps), "alert coverage gap", "alert coverage gaps"), describeCoverageScope(scope))
+		if slices.ContainsFunc(result.Groups, func(g alertCoverageGroup) bool { return g.Omitted > 0 }) {
+			result.Summary += fmt.Sprintf(" Each kind lists at most %d gaps; narrow by service, environment or entity_id to see the rest.", maxCoverageGapsPerKind)
+		}
+	}
+	return result
+}
+
+// The API reports no gaps for a scope matching no alert group, so complete needs an
+// alert group in scope. A lookup that fails or finds none leaves it unconfirmed.
+func confirmCoverageScope(ctx context.Context, client *http.Client, cfg models.Config, result *alertCoverageResult) {
+	matched, err := countCoverageScopeGroups(ctx, client, cfg, result.Scope)
+	switch {
+	case err != nil:
+		result.Complete = false
+		result.Summary = fmt.Sprintf("The API listed no coverage gaps for %s, but the alert group lookup failed, so coverage is not confirmed complete; retry.",
+			describeCoverageScope(result.Scope))
+	case matched == 0:
+		result.Complete = false
+		result.Summary = fmt.Sprintf("No alert group matches %s, so coverage is not confirmed complete; check the service, environment or entity_id with get_alert_groups.",
+			describeCoverageScope(result.Scope))
+	}
+}
+
+// countCoverageScopeGroups matches as the coverage API does: exact service_name and
+// env labels, and the entity id.
+func countCoverageScopeGroups(ctx context.Context, client *http.Client, cfg models.Config, scope alertCoverageScope) (int, error) {
+	entities, err := fetchAlertGroupEntities(ctx, client, cfg, alertGroupEntityQuery{})
+	if err != nil {
+		return 0, err
+	}
+	matched := 0
+	for _, entity := range entities {
+		labels := entity.Metadata.Labels
+		if (scope.EntityID == "" || strings.EqualFold(entity.ID, scope.EntityID)) &&
+			(scope.Service == "" || labels[coverageServiceLabel] == scope.Service) &&
+			(scope.Environment == "" || labels[coverageEnvironmentLabel] == scope.Environment) {
+			matched++
+		}
+	}
+	return matched, nil
+}
+
+func pluralize(n int, singular, plural string) string {
+	if n == 1 {
+		return "1 " + singular
+	}
+	return fmt.Sprintf("%d %s", n, plural)
+}
+
+func groupCoverageGaps(gaps []alerts.CoverageGap) []alertCoverageGroup {
+	byKind := map[string]*alertCoverageGroup{}
+	var unknown []string
+	for _, gap := range gaps {
+		group, ok := byKind[gap.Kind]
+		if !ok {
+			group = &alertCoverageGroup{Kind: gap.Kind}
+			byKind[gap.Kind] = group
+			if !slices.Contains(coverageKindOrder, gap.Kind) {
+				unknown = append(unknown, gap.Kind)
+			}
+		}
+		if len(group.Gaps) < maxCoverageGapsPerKind {
+			group.Gaps = append(group.Gaps, projectCoverageGap(gap))
+		} else {
+			group.Omitted++
+		}
+		group.Count++
+	}
+	slices.Sort(unknown)
+
+	groups := make([]alertCoverageGroup, 0, len(byKind))
+	for _, kind := range append(slices.Clone(coverageKindOrder), unknown...) {
+		if group, ok := byKind[kind]; ok {
+			groups = append(groups, *group)
+		}
+	}
+	return groups
+}
+
+func projectCoverageGap(gap alerts.CoverageGap) alertCoverageGap {
+	return alertCoverageGap{
+		EntityID:      gap.EntityID,
+		EntityName:    gap.EntityName,
+		Service:       gap.Service,
+		Signal:        gap.Signal,
+		RuleID:        gap.RuleID,
+		RuleName:      gap.RuleName,
+		Severity:      gap.Severity,
+		MutedSince:    formatCoverageTime(gap.MutedSince),
+		MuteUntil:     formatCoverageTime(gap.MuteUntil),
+		Detail:        gap.Detail,
+		SuggestedTool: gap.SuggestedTool,
+		SuggestedArgs: coverageSuggestedArgs(gap),
+	}
+}
+
+// coverageSuggestedArgs names a gap's ids by its suggested tool's own inputs, plus the
+// change that closes the gap when known; a tool this server does not serve gets none.
+func coverageSuggestedArgs(gap alerts.CoverageGap) map[string]any {
+	args := map[string]any{}
+	set := func(key, value string) {
+		if value != "" {
+			args[key] = value
+		}
+	}
+	switch gap.SuggestedTool {
+	case "create_alert":
+		set("entity_id", gap.EntityID)
+	case "create_alert_from_chart":
+		set("service_name", gap.Service)
+	case "attach_notification_channel":
+		set("alert_group_id", gap.EntityID)
+		if gap.Severity == "breach" || gap.Severity == "threat" {
+			args["severity"] = gap.Severity
+		}
+	case "patch_alert":
+		set("entity_id", gap.EntityID)
+		set("id", gap.RuleID)
+		switch gap.Kind {
+		case alerts.CoverageGapMutedTooLong:
+			args["mute_until"] = 0
+		case alerts.CoverageGapUncoveredSignal, alerts.CoverageGapAllRulesDisabled:
+			args["is_disabled"] = false
+		}
+	}
+	if len(args) == 0 {
+		return nil
+	}
+	return args
+}
+
+func describeCoverageScope(scope alertCoverageScope) string {
+	var parts []string
+	if scope.Service != "" {
+		parts = append(parts, fmt.Sprintf("service %q", scope.Service))
+	}
+	if scope.Environment != "" {
+		parts = append(parts, fmt.Sprintf("environment %q", scope.Environment))
+	}
+	if scope.EntityID != "" {
+		parts = append(parts, fmt.Sprintf("entity_id %q", scope.EntityID))
+	}
+	if len(parts) == 0 {
+		return "the whole organization"
+	}
+	return strings.Join(parts, ", ")
+}
+
+func formatCoverageTime(unix int64) string {
+	if unix <= 0 {
+		return ""
+	}
+	return time.Unix(unix, 0).UTC().Format(time.RFC3339)
+}

@@ -1,0 +1,404 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"last9-mcp/internal/apm"
+	"last9-mcp/internal/auth"
+	"last9-mcp/internal/last9api"
+	"last9-mcp/internal/models"
+	"last9-mcp/internal/telemetry/logs"
+	"last9-mcp/internal/telemetry/traces"
+	"last9-mcp/internal/toolsets"
+	"last9-mcp/internal/utils"
+
+	last9mcp "github.com/last9/mcp-go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+// A stalled upstream answers no chunk, so without an overall deadline a wide
+// get_logs window runs one PerChunkHTTPTimeout per round of parallel chunks.
+func TestToolCallEndsAtDeadlineWhenUpstreamStalls(t *testing.T) {
+	var requests atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		stall(r)
+	}))
+	t.Cleanup(upstream.Close)
+
+	cfg := models.Config{
+		APIBaseURL:        upstream.URL,
+		Region:            "us-east-1",
+		MaxGetLogsEntries: models.DefaultMaxGetLogsEntries,
+		TokenManager:      &auth.TokenManager{AccessToken: "test-token", ExpiresAt: time.Now().Add(time.Hour)},
+	}
+	server := newRegisterTestServer(t)
+	gate := newToolGate(toolsets.Filter{})
+	const deadline = 300 * time.Millisecond
+	gate.callTimeout = deadline
+	tool := &mcp.Tool{Name: "get_logs", Annotations: readOnlyTool("Get Logs")}
+	if err := registerIfAllowed(server, gate, tool, logs.NewGetLogsHandler(upstream.Client(), cfg)); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if err := gate.registerAdmitted(); err != nil {
+		t.Fatalf("register admitted: %v", err)
+	}
+	session := connectRegisteredServer(t, server)
+
+	end := time.Now().UTC()
+	args, _ := json.Marshal(map[string]any{
+		"logjson_query":  []map[string]any{{"type": "filter", "query": map[string]any{"$contains": []any{"Body", "timeout"}}}},
+		"start_time_iso": end.Add(-24 * time.Hour).Format(time.RFC3339),
+		"end_time_iso":   end.Format(time.RFC3339),
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	started := time.Now()
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "get_logs", Arguments: json.RawMessage(args)})
+	elapsed := time.Since(started)
+
+	if err != nil {
+		t.Fatalf("call did not return within the client's patience: %v (after %s)", err, elapsed)
+	}
+	if limit := deadline + 2*time.Second; elapsed > limit {
+		t.Fatalf("call stayed open %s, want at most %s", elapsed, limit)
+	}
+	if !res.IsError {
+		t.Fatalf("want an error result once every chunk missed the deadline, got %q", toolResultText(res))
+	}
+	if text := toolResultText(res); !strings.Contains(text, `"cause":"timeout"`) || !strings.Contains(text, "$contains") {
+		t.Fatalf("want the scan's timeout guidance with get_logs next steps, got %q", text)
+	}
+	if res.Meta[utils.ErrorTypeMetaKey] != utils.SystemErrorType {
+		t.Fatalf("deadline error missing system_error tag: %v", res.Meta)
+	}
+	if requests.Load() == 0 {
+		t.Fatal("upstream was never called; the test did not exercise a stalled request")
+	}
+}
+
+// A seven-day pattern sample runs 168 hourly chunks and can reach the deadline;
+// its pattern-specific guidance must survive the deadline wrapper.
+func TestGetLogPatternsAtDeadlineKeepsTimeoutGuidance(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { stall(r) }))
+	t.Cleanup(upstream.Close)
+
+	session := connectToolFixture(t, registeredToolFixture{
+		tool:    &mcp.Tool{Name: "get_log_patterns", Annotations: readOnlyTool("Get Log Patterns")},
+		timeout: 100 * time.Millisecond,
+	}, logs.NewGetLogPatternsHandler(upstream.Client(), writeToolTestConfig(upstream.URL)))
+	result := callRegisteredTool(t, session, &mcp.CallToolParams{
+		Name:      "get_log_patterns",
+		Arguments: map[string]any{"service_name": "checkout", "lookback_minutes": 7 * 24 * 60, "sample_size": 5000},
+	})
+	assertToolError(t, result, toolErrorExpectation{
+		contains: []string{`"cause":"timeout"`, "body_filters", "sample_size", "do not retry the same request unchanged"},
+		absent:   []string{"tool-call deadline"},
+		system:   true,
+	})
+	if result.Meta[utils.GuidanceCauseMetaKey] != utils.GuidanceCauseTimeout {
+		t.Errorf("want _meta %s=%s, got %v", utils.GuidanceCauseMetaKey, utils.GuidanceCauseTimeout, result.Meta)
+	}
+}
+
+func TestWriteToolAtDeadlineNamesVerifyCall(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { stall(r) }))
+	t.Cleanup(upstream.Close)
+
+	cfg := writeToolTestConfig(upstream.URL)
+	server := newRegisterTestServer(t)
+	gate := newToolGate(toolsets.Filter{})
+	gate.callTimeout = 300 * time.Millisecond
+	create := func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+		err := last9api.NewClient(upstream.Client(), cfg).Do(ctx, "create foo", last9api.Request{Method: http.MethodPost, Path: "/foos"}, nil)
+		return nil, nil, err
+	}
+	tool := &mcp.Tool{Name: "create_foo", Annotations: writeTool("Create Foo", false, false)}
+	if err := registerWriteTool(server, gate, tool, "get_foos, by name", create); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if err := gate.registerAdmitted(); err != nil {
+		t.Fatalf("register admitted: %v", err)
+	}
+	session := connectRegisteredServer(t, server)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "create_foo", Arguments: json.RawMessage(`{}`)})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if _, tagged := res.Meta[utils.ErrorTypeMetaKey]; tagged {
+		t.Fatalf("unknown write outcome should remain untagged: %v", res.Meta)
+	}
+	text := toolResultText(res)
+	if !res.IsError || !strings.Contains(text, "may or may not have been applied") || !strings.Contains(text, "get_foos, by name") {
+		t.Fatalf("want the unknown-outcome result naming the verify call, got %q", text)
+	}
+}
+
+// Handlers that turn a canceled request into a result (a partial_errors entry,
+// an "invalid response" text) return no Go error, yet the call still ran out
+// of time and must say so.
+func TestReadToolResultAtDeadlineIsDeadlineError(t *testing.T) {
+	tests := []struct {
+		name     string
+		tool     string
+		upstream http.HandlerFunc
+		args     map[string]any
+	}{
+		{
+			name: "trace body stalls after headers",
+			tool: "get_traces",
+			upstream: func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = io.WriteString(w, `{"data":`)
+				w.(http.Flusher).Flush()
+				<-r.Context().Done()
+			},
+			args: map[string]any{
+				"tracejson_query":  []map[string]any{{"type": "filter", "query": map[string]any{"$eq": []any{"ServiceName", "checkout"}}}},
+				"lookback_minutes": 60,
+			},
+		},
+		{
+			name: "APM chunks return partial errors",
+			tool: "get_service_performance_details",
+			upstream: func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				select {
+				case <-r.Context().Done():
+				case <-time.After(100 * time.Millisecond):
+					_, _ = io.WriteString(w, `[]`)
+				}
+			},
+			args: map[string]any{"service_name": "checkout", "lookback_minutes": 60 * 24 * 60},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			upstream := httptest.NewServer(tt.upstream)
+			t.Cleanup(upstream.Close)
+			cfg := writeToolTestConfig(upstream.URL)
+
+			server := newRegisterTestServer(t)
+			gate := newToolGate(toolsets.Filter{})
+			gate.callTimeout = 300 * time.Millisecond
+			tool := &mcp.Tool{Name: tt.tool, Annotations: readOnlyTool(tt.tool)}
+			var err error
+			switch tt.tool {
+			case "get_traces":
+				err = registerIfAllowed(server, gate, tool, traces.NewGetTracesHandler(upstream.Client(), cfg))
+			default:
+				err = registerIfAllowed(server, gate, tool, apm.NewServicePerformanceDetailsHandler(upstream.Client(), cfg))
+			}
+			if err != nil {
+				t.Fatalf("register: %v", err)
+			}
+			if err := gate.registerAdmitted(); err != nil {
+				t.Fatalf("register admitted: %v", err)
+			}
+			session := connectRegisteredServer(t, server)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: tt.tool, Arguments: tt.args})
+			if err != nil {
+				t.Fatalf("call: %v", err)
+			}
+			if res.Meta[utils.ErrorTypeMetaKey] != utils.SystemErrorType {
+				t.Fatalf("deadline error missing system_error tag: %v", res.Meta)
+			}
+			if text := toolResultText(res); !res.IsError || !strings.Contains(text, "tool-call deadline") || !strings.Contains(text, "Narrow the time range") {
+				t.Fatalf("want an isError result naming the deadline, got isError=%v %q", res.IsError, text)
+			}
+		})
+	}
+}
+
+// stall answers nothing until the caller gives up. The body is drained first
+// because the server notices a closed connection only after reading it.
+func stall(r *http.Request) {
+	_, _ = io.Copy(io.Discard, r.Body)
+	<-r.Context().Done()
+}
+
+func connectRegisteredServer(t *testing.T, server *last9mcp.Last9MCPServer) *mcp.ClientSession {
+	t.Helper()
+	ctx := context.Background()
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	serverSession, err := server.Server.Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatalf("connect server: %v", err)
+	}
+	t.Cleanup(func() { _ = serverSession.Close() })
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "deadline-test", Version: Version}, nil).Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatalf("connect client: %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	return session
+}
+
+func TestFeedbackDeadlineDoesNotSuggestRetry(t *testing.T) {
+	var calls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		calls.Add(1)
+		<-r.Context().Done()
+	}))
+	defer upstream.Close()
+	server := newRegisterTestServer(t)
+	if _, err := registerTools(server, writeToolTestConfig(upstream.URL), upstream.Client()); err != nil {
+		t.Fatal(err)
+	}
+	server.Server.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			if method == "tools/call" {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, 100*time.Millisecond)
+				defer cancel()
+			}
+			return next(ctx, method, req)
+		}
+	})
+	session := connectRegisteredServer(t, server)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "send_feedback", Arguments: map[string]any{"category": "bug", "summary": "synthetic test"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("calls=%d, want one accepted request", calls.Load())
+	}
+	text := toolResultText(result)
+	if !result.IsError {
+		t.Fatalf("expected error, got %s", text)
+	}
+	if strings.Contains(text, "before retrying") || !strings.Contains(strings.ToLower(text), "do not") {
+		t.Fatalf("accepted report must not invite resending: %s", text)
+	}
+	if result.Meta[utils.ErrorTypeMetaKey] != utils.SystemErrorType {
+		t.Errorf("deadline missing system_error tag: %v", result.Meta)
+	}
+}
+
+func TestFeedbackUnknownDeliveryDoesNotSuggestRetry(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"gateway failure", http.StatusBadGateway, ""},
+		{"truncated acknowledgement", http.StatusCreated, `{"feedback_id":`},
+		{"missing acknowledgement ID", http.StatusCreated, `{}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				calls.Add(1)
+				w.WriteHeader(tc.status)
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			defer upstream.Close()
+			server := newRegisterTestServer(t)
+			if _, err := registerTools(server, writeToolTestConfig(upstream.URL), upstream.Client()); err != nil {
+				t.Fatal(err)
+			}
+			session := connectRegisteredServer(t, server)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "send_feedback", Arguments: map[string]any{"category": "bug", "summary": "synthetic test"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if calls.Load() != 1 {
+				t.Fatalf("calls=%d, want one accepted request", calls.Load())
+			}
+			text := toolResultText(result)
+			if !result.IsError || !strings.Contains(strings.ToLower(text), "do not") || strings.Contains(text, "retry later") {
+				t.Fatalf("want an error forbidding resending, got %s", text)
+			}
+			if result.Meta[utils.ErrorTypeMetaKey] != utils.SystemErrorType {
+				t.Errorf("unknown delivery missing system_error tag: %v", result.Meta)
+			}
+		})
+	}
+}
+
+// A definite API error still must not invite a resend: the description promises one
+// report per problem, and 429 means the hourly feedback limit, not a query to narrow.
+func TestFeedbackAPIErrorsDoNotSuggestRetry(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		system bool
+	}{
+		{http.StatusTooManyRequests, false},
+		{http.StatusNotFound, false},
+		{http.StatusInternalServerError, true},
+	} {
+		t.Run(http.StatusText(tc.status), func(t *testing.T) {
+			var calls atomic.Int32
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				calls.Add(1)
+				w.WriteHeader(tc.status)
+			}))
+			defer upstream.Close()
+			server := newRegisterTestServer(t)
+			if _, err := registerTools(server, writeToolTestConfig(upstream.URL), upstream.Client()); err != nil {
+				t.Fatal(err)
+			}
+			session := connectRegisteredServer(t, server)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "send_feedback", Arguments: map[string]any{"category": "bug", "summary": "synthetic test"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if calls.Load() != 1 {
+				t.Fatalf("calls=%d, want one request", calls.Load())
+			}
+			text := toolResultText(result)
+			if !result.IsError || strings.Contains(strings.ToLower(text), "retry") || !strings.Contains(text, "Do not send the same feedback again") {
+				t.Fatalf("want an error forbidding resending, got %s", text)
+			}
+			if !strings.Contains(text, fmt.Sprintf("HTTP %d", tc.status)) {
+				t.Errorf("error does not name the status: %s", text)
+			}
+			if got := result.Meta[utils.ErrorTypeMetaKey] == utils.SystemErrorType; got != tc.system {
+				t.Errorf("system_error tag=%v, want %v: %v", got, tc.system, result.Meta)
+			}
+		})
+	}
+}
+
+// A caller deadline that comes before the tool-call deadline is the caller's:
+// the handler's error stands instead of the tool-call deadline message.
+func TestWithCallDeadlineLeavesCallerDeadlineToHandler(t *testing.T) {
+	callerStopped := fmt.Errorf("logs query stopped at the caller's deadline: %w", context.DeadlineExceeded)
+	handler := withCallDeadline(time.Minute, true, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+		<-ctx.Done()
+		return nil, nil, callerStopped
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	result, _, err := handler(ctx, &mcp.CallToolRequest{}, struct{}{})
+	if result != nil || err != callerStopped {
+		t.Fatalf("handler = (%v, %v), want the handler's caller-deadline error unchanged", result, err)
+	}
+}

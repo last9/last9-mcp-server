@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
-	"strings"
 	"time"
 
 	"last9-mcp/internal/constants"
@@ -22,6 +21,7 @@ import (
 const (
 	defaultGetLogsLookbackMinutes = 5
 	defaultGetLogsAggregateLimit  = 1000
+	maxGetLogsChunks              = 24
 )
 
 // GetLogsArgs represents the input arguments for the get_logs tool
@@ -32,6 +32,7 @@ type GetLogsArgs struct {
 	LookbackMinutes int                      `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 5, minimum: 1)"`
 	Limit           int                      `json:"limit,omitempty" jsonschema:"Maximum rows to return (optional; default: 1000 for aggregate/dataframe queries, 5000 for chunked raw queries)"`
 	Index           string                   `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Use a user-named index or a non-default physical index discovered by get_service_profile; omit for default or when unknown."`
+	ResponseMode    string                   `json:"response_mode,omitempty" jsonschema:"summary (default) or raw"`
 }
 
 // NewGetLogsHandler creates a handler for getting logs using logjson_query parameter
@@ -41,12 +42,24 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 		if len(args.LogjsonQuery) == 0 {
 			return nil, nil, fmt.Errorf("logjson_query parameter is required. logjson_query is a JSON array of stages (filter/parse/aggregate/window_aggregate) — see last9://reference/logjson")
 		}
+		if err := validateLogResponseMode(args.ResponseMode); err != nil {
+			return nil, nil, err
+		}
 
 		sanitizedQuery, err := prepareLogJSONQuery(args.LogjsonQuery, "logjson_query")
 		if err != nil {
 			return nil, nil, err
 		}
+		if err := utils.NormalizeWindowAggregateDays(sanitizedQuery); err != nil {
+			return nil, nil, err
+		}
 		args.LogjsonQuery = sanitizedQuery
+		if args.LookbackMinutes < 0 {
+			return nil, nil, fmt.Errorf("lookback_minutes must be at least 1")
+		}
+		if pipelineHasBodySearch(sanitizedQuery) && !hasExplicitLogWindow(args.StartTimeISO, args.LookbackMinutes) {
+			return nil, nil, fmt.Errorf("body searches require an explicit window: set lookback_minutes or start_time_iso")
+		}
 
 		// Handle logjson_query directly
 		result, err := handleLogJSONQuery(ctx, client, cfg, sanitizedQuery, args)
@@ -57,27 +70,124 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 	}
 }
 
+func hasExplicitLogWindow(startTimeISO string, lookbackMinutes int) bool {
+	return startTimeISO != "" || lookbackMinutes != 0
+}
+
+func pipelineHasBodySearch(stages []map[string]interface{}) bool {
+	for _, stage := range stages {
+		if stage["type"] == "filter" && conditionHasFieldOperator(stage["query"], "Body", map[string]struct{}{
+			"$contains": {}, "$containsWords": {}, "$icontains": {}, "$icontainsWords": {},
+			"$notcontains": {}, "$notcontainsWords": {}, "$inotcontains": {}, "$inotcontainsWords": {},
+		}) {
+			return true
+		}
+	}
+	return false
+}
+
+func conditionHasFieldOperator(value any, field string, operators map[string]struct{}) bool {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		for key, child := range typed {
+			if _, ok := operators[key]; ok {
+				args, ok := child.([]interface{})
+				if ok && len(args) > 0 && args[0] == field {
+					return true
+				}
+			}
+			if conditionHasFieldOperator(child, field, operators) {
+				return true
+			}
+		}
+	case []interface{}:
+		for _, child := range typed {
+			if conditionHasFieldOperator(child, field, operators) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, args GetLogsArgs) (*mcp.CallToolResult, error) {
 	// Determine time range from parameters
 	startTime, endTime, err := parseTimeRangeFromArgs(args)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse time range: %v", err)
 	}
-
-	result, err := fetchLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args)
+	normalizedIndex, err := utils.NormalizeLogIndex(args.Index)
 	if err != nil {
 		return nil, err
 	}
+	args.Index = normalizedIndex
+
+	hasExplicitIndex := normalizedIndex != ""
+	var cancelLink context.CancelFunc
+	var resolvedIndexCh chan string
+	if hasExplicitIndex {
+		var linkCtx context.Context
+		linkCtx, cancelLink = context.WithCancel(ctx)
+		defer cancelLink()
+		resolvedIndexCh = make(chan string, 1)
+		go func() {
+			resolvedIndex, _ := utils.ResolveLogIndexDashboardParam(linkCtx, client, cfg, normalizedIndex)
+			resolvedIndexCh <- resolvedIndex
+		}()
+	}
+
+	endFetch := utils.StartToolPhase(ctx, "get_logs", "fetch")
+	result, err := fetchLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args)
+	endFetch(err)
+	if err != nil {
+		if cancelLink != nil {
+			cancelLink()
+			<-resolvedIndexCh
+		}
+		if stages, ok := logjsonQuery.([]map[string]interface{}); ok {
+			if rangeResult := rangeLimitResult(err, stages, utils.TimeChunk{StartMs: startTime, EndMs: endTime}); rangeResult != nil {
+				return rangeResult, nil
+			}
+		}
+		if scanResult := scanErrorResult(err, getLogsScanSteps); scanResult != nil {
+			return scanResult, nil
+		}
+		return nil, err
+	}
+	if stages, ok := logjsonQuery.([]map[string]interface{}); ok {
+		endParseCheck := utils.StartToolPhase(ctx, "get_logs", "parse_check")
+		scope := parseCheckScope{client: client, cfg: cfg, startMs: startTime, endMs: endTime, index: args.Index}
+		appendParseCheck(ctx, scope, stages, result)
+		endParseCheck(nil)
+	}
+	endProcess := utils.StartToolPhase(ctx, "get_logs", "post_process")
+	defaultWindow := args.StartTimeISO == "" && args.EndTimeISO == "" && args.LookbackMinutes == 0
+	if defaultWindow {
+		result["window_source"] = "default"
+		result["window_minutes"] = defaultGetLogsLookbackMinutes
+	}
+	truncated := addGetLogsGuidance(result, args, getLogsGuidanceContext{
+		startMs:        startTime,
+		endMs:          endTime,
+		effectiveLimit: effectiveGetLogsResultLimit(cfg, args.Limit),
+		maxLimit:       effectiveGetLogsResultLimit(cfg, 0),
+	})
+	if defaultWindow {
+		setDefaultWindowEmptyGuidance(result, "logs", defaultGetLogsLookbackMinutes)
+	}
+	if args.ResponseMode != logResponseModeRaw {
+		result = summarizeLogResult(result, startTime, endTime, truncated)
+	}
+
+	text := formatJSON(result)
+	endProcess(nil)
 
 	// Build deep link URL
+	endLink := utils.StartToolPhase(ctx, "get_logs", "deep_link")
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 	dashboardIndex := ""
-	hasExplicitIndex := strings.TrimSpace(args.Index) != ""
 	if hasExplicitIndex {
-		resolvedIndex, err := utils.ResolveLogIndexDashboardParam(ctx, client, cfg, args.Index)
-		if err == nil {
-			dashboardIndex = resolvedIndex
-		}
+		dashboardIndex = <-resolvedIndexCh
 	}
 	dashboardURL := dlBuilder.BuildLogsLink(startTime, endTime, logjsonQuery, dashboardIndex)
 	var meta mcp.Meta
@@ -85,21 +195,39 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		meta = deeplink.ToMeta(dashboardURL)
 	}
 
+	endLink(nil)
+
 	// Return the result in MCP format with deep link
-	return &mcp.CallToolResult{
+	full := &mcp.CallToolResult{
 		Meta: meta,
 		Content: []mcp.Content{
 			&mcp.TextContent{
-				Text: formatJSON(result),
+				Text: text,
 			},
 		},
-	}, nil
+	}
+	kind, items, err := extractResultItems(result)
+	if err != nil || kind != "streams" {
+		return full, nil
+	}
+	count := countLogEntriesInResultItems(items)
+	return boundRawResult(full, count, cfg.MCPServerInfo, func(n int) (*mcp.CallToolResult, error) {
+		limited := mapsClone(result)
+		data := mapsClone(result["data"].(map[string]interface{}))
+		data["result"] = truncateResultItemsByEntryLimit(items, n)
+		limited["data"] = data
+		limited["logs_truncated"] = true
+		limited["l9_raw_limit"] = map[string]any{"returned_entries": n, "fetched_entries": count, "max_bytes": maxRawResultBytes}
+		limited["l9_guidance"] = map[string]any{"message": rawLimitHint(n, count, effectiveGetLogsResultLimit(cfg, args.Limit))}
+		return &mcp.CallToolResult{Meta: meta, Content: []mcp.Content{&mcp.TextContent{Text: formatJSON(limited)}}}, nil
+	})
 }
 
 func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, startTime, endTime int64, args GetLogsArgs) (map[string]interface{}, error) {
 	if cfg.UseLogSearchAPI {
 		return fetchViaLogSearchAPI(ctx, client, cfg, logjsonQuery, startTime, endTime, args)
 	}
+	utils.TagLogSearchPath(ctx, utils.LogSearchPathChunked)
 
 	chunkingDebug := chunkingDebugEnabled()
 
@@ -126,9 +254,18 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		partial := false
 		if aggregateLimit > 0 {
 			partial = applyGetLogsAggregateRowLimit(result, aggregateLimit)
+			if partial {
+				addGetLogsAggregateGuidance(result, utils.TruncatedResultOptions{
+					Subject:  "log rows",
+					Returned: aggregateLimit,
+					MaxLimit: configuredMaxGetLogsEntries(cfg),
+				})
+			}
 		}
 		if stages, ok := logjsonQuery.([]map[string]interface{}); ok && !partial {
+			endSanity := utils.StartToolPhase(ctx, "get_logs", "count_sanity")
 			result = utils.AppendCountSanity(ctx, client, cfg, stages, startTime, endTime, result)
+			endSanity(nil)
 		}
 		return result, nil
 	}
@@ -146,6 +283,13 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		EndMs:    endTime,
 		Pipeline: args.LogjsonQuery,
 	})
+	// Bound total work before allocating chunks; parallelism alone only bounds in-flight requests.
+	if endTime > startTime {
+		chunkCount := 1 + (endTime-startTime-1)/adaptiveCfg.ChunkSizeMs
+		if chunkCount > maxGetLogsChunks {
+			return nil, fmt.Errorf("get_logs requires %d chunks (maximum %d); no log queries were sent. Reduce lookback_minutes to 1440 or less, or narrow start_time_iso/end_time_iso to at most 24 hours. Do not retry unchanged", chunkCount, maxGetLogsChunks)
+		}
+	}
 	chunks := utils.GetAdaptiveChunks(startTime, endTime, adaptiveCfg)
 	if len(chunks) == 0 {
 		if chunkingDebug {
@@ -325,6 +469,7 @@ func fetchViaLogSearchAPI(
 	logjsonQuery interface{}, startTime, endTime int64, args GetLogsArgs,
 ) (map[string]interface{}, error) {
 	req := utils.LogSearchRequest{
+		Op:       "logs query",
 		Pipeline: logjsonQuery,
 		StartMs:  startTime,
 		EndMs:    endTime,
@@ -342,38 +487,31 @@ func fetchViaLogSearchAPI(
 		req.Limit = effectiveGetLogsChunkLimit(cfg, args.Limit)
 	}
 
-	// The shared client's 3-minute timeout applies. Deliberately NOT wrapped in
-	// PerChunkHTTPTimeout: that bounds one chunk, and the server runs the whole
-	// sweep inside this single call.
-	resp, err := utils.MakeLogSearchAPI(ctx, client, cfg, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to call log search API: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, utils.NewUpstreamHTTPError(resp, "logs query", utils.LogsPipelineSchemaHint)
-	}
-
-	result, err := utils.DecodeLogSearchResponse(resp)
+	result, err := searchLogsByWindow(ctx, client, cfg, req)
 	if err != nil {
 		return nil, err
 	}
 	partial := false
 	if aggregateLimit > 0 {
 		partial = applyGetLogsAggregateRowLimit(result, aggregateLimit)
+		if partial {
+			addGetLogsAggregateGuidance(result, utils.TruncatedResultOptions{
+				Subject:  "log rows",
+				Returned: aggregateLimit,
+				MaxLimit: configuredMaxGetLogsEntries(cfg),
+			})
+		}
 	}
 	if hasStages && !partial {
+		endSanity := utils.StartToolPhase(ctx, "get_logs", "count_sanity")
 		result = utils.AppendCountSanity(ctx, client, cfg, stages, startTime, endTime, result)
+		endSanity(nil)
 	}
 	return result, nil
 }
 
 func effectiveGetLogsAggregateLimit(cfg models.Config, requestedLimit int) int {
-	maxEntries := cfg.MaxGetLogsEntries
-	if maxEntries <= 0 {
-		maxEntries = models.DefaultMaxGetLogsEntries
-	}
+	maxEntries := configuredMaxGetLogsEntries(cfg)
 	if requestedLimit <= 0 {
 		requestedLimit = defaultGetLogsAggregateLimit
 	}
@@ -407,10 +545,7 @@ func applyGetLogsAggregateRowLimit(result map[string]interface{}, rowLimit int) 
 }
 
 func effectiveGetLogsChunkLimit(cfg models.Config, requestedLimit int) int {
-	maxEntries := cfg.MaxGetLogsEntries
-	if maxEntries <= 0 {
-		maxEntries = models.DefaultMaxGetLogsEntries
-	}
+	maxEntries := configuredMaxGetLogsEntries(cfg)
 	if requestedLimit <= 0 {
 		return maxEntries
 	}
@@ -418,6 +553,21 @@ func effectiveGetLogsChunkLimit(cfg models.Config, requestedLimit int) int {
 		return maxEntries
 	}
 	return requestedLimit
+}
+
+func effectiveGetLogsResultLimit(cfg models.Config, requestedLimit int) int {
+	limit := effectiveGetLogsChunkLimit(cfg, requestedLimit)
+	if cfg.UseLogSearchAPI && limit > utils.LogSearchMaxSampleSize {
+		return utils.LogSearchMaxSampleSize
+	}
+	return limit
+}
+
+func configuredMaxGetLogsEntries(cfg models.Config) int {
+	if cfg.MaxGetLogsEntries > 0 {
+		return cfg.MaxGetLogsEntries
+	}
+	return models.DefaultMaxGetLogsEntries
 }
 
 // shouldChunkGetLogsQuery returns false for pipelines containing an
@@ -436,17 +586,18 @@ func shouldChunkGetLogsQuery(logjsonQuery interface{}) bool {
 func executeLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, startTime, endTime int64, limit int, index string) (map[string]interface{}, error) {
 	resp, err := utils.MakeLogsJSONQueryAPI(ctx, client, cfg, logjsonQuery, startTime, endTime, limit, index)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call log JSON query API: %v", err)
+		return nil, fmt.Errorf("failed to call log JSON query API: %w", err)
 	}
 	defer resp.Body.Close()
 
+	utils.TagLogUpstreamStatus(ctx, resp.StatusCode)
 	if resp.StatusCode != http.StatusOK {
 		return nil, utils.NewUpstreamHTTPError(resp, "logs query", utils.LogsPipelineSchemaHint)
 	}
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %v", err)
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	return result, nil
@@ -465,10 +616,7 @@ func extractResultItems(result map[string]interface{}) (string, []interface{}, e
 
 	rawItems, exists := data["result"]
 	if !exists || rawItems == nil {
-		if resultType == "streams" {
-			return resultType, []interface{}{}, nil
-		}
-		return resultType, nil, fmt.Errorf("logs API response missing result array")
+		return resultType, []interface{}{}, nil
 	}
 
 	items, ok := rawItems.([]interface{})
@@ -560,7 +708,7 @@ func emptyStreamsResponse() map[string]interface{} {
 
 // parseTimeRangeFromArgs extracts start and end times from GetLogsArgs
 func parseTimeRangeFromArgs(args GetLogsArgs) (int64, int64, error) {
-	return parseTimeRangeFromArgsAt(args, time.Now().UTC())
+	return parseTimeRangeFromArgsAt(args, utils.Now().UTC())
 }
 
 func parseTimeRangeFromArgsAt(args GetLogsArgs, now time.Time) (int64, int64, error) {

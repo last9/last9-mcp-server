@@ -8,13 +8,14 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 
 	"last9-mcp/internal/constants"
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
-)
+	"last9-mcp/internal/utils"
 
-const maxAPIErrorBodyBytes = 4096
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
 
 // maxAPISuccessBodyBytes caps every Grafana API success body. A large
 // get_dashboard with full_json=true is the main driver; past this we return an
@@ -91,10 +92,7 @@ func doJSONRequest(ctx context.Context, client *http.Client, cfg models.Config, 
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest {
-		msg := strings.TrimSpace(string(respBody))
-		if len(msg) > maxAPIErrorBodyBytes {
-			msg = msg[:maxAPIErrorBodyBytes] + "..."
-		}
+		msg := utils.SanitizeUpstreamBody(string(respBody))
 		if msg == "" {
 			msg = http.StatusText(resp.StatusCode)
 		}
@@ -102,4 +100,9 @@ func doJSONRequest(ctx context.Context, client *http.Client, cfg models.Config, 
 	}
 
 	return respBody, nil
+}
+
+// grafanaLinkMeta links to the embedded Grafana page at a Grafana path.
+func grafanaLinkMeta(cfg models.Config, grafanaPath string) mcp.Meta {
+	return deeplink.ToMeta(deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildGrafanaLink(grafanaPath))
 }

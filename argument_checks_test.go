@@ -1,0 +1,332 @@
+package main
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"regexp"
+	"strings"
+	"sync/atomic"
+	"testing"
+
+	"last9-mcp/internal/toolsets"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+const grafanaPanel = `{"title":"p","type":"timeseries","gridPos":{"x":0,"y":0,"w":24,"h":8},"queries":[{"legend":"l","query":"up","type":"prometheus"}]}`
+
+func TestDescribeAlertChartRuleIDGuidance(t *testing.T) {
+	session := newInMemoryClientSession(t)
+	for _, args := range []string{
+		`{"rule_id":"example-rule"}`,
+		`{"rule_id":"example-rule","surface":"discover-service","chart_key":"apdex","service_name":"example"}`,
+	} {
+		result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: "describe_alert_chart", Arguments: json.RawMessage(args)})
+		assertToolError(t, result, toolErrorExpectation{
+			contains: []string{"get_alert_config", "same rule_id", "surface", "chart_key", "service_name"},
+			absent:   []string{"example-rule"},
+		})
+	}
+}
+
+func TestEntityNameGuidanceNamesOnlyServedTools(t *testing.T) {
+	for _, tc := range []struct {
+		toolsets string
+		tool     string
+		contains []string
+		absent   []string
+	}{
+		{
+			toolsets: "alerts",
+			tool:     "get_entity_kpis",
+			contains: []string{"Call get_alert_groups with alert_group_name", "pass its id as entity_id to get_entity_kpis"},
+		},
+		{
+			toolsets: "alerts",
+			tool:     "get_entity_alert_rules",
+			contains: []string{"Call get_alert_groups with alert_group_name", "select the intended group", "pass its id as entity_id to get_entity_alert_rules"},
+		},
+		{
+			toolsets: "investigate",
+			tool:     "get_entity_kpis",
+			contains: []string{"Ask for the alert group ID", "pass it as entity_id to get_entity_kpis"},
+			absent:   []string{"get_alert_groups"},
+		},
+	} {
+		t.Run(tc.toolsets+"/"+tc.tool, func(t *testing.T) {
+			filter, err := toolsets.NewFilter(tc.toolsets, false, "")
+			if err != nil {
+				t.Fatalf("NewFilter: %v", err)
+			}
+			cfg := testToolRegistrationConfig()
+			cfg.ToolFilter = filter
+			session := connectTestSession(t, cfg, http.DefaultClient)
+			result := callRegisteredTool(t, session, &mcp.CallToolParams{
+				Name:      tc.tool,
+				Arguments: json.RawMessage(`{"entity_name":"example"}`),
+			})
+			assertToolError(t, result, toolErrorExpectation{contains: tc.contains, absent: tc.absent})
+		})
+	}
+}
+
+func TestDashboardWritesNameEveryWrongFieldBeforeSchemaValidation(t *testing.T) {
+	session := newInMemoryClientSession(t)
+	for tool, args := range map[string]string{
+		"create_dashboard": `{"dashboard":{"name":"x","panels":[` + grafanaPanel + `]},"metadata":{"_category":"custom","_type":"metrics"}}`,
+		"update_dashboard": `{"id":"dash-1","dashboard":{"name":"x","panels":[` + grafanaPanel + `]}}`,
+	} {
+		t.Run(tool, func(t *testing.T) {
+			result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: tool, Arguments: json.RawMessage(args)})
+			assertToolError(t, result, toolErrorExpectation{
+				contains: []string{
+					"dashboard.panels[0].gridPos: unknown panel field; use layout {x, y, w, h}",
+					"dashboard.panels[0].title: unknown panel field; use name",
+					"dashboard.panels[0].queries[0].legend: got string, want object {type, value}",
+					"dashboard does not match the dashboard schema; nothing was written",
+				},
+				absent: []string{"validating /properties"},
+			})
+		})
+	}
+}
+
+func TestDashboardWritesNameEveryConditionallyRequiredField(t *testing.T) {
+	session := newInMemoryClientSession(t)
+	logsPanel := `{"name":"a","layout":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"logs"},"queries":[]}`
+	panels := `"panels":[` + logsPanel + "," + logsPanel + `]`
+	for tool, args := range map[string]string{
+		"create_dashboard": `{"dashboard":{"name":"x",` + panels + `}}`,
+		"update_dashboard": `{"id":"dash-1","dashboard":{"name":"x",` + panels + `}}`,
+	} {
+		t.Run(tool, func(t *testing.T) {
+			result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: tool, Arguments: json.RawMessage(args)})
+			assertToolError(t, result, toolErrorExpectation{
+				contains: []string{
+					"dashboard.panels[0].visualization.logs_config: missing; want object {columns}",
+					"dashboard.panels[1].visualization.logs_config: missing; want object {columns}",
+				},
+				absent: []string{"validating /properties"},
+			})
+		})
+	}
+}
+
+func TestDashboardWritesNameEveryFractionalIntegerField(t *testing.T) {
+	session := newInMemoryClientSession(t)
+	logsPanel := `{"name":"a","layout":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"logs","logs_config":{"columns":["body"],"row_limit":1.5}},"queries":[]}`
+	panels := `"panels":[` + logsPanel + "," + logsPanel + `]`
+	for tool, args := range map[string]string{
+		"create_dashboard": `{"dashboard":{"name":"x",` + panels + `}}`,
+		"update_dashboard": `{"id":"dash-1","dashboard":{"name":"x",` + panels + `}}`,
+	} {
+		t.Run(tool, func(t *testing.T) {
+			result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: tool, Arguments: json.RawMessage(args)})
+			assertToolError(t, result, toolErrorExpectation{
+				contains: []string{
+					"dashboard.panels[0].visualization.logs_config.row_limit: got number, want integer",
+					"dashboard.panels[1].visualization.logs_config.row_limit: got number, want integer",
+				},
+				absent: []string{"validating /properties"},
+			})
+		})
+	}
+}
+
+func TestDashboardArgumentCheckLeavesOtherShapesAndToolsToTheSchema(t *testing.T) {
+	session := newInMemoryClientSession(t)
+	badDashboard := `{"name":"x","panels":[` + grafanaPanel + `]}`
+	for tool, args := range map[string]string{
+		"create_dashboard": `{"dashboard":"x","metadata":{"_category":"custom","_type":"metrics"}}`,
+		"patch_dashboard":  `{"id":"dash-1","ops":[],"dashboard":` + badDashboard + `}`,
+	} {
+		t.Run(tool, func(t *testing.T) {
+			result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: tool, Arguments: json.RawMessage(args)})
+			assertToolError(t, result, toolErrorExpectation{absent: []string{"does not match the dashboard schema"}})
+		})
+	}
+}
+
+// A strict --http server refuses a tokenless call before reading its arguments.
+func TestStrictModeRefusesTokenlessDashboardWritesBeforeArgumentChecks(t *testing.T) {
+	cfg := testToolRegistrationConfig()
+	cfg.HTTPMode = true
+	cfg.UserTokenFallback = false
+	ts, _ := newToolsetHTTPServerFor(t, cfg, "all")
+	for tool, args := range map[string]string{
+		"create_dashboard": `{"dashboard":{"name":"x","panels":[` + grafanaPanel + `]}}`,
+		"update_dashboard": `{"id":"dash-1","dashboard":{"name":"x","panels":[` + grafanaPanel + `]}}`,
+	} {
+		call := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"` + tool + `","arguments":` + args + `}}`
+		for _, header := range []string{"", "dashboards"} {
+			if _, body := postRPC(t, ts, header, "", call, nil); !strings.Contains(body, "user token required") || strings.Contains(body, "gridPos") {
+				t.Errorf("%s (toolsets header %q): tokenless call was not refused for its token: %s", tool, header, body)
+			}
+		}
+	}
+}
+
+func TestDashboardArgumentCheckRunsAfterIntegerCoercion(t *testing.T) {
+	session := newInMemoryClientSession(t)
+	args := `{"dashboard":{"name":"x","panels":[{"name":"p","version":"1","gridPos":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"stat"},"queries":[]}]}}`
+	result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: "create_dashboard", Arguments: json.RawMessage(args)})
+	assertToolError(t, result, toolErrorExpectation{
+		contains: []string{"dashboard.panels[0].gridPos: unknown panel field; use layout"},
+		absent:   []string{"version"},
+	})
+}
+
+func TestRegisteredDashboardWritesAcceptRoundTripDefaults(t *testing.T) {
+	var reads, writes atomic.Int32
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			reads.Add(1)
+		} else {
+			writes.Add(1)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"dashboard":{"id":"dash-1","name":"Example"}}`))
+	}))
+	t.Cleanup(api.Close)
+	session := connectTestSession(t, writeToolTestConfig(api.URL), api.Client())
+
+	panels := map[string]string{
+		"null layout":      `[{"name":"Overview","layout":null,"visualization":{"type":"section"}}]`,
+		"null panels":      `null`,
+		"null queries":     `[{"name":"Overview","visualization":{"type":"section"},"queries":null}]`,
+		"empty legend":     `[{"name":"Chart","layout":{"x":0,"y":0,"w":12,"h":6},"visualization":{"type":"stat"},"queries":[{"name":"A","type":"range","query_type":"promql","telemetry":"metrics","expr":"up","legend":{"type":"","value":""}}]}]`,
+		"empty sort order": `[{"name":"Logs","layout":{"x":0,"y":0,"w":12,"h":6},"visualization":{"type":"logs","logs_config":{"columns":["body"],"sort_order":""}},"queries":[]}]`,
+	}
+	for name, panelJSON := range panels {
+		for _, tool := range []string{"create_dashboard", "update_dashboard"} {
+			t.Run(name+"/"+tool, func(t *testing.T) {
+				args := `{"dashboard":{"name":"Example","panels":` + panelJSON + `}}`
+				if tool == "update_dashboard" {
+					args = `{"id":"dash-1","dashboard":{"name":"Example","panels":` + panelJSON + `}}`
+				}
+				readsBefore := reads.Load()
+				writesBefore := writes.Load()
+				result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: tool, Arguments: json.RawMessage(args)})
+				if result.IsError {
+					t.Fatalf("write rejected: %s", toolResultText(result))
+				}
+				if got := writes.Load(); got != writesBefore+1 {
+					t.Fatalf("upstream writes = %d, want %d", got, writesBefore+1)
+				}
+				wantReads := readsBefore
+				if tool == "update_dashboard" {
+					wantReads++
+				}
+				if got := reads.Load(); got != wantReads {
+					t.Fatalf("upstream reads = %d, want %d", got, wantReads)
+				}
+			})
+		}
+	}
+}
+
+// Query-free panels ignore targets, so it is flagged only where queries are required.
+func TestDashboardToolsFlagTargetsOnlyOnQueryBackedPanels(t *testing.T) {
+	session := newInMemoryClientSession(t)
+	layout := `"layout":{"x":0,"y":0,"w":6,"h":4}`
+	panels := map[string]string{
+		"section":    `{"name":"s",` + layout + `,"visualization":{"type":"section"},"targets":[]}`,
+		"markdown":   `{"name":"m",` + layout + `,"visualization":{"type":"markdown"},"targets":[]}`,
+		"csv":        `{"name":"c",` + layout + `,"visualization":{"type":"table"},"csv":{},"targets":[]}`,
+		"timeseries": `{"name":"t",` + layout + `,"visualization":{"type":"timeseries"},"targets":[]}`,
+	}
+	calls := map[string]func(panel string) string{
+		"create_dashboard": func(p string) string { return `{"dashboard":{"name":"x","panels":[` + p + `]}}` },
+		"update_dashboard": func(p string) string { return `{"id":"dash-1","dashboard":{"name":"x","panels":[` + p + `]}}` },
+		"patch_dashboard":  func(p string) string { return `{"id":"dash-1","ops":[{"op":"add_panel","panel":` + p + `}]}` },
+		"validate_dashboard": func(p string) string {
+			return `{"start_time_iso":"2026-01-01T00:00:00Z","end_time_iso":"2026-01-01T01:00:00Z","dashboard_definition":{"name":"x","panels":[` + p + `]}}`
+		},
+	}
+	for kind, panel := range panels {
+		for tool, args := range calls {
+			t.Run(kind+"/"+tool, func(t *testing.T) {
+				result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: tool, Arguments: json.RawMessage(args(panel))})
+				flagged := strings.Contains(toolResultText(result), "targets: unknown panel field; use queries")
+				if want := kind == "timeseries"; flagged != want {
+					t.Errorf("targets flagged = %v, want %v: %s", flagged, want, toolResultText(result))
+				}
+			})
+		}
+	}
+}
+
+// Shape checks follow the input schema's anyOf branches, including properties only a branch declares.
+func TestDashboardToolsCheckPanelsAgainstEveryAnyOfBranch(t *testing.T) {
+	session := newInMemoryClientSession(t)
+	panel := func(fields string) string { return `{"name":"p","layout":{"x":0,"y":0,"w":6,"h":4},` + fields + `}` }
+	cases := map[string]struct{ panel, want string }{
+		"section":                   {panel(`"visualization":{"type":"section"}`), ""},
+		"markdown":                  {panel(`"visualization":{"type":"markdown"}`), ""},
+		"csv object":                {panel(`"visualization":{"type":"table"},"csv":{}`), ""},
+		"csv null":                  {panel(`"visualization":{"type":"table"},"csv":null`), "csv: got null, want object"},
+		"csv string":                {panel(`"visualization":{"type":"table"},"csv":"data.csv"`), "csv: got string, want object"},
+		"csv array":                 {panel(`"visualization":{"type":"table"},"csv":[]`), "csv: got array, want object"},
+		"timeseries targets":        {panel(`"visualization":{"type":"timeseries"},"targets":[]`), "targets: unknown panel field; use queries"},
+		"no visualization, targets": {panel(`"targets":[]`), "targets: unknown panel field; use queries"},
+	}
+	calls := map[string]func(panel string) string{
+		"create_dashboard": func(p string) string { return `{"dashboard":{"name":"x","panels":[` + p + `]}}` },
+		"update_dashboard": func(p string) string { return `{"id":"dash-1","dashboard":{"name":"x","panels":[` + p + `]}}` },
+		"patch_dashboard":  func(p string) string { return `{"id":"dash-1","ops":[{"op":"add_panel","panel":` + p + `}]}` },
+		"validate_dashboard": func(p string) string {
+			return `{"start_time_iso":"2026-01-01T00:00:00Z","end_time_iso":"2026-01-01T01:00:00Z","dashboard_definition":{"name":"x","panels":[` + p + `]}}`
+		},
+	}
+	shapeProblem := regexp.MustCompile(`panels?(\[0\])?[.\w\[\]]*: (got |unknown |missing;|want one of)`)
+	for name, c := range cases {
+		for tool, args := range calls {
+			t.Run(name+"/"+tool, func(t *testing.T) {
+				text := toolResultText(callRegisteredTool(t, session, &mcp.CallToolParams{Name: tool, Arguments: json.RawMessage(args(c.panel))}))
+				if c.want == "" && shapeProblem.MatchString(text) {
+					t.Errorf("valid panel got a shape problem: %s", text)
+				}
+				if c.want != "" && !strings.Contains(text, c.want) {
+					t.Errorf("missing %q: %s", c.want, text)
+				}
+			})
+		}
+	}
+}
+
+func TestDashboardWritesNameEveryMistypedAlternativeField(t *testing.T) {
+	session := newInMemoryClientSession(t)
+	panel := func(name, fields string) string {
+		return `{"name":"` + name + `","layout":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"stat"},` + fields + `}`
+	}
+	query := `{"name":"A","type":"range","expr":"1","telemetry":"metrics","query_type":"promql","legend":{"type":"auto","value":""}}`
+	for tool, prefix := range map[string]string{
+		"create_dashboard": `{"dashboard":`,
+		"update_dashboard": `{"id":"dash-1","dashboard":`,
+	} {
+		t.Run(tool+"/invalid csv", func(t *testing.T) {
+			args := prefix + `{"name":"x","panels":[` + panel("a", `"csv":"bad"`) + "," + panel("b", `"csv":"bad"`) + `]}}`
+			result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: tool, Arguments: json.RawMessage(args)})
+			assertToolError(t, result, toolErrorExpectation{
+				contains: []string{
+					"dashboard.panels[0].csv: got string, want object",
+					"dashboard.panels[1].csv: got string, want object",
+				},
+				absent: []string{"validating /properties"},
+			})
+		})
+		for name, fields := range map[string]string{
+			"valid csv":         `"csv":{"columns":{}}`,
+			"queries satisfied": `"csv":"bad","queries":[` + query + `]`,
+		} {
+			t.Run(tool+"/"+name, func(t *testing.T) {
+				args := prefix + `{"name":"x","panels":[` + panel("a", fields) + `]}}`
+				result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: tool, Arguments: json.RawMessage(args)})
+				if text := toolResultText(result); strings.Contains(text, "does not match the dashboard schema") || strings.Contains(text, "validating /properties") {
+					t.Errorf("valid alternative refused: %s", text)
+				}
+			})
+		}
+	}
+}

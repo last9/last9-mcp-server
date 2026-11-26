@@ -33,15 +33,18 @@ type IntelligenceRequest struct {
 	Severity          string         `json:"severity,omitempty"`
 	GroupID           string         `json:"group_id,omitempty"`
 	Description       string         `json:"description,omitempty"`
+	OnNoData          string         `json:"on_no_data,omitempty"`
+	last9api.CreatedVia
 }
 
 // IntelligenceResponse is a permissive decode target for both operations; unknown fields
 // are ignored.
 type IntelligenceResponse struct {
-	ID      string   `json:"id,omitempty"`
-	Signals []Signal `json:"signals,omitempty"`
-	GroupID string   `json:"group_id,omitempty"`
-	KPIID   string   `json:"kpi_id,omitempty"`
+	ID        string   `json:"id,omitempty"`
+	Signals   []Signal `json:"signals,omitempty"`
+	GroupID   string   `json:"group_id,omitempty"`
+	GroupName string   `json:"group_name,omitempty"`
+	KPIID     string   `json:"kpi_id,omitempty"`
 }
 
 type Signal struct {

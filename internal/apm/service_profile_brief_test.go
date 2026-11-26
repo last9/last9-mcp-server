@@ -169,3 +169,96 @@ func TestFormatInvestigationBrief_LogTierFailed(t *testing.T) {
 		t.Fatalf("expected failed tier warning:\n%s", got)
 	}
 }
+
+// trace_context_in_logs used to live only in the raw JSON, so an agent judging
+// log↔trace correlation from the brief never saw it.
+func TestFormatInvestigationBrief_TraceContextInLogs(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		json string
+		want string
+	}{
+		{name: "reported", json: `{"telemetry":{"logs":"present","traces":"present"},"signal_shape":{"severity_set":"full","trace_context_in_logs":"absent"}}`, want: "logs: present | traces: present | severity_set: full | trace_context_in_logs: absent"},
+		{name: "after level field", json: `{"signal_shape":{"severity_set":"none","level_field":"level","trace_context_in_logs":"present"}}`, want: "severity_set: none | level_field: level | trace_context_in_logs: present\n"},
+		{name: "missing", json: `{}`, want: "| trace_context_in_logs: unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var profile serviceProfileResponse
+			if err := json.Unmarshal([]byte(tc.json), &profile); err != nil {
+				t.Fatal(err)
+			}
+			if got := formatInvestigationBrief(profile); !strings.Contains(got, tc.want) {
+				t.Fatalf("missing %q in:\n%s", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestFormatInvestigationBrief_Freshness(t *testing.T) {
+	const staleWarning = "  ⚠ traces stale: no spans since 2026-10-21T05:12:40Z while logs continue — treat as a regression (e.g. a deploy/restart), not missing setup"
+	for _, tc := range []struct {
+		name   string
+		json   string
+		want   []string
+		absent []string
+	}{
+		{
+			name: "stale traces",
+			json: `{"freshness":{"logs":{"last_seen":"2026-10-21T11:45:10Z"},"traces":{"last_seen":"2026-10-21T05:12:40Z"},"traces_stale":true}}`,
+			want: []string{"\n  last seen: logs 2026-10-21T11:45:10Z | traces 2026-10-21T05:12:40Z\n" + staleWarning},
+		},
+		{
+			name:   "fresh traces",
+			json:   `{"freshness":{"logs":{"last_seen":"2026-10-21T11:45:10Z"},"traces":{"last_seen":"2026-10-21T11:44:59Z"},"traces_stale":false}}`,
+			want:   []string{"\n  last seen: logs 2026-10-21T11:45:10Z | traces 2026-10-21T11:44:59Z"},
+			absent: []string{"traces stale"},
+		},
+		{
+			name:   "stale flag missing",
+			json:   `{"freshness":{"logs":{"last_seen":"2026-10-21T11:45:10Z"},"traces":{"last_seen":"2026-10-21T05:12:40Z"}}}`,
+			want:   []string{"last seen: logs 2026-10-21T11:45:10Z | traces 2026-10-21T05:12:40Z"},
+			absent: []string{"traces stale"},
+		},
+		{
+			name:   "null last seen",
+			json:   `{"freshness":{"logs":{"last_seen":"2026-10-21T11:45:10Z"},"traces":{"last_seen":null},"traces_stale":true}}`,
+			want:   []string{"last seen: logs 2026-10-21T11:45:10Z | traces none", "⚠ traces stale: no recent spans while logs continue — treat as a regression"},
+			absent: []string{"since none"},
+		},
+		{name: "freshness null", json: `{"freshness":null}`, absent: []string{"last seen:", "traces stale"}},
+		{name: "freshness missing", json: `{}`, absent: []string{"last seen:", "traces stale"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var profile serviceProfileResponse
+			if err := json.Unmarshal([]byte(tc.json), &profile); err != nil {
+				t.Fatal(err)
+			}
+			got := formatInvestigationBrief(profile)
+			for _, want := range tc.want {
+				if !strings.Contains(got, want) {
+					t.Fatalf("missing %q in:\n%s", want, got)
+				}
+			}
+			for _, absent := range tc.absent {
+				if strings.Contains(got, absent) {
+					t.Fatalf("unexpected %q in:\n%s", absent, got)
+				}
+			}
+		})
+	}
+}
+
+// Older backends send no freshness; their brief must not change beyond the
+// trace_context_in_logs field.
+func TestFormatInvestigationBrief_NoFreshnessExactOutput(t *testing.T) {
+	p := serviceProfileResponse{
+		Service:     "api",
+		DerivedAt:   "2026-10-21T11:45:00Z",
+		Telemetry:   telemetryPresenceResponse{Logs: "present", Traces: "present"},
+		SignalShape: signalShapeResponse{SeveritySet: "full", TraceContextInLogs: "present"},
+	}
+	want := "Service profile: api (derived 2026-10-21T11:45:00Z)\n  logs: present | traces: present | severity_set: full | trace_context_in_logs: present"
+	if got := formatInvestigationBrief(p); got != want {
+		t.Fatalf("got:\n%q\nwant:\n%q", got, want)
+	}
+}

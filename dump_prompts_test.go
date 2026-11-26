@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestDumpPromptsListsSixPrompts(t *testing.T) {
+func TestDumpPromptsListsAllPrompts(t *testing.T) {
 	var buf bytes.Buffer
 	if err := dumpPrompts(&buf); err != nil {
 		t.Fatalf("dumpPrompts error: %v", err)
@@ -29,14 +29,16 @@ func TestDumpPromptsListsSixPrompts(t *testing.T) {
 	}
 	for _, want := range []string{
 		"scoped-log-attribute-discovery", "exception-root-cause-investigation",
+		"create_dashboard_guide", "dashboard_examples", "query_guide",
 		"investigate-latency-spike", "diagnose-error-rate", "analyze-slow-queries", "on-call-runbook",
+		"author-alert",
 	} {
 		if !names[want] {
 			t.Errorf("dump-prompts missing prompt %q", want)
 		}
 	}
-	if len(out.Prompts) < 6 {
-		t.Errorf("expected >= 6 prompts, got %d", len(out.Prompts))
+	if len(out.Prompts) < 10 {
+		t.Errorf("expected >= 10 prompts, got %d", len(out.Prompts))
 	}
 	// Prompt names must be unique — AddPrompt is last-wins on a duplicate Name,
 	// which would silently drop a workflow.
@@ -58,6 +60,17 @@ func TestDumpPromptsListsSixPrompts(t *testing.T) {
 			}
 			if !hasReqService {
 				t.Error("investigate-latency-spike must advertise required arg 'service'")
+			}
+		}
+		if p.Name == "author-alert" {
+			hasReqGoal := false
+			for _, a := range p.Arguments {
+				if a.Name == "goal" && a.Required {
+					hasReqGoal = true
+				}
+			}
+			if !hasReqGoal {
+				t.Error("author-alert must advertise required arg 'goal'")
 			}
 		}
 	}

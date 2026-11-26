@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"last9-mcp/internal/toolsets"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -57,6 +59,19 @@ func TestCreateDashboardHandler_POSTsEnvelope(t *testing.T) {
 	}
 }
 
+func TestCreateDashboardHandler_PreservesLiteralHTMLCharacters(t *testing.T) {
+	srv := createDashboardAPI(t, `{"dashboard":{"id":"new-id","name":"a\u003cb\u003e\u0026c"}}`, nil)
+
+	result, _, err := NewCreateDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))(
+		context.Background(), &mcp.CallToolRequest{}, validCreateArgs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := result.Content[0].(*mcp.TextContent).Text; !strings.Contains(text, `"name":"a<b>&c"`) {
+		t.Fatalf("HTML characters were not preserved literally: %s", text)
+	}
+}
+
 func TestCreateDashboardHandler_AppendsRefineNudge(t *testing.T) {
 	const apiBody = `{"dashboard":{"id":"new-id","name":"Created"}}`
 	srv := createDashboardAPI(t, apiBody, nil)
@@ -88,11 +103,52 @@ func TestCreateDashboardHandler_AppendsRefineNudge(t *testing.T) {
 	if !ok {
 		t.Fatalf("Content[1] type %T", result.Content[1])
 	}
-	if !strings.Contains(second.Text, "update_dashboard") || !strings.Contains(second.Text, "id=new-id") {
-		t.Fatalf("nudge %q", second.Text)
+	if !strings.Contains(second.Text, "call patch_dashboard with id=new-id") {
+		t.Fatalf("nudge does not route panel edits to patch_dashboard: %q", second.Text)
+	}
+	if !strings.Contains(second.Text, "update_dashboard only to restructure") {
+		t.Fatalf("nudge does not limit update_dashboard to restructuring: %q", second.Text)
 	}
 	if !strings.Contains(second.Text, "Do not call create_dashboard again") {
 		t.Fatalf("nudge missing re-create ban: %q", second.Text)
+	}
+}
+
+// The nudge names update_dashboard only when the server serves it, as under
+// --read-only --allow-write-tools=create_dashboard it does not.
+func TestCreateDashboardHandler_NudgeNamesOnlyServedRefineTools(t *testing.T) {
+	srv := createDashboardAPI(t, `{"dashboard":{"id":"new-id","name":"Created"}}`, nil)
+	tests := []struct {
+		name       string
+		allow      toolsets.Set
+		wantPatch  bool
+		wantUpdate bool
+	}{
+		{name: "refine hidden", allow: toolsets.Set{"create_dashboard": {}}},
+		{name: "update allowed", allow: toolsets.Set{"create_dashboard": {}, "update_dashboard": {}}, wantUpdate: true},
+		{name: "patch allowed", allow: toolsets.Set{"create_dashboard": {}, "patch_dashboard": {}}, wantPatch: true},
+		{name: "both allowed", allow: toolsets.Set{"create_dashboard": {}, "patch_dashboard": {}, "update_dashboard": {}}, wantPatch: true, wantUpdate: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := testDashboardConfig(srv.URL)
+			cfg.ToolFilter = toolsets.Filter{ReadOnly: true, AllowWrite: tt.allow}
+			result, _, err := NewCreateDashboardHandler(srv.Client(), cfg)(
+				context.Background(), &mcp.CallToolRequest{}, validCreateArgs())
+			if err != nil {
+				t.Fatal(err)
+			}
+			nudge := result.Content[len(result.Content)-1].(*mcp.TextContent).Text
+			if got := strings.Contains(nudge, "patch_dashboard with id=new-id"); got != tt.wantPatch {
+				t.Fatalf("nudge names patch_dashboard = %v, want %v: %q", got, tt.wantPatch, nudge)
+			}
+			if got := strings.Contains(nudge, "update_dashboard"); got != tt.wantUpdate {
+				t.Fatalf("nudge names update_dashboard = %v, want %v: %q", got, tt.wantUpdate, nudge)
+			}
+			if !strings.Contains(nudge, "Do not call create_dashboard again") {
+				t.Fatalf("nudge missing re-create ban: %q", nudge)
+			}
+		})
 	}
 }
 
@@ -163,5 +219,39 @@ func TestCreateDashboardHandler_Validation(t *testing.T) {
 		context.Background(), &mcp.CallToolRequest{}, CreateDashboardArgs{})
 	if err == nil {
 		t.Fatal("expected validation error")
+	}
+}
+
+func TestCreateDashboardHandler_RejectsQueryTypeForOtherTelemetry(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("server should not be called")
+	}))
+	t.Cleanup(srv.Close)
+
+	args := CreateDashboardArgs{DashboardRequest: DashboardRequest{Dashboard: json.RawMessage(
+		`{"name":"x","panels":[{"name":"ok","queries":[{"query_type":"promql","telemetry":"metrics","expr":"up"}]},` +
+			`{"name":"bad","queries":[{"query_type":"log_json","telemetry":"metrics","expr":"up"}]}]}`)}}
+	_, _, err := NewCreateDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))(
+		context.Background(), &mcp.CallToolRequest{}, args)
+	want := "panels[1].queries[0]: query_type 'log_json' is not valid for telemetry metrics; use promql"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+}
+
+func TestDashboardWritesRejectInvalidQueryMode(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected %s for invalid query mode", r.Method)
+		http.Error(w, "unexpected request", http.StatusBadRequest)
+	}))
+	defer srv.Close()
+	cfg := testDashboardConfig(srv.URL)
+	req := DashboardRequest{Dashboard: json.RawMessage(`{"name":"Example","panels":[{"queries":[{"type":"metrics","query_type":"promql","telemetry":"metrics","expr":"up"}]}]}`)}
+	_, _, createErr := NewCreateDashboardHandler(srv.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, CreateDashboardArgs{DashboardRequest: req})
+	_, _, updateErr := NewUpdateDashboardHandler(srv.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, UpdateDashboardArgs{ID: "dash-1", DashboardRequest: req})
+	for name, err := range map[string]error{"create": createErr, "update": updateErr} {
+		if err == nil || err.Error() != `panels[0].queries[0].type: got "metrics", want one of range, instant` {
+			t.Errorf("%s error = %v", name, err)
+		}
 	}
 }

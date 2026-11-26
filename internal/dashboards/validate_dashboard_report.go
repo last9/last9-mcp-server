@@ -189,9 +189,13 @@ func summarize(panels []map[string]any) map[string]any {
 	byStatus := map[string]int{}
 	targetsTotal := 0
 	panelsNoQuery := 0
+	panelsInvalidShape := 0
 	for _, panel := range panels {
 		if panel["classification"] == "no_query" {
 			panelsNoQuery++
+		}
+		if _, ok := panel["shape_problems"]; ok {
+			panelsInvalidShape++
 		}
 		for _, traw := range asAnySlice(panel["targets"]) {
 			targetsTotal++
@@ -205,6 +209,9 @@ func summarize(panels []map[string]any) map[string]any {
 	}
 
 	overall := "pass"
+	if panelsInvalidShape > 0 {
+		overall = "fail"
+	}
 	for _, s := range []string{"invalid_query", "execution_error", "source_unavailable"} {
 		if byStatus[s] > 0 {
 			overall = "fail"
@@ -221,11 +228,12 @@ func summarize(panels []map[string]any) map[string]any {
 	}
 
 	return map[string]any{
-		"panels_total":    len(panels),
-		"panels_no_query": panelsNoQuery,
-		"targets_total":   targetsTotal,
-		"by_status":       byStatus,
-		"overall":         overall,
+		"panels_total":         len(panels),
+		"panels_no_query":      panelsNoQuery,
+		"panels_invalid_shape": panelsInvalidShape,
+		"targets_total":        targetsTotal,
+		"by_status":            byStatus,
+		"overall":              overall,
 	}
 }
 

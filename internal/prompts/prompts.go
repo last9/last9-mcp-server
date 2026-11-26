@@ -11,6 +11,15 @@ var GetExceptionsInstructions string
 //go:embed server_instructions.md
 var ServerInstructions string
 
+//go:embed descriptions/get_current_time.md
+var GetCurrentTimeDescription string
+
+//go:embed descriptions/send_feedback.md
+var SendFeedbackDescription string
+
+//go:embed descriptions/get_workspace_overview.md
+var GetWorkspaceOverviewDescription string
+
 //go:embed references/logjson.md
 var LogjsonReference string
 
@@ -25,6 +34,12 @@ var MetricsReference string
 
 //go:embed references/investigation.md
 var InvestigationReference string
+
+//go:embed references/alerting.md
+var AlertingReference string
+
+//go:embed references/tool_recipes.md
+var ToolRecipesReference string
 
 //go:embed descriptions/get_service_summary.md
 var GetServiceSummaryDescription string
@@ -47,6 +62,12 @@ var GetServiceDependencyGraphDetails string
 //go:embed descriptions/list_datasources.md
 var ListDatasourcesDescription string
 
+//go:embed descriptions/get_metric_status.md
+var GetMetricStatusDescription string
+
+//go:embed descriptions/describe_metric.md
+var DescribeMetricDescription string
+
 //go:embed descriptions/prometheus_instant_query.md
 var PromqlInstantQueryDetails string
 
@@ -61,6 +82,12 @@ var GetDropRulesDescription string
 
 //go:embed descriptions/add_drop_rule.md
 var AddDropRuleDescription string
+
+//go:embed descriptions/get_remapping_rules.md
+var GetRemappingRulesDescription string
+
+//go:embed descriptions/add_remapping_rule.md
+var AddRemappingRuleDescription string
 
 //go:embed descriptions/get_notification_channels.md
 var GetNotificationChannelsDescription string
@@ -110,14 +137,29 @@ var RecommendAlertConfigDescription string
 //go:embed descriptions/get_alert_groups.md
 var GetAlertGroupsDescription string
 
+//go:embed descriptions/get_alert_operations_summary.md
+var GetAlertOperationsSummaryDescription string
+
+//go:embed descriptions/get_alert_coverage.md
+var GetAlertCoverageDescription string
+
 //go:embed descriptions/get_entity_alert_rules.md
 var GetEntityAlertRulesDescription string
+
+//go:embed descriptions/get_entity_kpis.md
+var GetEntityKPIsDescription string
+
+//go:embed descriptions/create_kpi.md
+var CreateKPIDescription string
 
 //go:embed descriptions/get_alerts.md
 var GetAlertsDescription string
 
 //go:embed descriptions/get_alert_rule_state.md
 var GetAlertRuleStateDescription string
+
+//go:embed descriptions/get_alert_hygiene.md
+var GetAlertHygieneDescription string
 
 //go:embed descriptions/describe_alert_chart.md
 var DescribeAlertChartDescription string
@@ -127,6 +169,9 @@ var CreateAlertFromChartDescription string
 
 //go:embed descriptions/get_log_attributes.md
 var GetLogAttributesDescription string
+
+//go:embed descriptions/get_log_services.md
+var GetLogServicesDescription string
 
 //go:embed descriptions/get_log_attributes_for_pipeline.md
 var GetLogAttributesForPipelineDescription string
@@ -149,6 +194,9 @@ var GetTraceWaterfallDescription string
 //go:embed descriptions/get_change_events.md
 var GetChangeEventsDescription string
 
+//go:embed descriptions/analyze_change_impact.md
+var AnalyzeChangeImpactDescription string
+
 //go:embed descriptions/get_databases.md
 var GetDatabasesDescription string
 
@@ -164,6 +212,9 @@ var GetDatabaseServerMetricsDescription string
 //go:embed descriptions/did_you_mean.md
 var DidYouMeanDescription string
 
+//go:embed descriptions/search_docs.md
+var SearchDocsDescription string
+
 //go:embed descriptions/get_service_profile.md
 var GetServiceProfileDescription string
 
@@ -172,6 +223,9 @@ var ListDashboardsDescription string
 
 //go:embed descriptions/get_dashboard.md
 var GetDashboardDescription string
+
+//go:embed descriptions/preview_dashboard.md
+var PreviewDashboardDescription string
 
 //go:embed descriptions/validate_dashboard.md
 var ValidateDashboardDescription string
@@ -182,8 +236,14 @@ var CreateDashboardDescription string
 //go:embed descriptions/update_dashboard.md
 var UpdateDashboardDescription string
 
+//go:embed descriptions/patch_dashboard.md
+var PatchDashboardDescription string
+
 //go:embed descriptions/delete_dashboard.md
 var DeleteDashboardDescription string
+
+//go:embed descriptions/set_dashboard_lock.md
+var SetDashboardLockDescription string
 
 //go:embed descriptions/list_dashboard_snapshots.md
 var ListDashboardSnapshotsDescription string
@@ -214,6 +274,12 @@ var GetLogsDescription string
 
 //go:embed descriptions/get_service_logs_base.md
 var GetServiceLogsDescription string
+
+//go:embed descriptions/get_log_patterns.md
+var GetLogPatternsDescription string
+
+//go:embed descriptions/get_emerging_log_patterns.md
+var GetEmergingLogPatternsDescription string
 
 //go:embed descriptions/get_traces_base.md
 var GetTracesDescription string
@@ -253,3 +319,20 @@ var AnalyzeSlowQueriesWorkflow string
 
 //go:embed workflows/on_call_runbook.md
 var OnCallRunbookWorkflow string
+
+//go:embed workflows/author_alert.md
+var AuthorAlertWorkflow string
+
+// WorkflowPartials holds the {{define}} blocks workflow templates share.
+//
+//go:embed workflows/partials.md
+var WorkflowPartials string
+
+//go:embed workflows/create_dashboard_guide.md
+var CreateDashboardGuideWorkflow string
+
+//go:embed workflows/dashboard_examples.md
+var DashboardExamplesWorkflow string
+
+//go:embed workflows/query_guide.md
+var QueryGuideWorkflow string

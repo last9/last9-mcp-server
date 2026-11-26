@@ -20,6 +20,7 @@ type NotificationSetting struct {
 	SendResolved *bool  `json:"send_resolved"`
 	ServiceFQID  string `json:"service_fqid"`
 	Severity     string `json:"severity"`
+	CreatedVia   string `json:"created_via"`
 }
 
 type Property struct {
@@ -35,6 +36,7 @@ type CreateNotificationSettingInput struct {
 	Destination  string    `json:"destination"`
 	SendResolved *bool     `json:"send_resolved,omitempty"`
 	Property     *Property `json:"property,omitempty"`
+	last9api.CreatedVia
 }
 
 // ListNotificationSettings calls GET /notification_settings/. exact=true returns only

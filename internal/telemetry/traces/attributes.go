@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
-	"time"
 
 	"last9-mcp/internal/constants"
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -109,13 +109,6 @@ func fetchTraceTagNames(ctx context.Context, client *http.Client, cfg models.Con
 	return names, nil
 }
 
-// FetchTraceAttributeNames fetches global trace attribute names from the API and
-// returns them as a sorted, prefixed string slice.
-func FetchTraceAttributeNames(ctx context.Context, client *http.Client, cfg models.Config) ([]string, error) {
-	now := time.Now()
-	return fetchTraceTagNames(ctx, client, cfg, now.Add(-15*time.Minute).Unix(), now.Unix(), cfg.Region)
-}
-
 // NewGetTraceAttributesHandler creates a handler for fetching the global trace attributes.
 func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetTraceAttributesArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetTraceAttributesArgs) (*mcp.CallToolResult, any, error) {
@@ -147,8 +140,10 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(c
 			return nil, nil, err
 		}
 
+		meta := deeplink.ToMeta(deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildTracesLink(startTimeValue.UnixMilli(), endTimeValue.UnixMilli(), nil, "", ""))
 		if len(names) == 0 {
 			return &mcp.CallToolResult{
+				Meta: meta,
 				Content: []mcp.Content{
 					&mcp.TextContent{Text: "No trace attributes found in the specified time window"},
 				},
@@ -165,6 +160,7 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(c
 			return nil, nil, fmt.Errorf("failed to marshal trace attributes: %v", err)
 		}
 		return &mcp.CallToolResult{
+			Meta:    meta,
 			Content: []mcp.Content{&mcp.TextContent{Text: string(out)}},
 		}, nil, nil
 	}

@@ -15,7 +15,7 @@ import (
 
 type MuteAlertGroupArgs struct {
 	EntityID string `json:"entity_id" jsonschema:"(Required) Alert group/entity UUID whose rules are all muted"`
-	Until    int64  `json:"until" jsonschema:"(Required) Unix epoch seconds when the mute ends; 0 unmutes the group; a negative value such as -1 mutes indefinitely"`
+	Until    *int64 `json:"until" jsonschema:"(Required) Unix epoch seconds when the mute ends; 0 unmutes the group; a negative value such as -1 mutes indefinitely"`
 }
 
 func NewMuteAlertGroupHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, MuteAlertGroupArgs) (*mcp.CallToolResult, any, error) {
@@ -23,8 +23,12 @@ func NewMuteAlertGroupHandler(client *http.Client, cfg models.Config) func(conte
 		if strings.TrimSpace(args.EntityID) == "" {
 			return utils.ToolErrorResult("entity_id is required"), nil, nil
 		}
+		// A missing until must not decode to 0: the snooze endpoint reads 0 as unmute-all.
+		if args.Until == nil {
+			return utils.ToolErrorResult("until is required: epoch seconds to mute until, -1 to mute indefinitely, or 0 to unmute the group"), nil, nil
+		}
 		body, err := entities.SnoozeAlertRules(ctx, last9api.NewClient(client, cfg),
-			entities.SnoozeAlertRulesInput{EntityID: args.EntityID, Until: args.Until})
+			entities.SnoozeAlertRulesInput{EntityID: args.EntityID, Until: *args.Until})
 		if err != nil {
 			return nil, nil, withUpstreamBody(err)
 		}

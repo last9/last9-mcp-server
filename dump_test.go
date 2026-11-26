@@ -3,13 +3,16 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
 	"last9-mcp/internal/apm"
 	"last9-mcp/internal/prompts"
+	"last9-mcp/internal/telemetry/logs"
 	"last9-mcp/internal/toolsets"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -17,7 +20,7 @@ import (
 
 func TestServedQueryToolSchemas(t *testing.T) {
 	var buf bytes.Buffer
-	if err := dumpTools(&buf, nil); err != nil {
+	if err := dumpTools(&buf, toolsets.Filter{}); err != nil {
 		t.Fatal(err)
 	}
 	var out struct {
@@ -45,12 +48,15 @@ func TestServedQueryToolSchemas(t *testing.T) {
 		"get_service_traces": {valid: map[string]any{"trace_id": "0123456789abcdef0123456789abcdef"}, invalid: []map[string]any{
 			{"service_name": "api", "unexpected": true}, {"trace_id": 1},
 		}},
-		"prometheus_range_query": {valid: map[string]any{"query": "up", "lookback_minutes": 5.5}, invalid: []map[string]any{
-			{"query": "up", "step": "1m"}, {}, {"query": 1},
+		"prometheus_range_query": {valid: map[string]any{"query": "up", "lookback_minutes": 5.5, "step": 120}, invalid: []map[string]any{
+			{"query": "up", "step": "1m"}, {"query": "up", "step": 1.5}, {"query": "up", "unexpected": true}, {}, {"query": 1},
 		}, requiredFields: []string{"query"}},
 		"prometheus_instant_query": {valid: map[string]any{"query": "up", "lookback_minutes": 5.5}, invalid: []map[string]any{
 			{"promql": "up"}, {}, {"query": 1},
 		}, requiredFields: []string{"query"}},
+		"get_metric_status": {valid: map[string]any{"metric": "up", "window_minutes": 60}, invalid: []map[string]any{
+			{"metric": "up", "unexpected": true}, {}, {"metric": 1},
+		}, requiredFields: []string{"metric", "window_minutes"}},
 	}
 	for _, tool := range out.Tools {
 		test, ok := tests[tool.Name]
@@ -91,9 +97,75 @@ func TestServedQueryToolSchemas(t *testing.T) {
 	}
 }
 
+func TestGetDatabasesDescriptionFollowUpContract(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, toolsets.Filter{}); err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Tools []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			InputSchema struct {
+				Properties map[string]any `json:"properties"`
+			} `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+
+	tools := map[string]struct {
+		description string
+		properties  map[string]any
+	}{}
+	for _, tool := range out.Tools {
+		tools[tool.Name] = struct {
+			description string
+			properties  map[string]any
+		}{tool.Description, tool.InputSchema.Properties}
+	}
+
+	for tool, fields := range map[string]map[string]bool{
+		"get_database_slow_queries": {
+			"id": false, "database_id": false, "db_system": true, "env": true, "host": true,
+			"lookback_minutes": true, "start_time_iso": true, "end_time_iso": true,
+		},
+		"get_database_server_metrics": {
+			"id": false, "database_id": false, "db_system": true, "env": false, "host": false,
+			"lookback_minutes": true, "start_time_iso": true, "end_time_iso": true,
+		},
+	} {
+		properties := tools[tool].properties
+		for field, want := range fields {
+			_, got := properties[field]
+			if got != want {
+				t.Errorf("%s schema field %q present = %t, want %t", tool, field, got, want)
+			}
+		}
+	}
+
+	description := tools["get_databases"].description
+	for _, want := range []string{
+		"The `id` can repeat across environments",
+		"Follow-up tools do not accept `id` or `database_id`",
+		"Omit the discovery row's `host`",
+		"`get_database_server_metrics` scopes instances only by `db_system`",
+		"`lookback_minutes`, `start_time_iso`, or `end_time_iso`",
+		"When `resolved_labels` is present",
+	} {
+		if !strings.Contains(description, want) {
+			t.Errorf("get_databases description missing %q", want)
+		}
+	}
+	if strings.HasSuffix(description, "\n") {
+		t.Error("get_databases description gained a trailing newline")
+	}
+}
+
 func TestDumpTools(t *testing.T) {
 	var buf bytes.Buffer
-	if err := dumpTools(&buf, nil); err != nil {
+	if err := dumpTools(&buf, toolsets.Filter{}); err != nil {
 		t.Fatalf("dumpTools failed: %v", err)
 	}
 
@@ -111,8 +183,8 @@ func TestDumpTools(t *testing.T) {
 	// All registered tools must be covered — the whole point of dump-tools.
 	// A loose floor would let a regression silently drop tools. Tighten this
 	// when the committed snapshot + CI equality gate supersedes it.
-	if len(out.Tools) < 43 {
-		t.Fatalf("expected at least 43 tools, got %d", len(out.Tools))
+	if len(out.Tools) < 45 {
+		t.Fatalf("expected at least 45 tools, got %d", len(out.Tools))
 	}
 	if !sort.SliceIsSorted(out.Tools, func(i, j int) bool { return out.Tools[i].Name < out.Tools[j].Name }) {
 		t.Fatal("tools are not sorted by name (output must be deterministic for snapshot diffing)")
@@ -122,7 +194,7 @@ func TestDumpTools(t *testing.T) {
 	for i, tool := range out.Tools {
 		byName[tool.Name] = i
 	}
-	for _, name := range []string{"get_traces", "get_service_summary", "prometheus_label_values", "get_logs", "get_alert_groups", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel"} {
+	for _, name := range []string{"get_traces", "get_service_summary", "prometheus_label_values", "get_logs", "get_alert_groups", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel", "get_entity_kpis"} {
 		i, ok := byName[name]
 		if !ok {
 			t.Fatalf("tool %q missing from dump", name)
@@ -133,6 +205,13 @@ func TestDumpTools(t *testing.T) {
 		if out.Tools[i].InputSchema == nil {
 			t.Fatalf("tool %q has no inputSchema", name)
 		}
+	}
+	labelValuesDesc := out.Tools[byName["prometheus_label_values"]].Description
+	if !strings.Contains(labelValuesDesc, "5760") {
+		t.Fatal("prometheus_label_values description must document a wide lookback (5760) for daily/sparse metrics")
+	}
+	if !strings.Contains(strings.ToLower(labelValuesDesc), "sparse") && !strings.Contains(strings.ToLower(labelValuesDesc), "daily") {
+		t.Fatal("prometheus_label_values description must warn that daily/sparse metrics need a widened lookback")
 	}
 	for _, tool := range out.Tools {
 		var schema struct {
@@ -147,6 +226,9 @@ func TestDumpTools(t *testing.T) {
 		}
 		if err := json.Unmarshal(schemaBytes, &schema); err != nil {
 			t.Fatalf("unmarshal %s inputSchema: %v", tool.Name, err)
+		}
+		if lookback := schema.Properties["lookback_minutes"].Description; (tool.Name == "prometheus_labels" || tool.Name == "prometheus_label_values") && !strings.Contains(lookback, "5760 (4 days)") {
+			t.Fatalf("%s lookback_minutes must document the 4-day retry: %q", tool.Name, lookback)
 		}
 		for name, property := range schema.Properties {
 			if strings.TrimSpace(property.Description) == "" {
@@ -168,8 +250,8 @@ func TestDumpTools(t *testing.T) {
 	if strings.Contains(summary.Description, "ErrorRate") {
 		t.Fatal("get_service_summary description still mentions ErrorRate")
 	}
-	if strings.Contains(summary.Description, "last9://reference/") {
-		t.Fatal("get_service_summary must not be a whale with a last9://reference/ pointer")
+	if !strings.Contains(summary.Description, "last9://reference/tool_recipes") {
+		t.Fatal("get_service_summary must point at deferred interpretation recipes")
 	}
 	if !strings.Contains(summary.Description, "http_5xx_count") {
 		t.Fatal("get_service_summary description missing http_5xx_count language map")
@@ -213,33 +295,8 @@ func TestDumpTools(t *testing.T) {
 	if strings.Contains(out.Tools[byName["get_logs"]].Description, "{{labels}}") {
 		t.Fatal("get_logs description still contains unsubstituted {{labels}} placeholder")
 	}
-	// get_logs: budget covers combined (description + inputSchema JSON) served size
-	// because get_logs ships a hand-crafted schema that contributes meaningfully to
-	// the context window. Budget is 7000 with headroom over the baseline ~6283.
-	logsIdx := byName["get_logs"]
-	logsSchemaBytes, err := json.Marshal(out.Tools[logsIdx].InputSchema)
-	if err != nil {
-		t.Fatalf("marshal get_logs inputSchema: %v", err)
-	}
-	logsServedSize := len(out.Tools[logsIdx].Description) + len(logsSchemaBytes)
-	const logsServedBudget = 7000
-	if logsServedSize > logsServedBudget {
-		t.Fatalf("get_logs combined (description + inputSchema) served size %d exceeds %d-char budget", logsServedSize, logsServedBudget)
-	}
-	if !strings.Contains(out.Tools[logsIdx].Description, "last9://reference/") {
-		t.Fatal("get_logs description missing resource URI pointer")
-	}
-
-	// Description-only budgets for other whales (main tripwire values restored to 2000).
-	whaleBudgets := map[string]int{
-		"get_traces":       2000,
-		"get_service_logs": 2000,
-	}
-	for _, whale := range []string{"get_traces", "get_service_logs"} {
-		budget := whaleBudgets[whale]
-		if len(out.Tools[byName[whale]].Description) > budget {
-			t.Fatalf("%s served description length %d exceeds %d-char budget", whale, len(out.Tools[byName[whale]].Description), budget)
-		}
+	// Size budgets live in tool_metadata_test.go.
+	for _, whale := range []string{"get_logs", "get_traces", "get_service_logs"} {
 		if !strings.Contains(out.Tools[byName[whale]].Description, "last9://reference/") {
 			t.Fatalf("%s description missing resource URI pointer", whale)
 		}
@@ -442,7 +499,7 @@ func TestDumpTools(t *testing.T) {
 
 func TestDumpToolsHonorsToolsetsFilter(t *testing.T) {
 	var buf bytes.Buffer
-	if err := dumpTools(&buf, toolsets.Set{"get_exceptions": {}}); err != nil {
+	if err := dumpTools(&buf, toolsets.Filter{Tools: toolsets.Set{"get_exceptions": {}}}); err != nil {
 		t.Fatalf("dumpTools failed: %v", err)
 	}
 	var out struct {
@@ -458,13 +515,57 @@ func TestDumpToolsHonorsToolsetsFilter(t *testing.T) {
 	}
 }
 
+func TestDumpToolsIncludesServedInstructions(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		filter toolsets.Filter
+	}{
+		{"all", toolFilter(t, "", false, "")},
+		{"logs", toolFilter(t, "logs", false, "")},
+		{"investigate", toolFilter(t, "investigate", false, "")},
+		{"alerts read-only", toolFilter(t, "alerts", true, "")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := dumpTools(&buf, tc.filter); err != nil {
+				t.Fatalf("dumpTools failed: %v", err)
+			}
+			var out struct {
+				Instructions string `json:"instructions"`
+			}
+			if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+				t.Fatalf("output is not valid JSON: %v", err)
+			}
+			want, _ := initializeWith(t, tc.filter)
+			if want == "" {
+				t.Fatal("initialize returned no instructions")
+			}
+			if out.Instructions != want {
+				t.Fatalf("dump instructions differ from initialize's:\n got: %q\nwant: %q", out.Instructions, want)
+			}
+		})
+	}
+}
+
+// Snapshot consumers read the tools array; instructions must not change it or
+// precede it.
+func TestDumpToolsKeepsToolsFirst(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, toolsets.Filter{}); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	if !bytes.HasPrefix(buf.Bytes(), []byte("{\n  \"tools\": [")) {
+		t.Fatalf("dump must open with the tools array, got %q", buf.String()[:min(40, buf.Len())])
+	}
+}
+
 func TestDumpToolsLogsIncludesServiceProfile(t *testing.T) {
 	allowed, err := toolsets.Parse("logs")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := dumpTools(&buf, allowed); err != nil {
+	if err := dumpTools(&buf, toolsets.Filter{Tools: allowed}); err != nil {
 		t.Fatalf("dumpTools failed: %v", err)
 	}
 	var out struct {
@@ -498,6 +599,226 @@ func TestDumpToolsLogsIncludesServiceProfile(t *testing.T) {
 	}
 }
 
+func TestDumpToolsServesReadOnlyAlertCoverage(t *testing.T) {
+	for _, tc := range []struct {
+		spec string
+		want bool
+	}{
+		{"alerts", true},
+		{"investigate", true},
+		{"logs", false},
+		{"dashboards", false},
+	} {
+		t.Run(tc.spec, func(t *testing.T) {
+			allowed, err := toolsets.Parse(tc.spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var buf bytes.Buffer
+			if err := dumpTools(&buf, toolsets.Filter{Tools: allowed}); err != nil {
+				t.Fatalf("dumpTools failed: %v", err)
+			}
+			var out struct {
+				Tools []struct {
+					Name        string `json:"name"`
+					Description string `json:"description"`
+					Annotations struct {
+						ReadOnlyHint bool `json:"readOnlyHint"`
+					} `json:"annotations"`
+				} `json:"tools"`
+			}
+			if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+				t.Fatalf("output is not valid JSON: %v", err)
+			}
+			for _, tool := range out.Tools {
+				if tool.Name != "get_alert_coverage" {
+					continue
+				}
+				if !tc.want {
+					t.Fatalf("%s dump should exclude get_alert_coverage", tc.spec)
+				}
+				if !tool.Annotations.ReadOnlyHint {
+					t.Error("get_alert_coverage must be served read-only")
+				}
+				served := map[string]bool{}
+				for _, other := range out.Tools {
+					served[other.Name] = true
+				}
+				if want := prompts.TrimRoutes(prompts.GetAlertCoverageDescription, func(n string) bool { return served[n] }); tool.Description != want {
+					t.Error("served get_alert_coverage description != embed trimmed to the served tools")
+				}
+				return
+			}
+			if tc.want {
+				t.Fatalf("%s dump missing get_alert_coverage", tc.spec)
+			}
+		})
+	}
+}
+
+func TestDumpToolsLogPatternToolsServedInLogsAndInvestigate(t *testing.T) {
+	patternTools := []string{"get_log_patterns", "get_emerging_log_patterns"}
+	for spec, want := range map[string]bool{"logs": true, "investigate": true, "": true, "metrics": false, "alerts": false} {
+		allowed, err := toolsets.Parse(spec)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", spec, err)
+		}
+		var buf bytes.Buffer
+		if err := dumpTools(&buf, toolsets.Filter{Tools: allowed}); err != nil {
+			t.Fatalf("dumpTools(%q) failed: %v", spec, err)
+		}
+		for _, tool := range patternTools {
+			if got := strings.Contains(buf.String(), `"name": "`+tool+`"`); got != want {
+				t.Errorf("toolset %q serves %s = %v, want %v", spec, tool, got, want)
+			}
+		}
+	}
+}
+
+func TestDumpToolsEmergingLogPatternsCouplesBaselineTimes(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, toolsets.Filter{}); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name        string `json:"name"`
+			InputSchema struct {
+				Properties        map[string]any      `json:"properties"`
+				DependentRequired map[string][]string `json:"dependentRequired"`
+			} `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	for _, tool := range out.Tools {
+		if tool.Name != "get_emerging_log_patterns" {
+			continue
+		}
+		want := map[string][]string{
+			"baseline_start_time_iso": {"baseline_end_time_iso"},
+			"baseline_end_time_iso":   {"baseline_start_time_iso"},
+		}
+		if !reflect.DeepEqual(tool.InputSchema.DependentRequired, want) {
+			t.Errorf("dependentRequired = %v, want %v", tool.InputSchema.DependentRequired, want)
+		}
+		for _, name := range []string{"service_name", "sample_size", "baseline_start_time_iso", "min_count", "change_factor"} {
+			if _, ok := tool.InputSchema.Properties[name]; !ok {
+				t.Errorf("served schema lost property %q", name)
+			}
+		}
+		return
+	}
+	t.Fatal("get_emerging_log_patterns missing from dump")
+}
+
+func TestDumpToolsLogPatternToolsServeScopeSchemaHints(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, toolsets.Filter{}); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name        string `json:"name"`
+			InputSchema struct {
+				Properties map[string]map[string]any `json:"properties"`
+			} `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	properties := map[string]map[string]map[string]any{}
+	for _, tool := range out.Tools {
+		properties[tool.Name] = tool.InputSchema.Properties
+	}
+	for tool, times := range map[string][]string{
+		"get_log_patterns":          {"start_time_iso", "end_time_iso"},
+		"get_emerging_log_patterns": {"start_time_iso", "end_time_iso", "baseline_start_time_iso", "baseline_end_time_iso"},
+	} {
+		for _, name := range times {
+			if got := properties[tool][name]["format"]; got != "date-time" {
+				t.Errorf("%s property %q format = %v, want date-time", tool, name, got)
+			}
+		}
+		// Callers outside the triage prompts must still learn that severity
+		// filters drop body-level severities on none/partial services.
+		if got, _ := properties[tool]["severity_filters"]["description"].(string); !strings.Contains(got, `only when get_service_profile reports severity_set "all"`) {
+			t.Errorf("%s severity_filters description = %q, want the severity_set routing rule", tool, got)
+		}
+		// A capped sample's first_seen is not the window start.
+		if got, _ := properties[tool]["sample_size"]["description"].(string); !strings.Contains(got, "newest first") {
+			t.Errorf("%s sample_size description = %q, want it to say lines are sampled newest first", tool, got)
+		}
+	}
+}
+
+func TestDumpToolsLogPatternToolsServeTheirExplicitSchemas(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, toolsets.Filter{}); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name        string          `json:"name"`
+			InputSchema json.RawMessage `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	served := map[string]json.RawMessage{}
+	for _, tool := range out.Tools {
+		served[tool.Name] = tool.InputSchema
+	}
+	for name, schema := range map[string]any{
+		"get_log_patterns":          logs.GetLogPatternsInputSchema(),
+		"get_emerging_log_patterns": logs.GetEmergingLogPatternsInputSchema(),
+	} {
+		wantBytes, err := json.Marshal(schema)
+		if err != nil {
+			t.Fatalf("marshal %s canonical schema: %v", name, err)
+		}
+		var got, want map[string]any
+		if err := json.Unmarshal(served[name], &got); err != nil {
+			t.Fatalf("%s served schema: %v", name, err)
+		}
+		if err := json.Unmarshal(wantBytes, &want); err != nil {
+			t.Fatalf("%s canonical schema: %v", name, err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("served %s schema differs from its explicit schema\nserved: %v\nwant: %v", name, got, want)
+		}
+		if got["additionalProperties"] != false {
+			t.Errorf("%s additionalProperties = %v, want false", name, got["additionalProperties"])
+		}
+	}
+}
+
+// Unavailable alert API tools must not be served in any toolset or mode.
+func TestDumpToolsUnavailableAlertAPIsAreNotServed(t *testing.T) {
+	for _, spec := range []string{"all", "alerts", "investigate"} {
+		allowed, err := toolsets.Parse(spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, readOnly := range []bool{false, true} {
+			t.Run(spec+"/read-only="+strconv.FormatBool(readOnly), func(t *testing.T) {
+				var buf bytes.Buffer
+				if err := dumpTools(&buf, toolsets.Filter{Tools: allowed, ReadOnly: readOnly}); err != nil {
+					t.Fatalf("dumpTools failed: %v", err)
+				}
+				for _, name := range []string{"get_alert_hygiene", "get_alert_operations_summary"} {
+					if strings.Contains(buf.String(), name) {
+						t.Errorf("dump includes unavailable tool %q", name)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestDumpToolsDataToolsetsIncludeNameDiscovery(t *testing.T) {
 	for _, spec := range []string{"traces", "metrics"} {
 		allowed, err := toolsets.Parse(spec)
@@ -516,7 +837,7 @@ func TestDumpToolsInvestigate(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := dumpTools(&buf, allowed); err != nil {
+	if err := dumpTools(&buf, toolsets.Filter{Tools: allowed}); err != nil {
 		t.Fatalf("dumpTools failed: %v", err)
 	}
 	var out struct {
@@ -531,24 +852,160 @@ func TestDumpToolsInvestigate(t *testing.T) {
 	for _, tool := range out.Tools {
 		byName[tool.Name] = true
 	}
-	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "get_service_profile", "list_datasources"} {
+	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "get_metric_status", "did_you_mean", "search_docs", "get_service_profile", "list_datasources", "get_entity_kpis"} {
 		if !byName[want] {
 			t.Errorf("investigate dump missing %q", want)
 		}
 	}
-	for _, deny := range []string{"get_alerts", "get_alert_groups", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard"} {
+	for _, deny := range []string{"get_alerts", "get_alert_groups", "get_alert_hygiene", "get_alert_operations_summary", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard", "create_kpi"} {
 		if byName[deny] {
 			t.Errorf("investigate dump should exclude %q", deny)
 		}
 	}
-	if len(out.Tools) >= 38 {
-		t.Fatalf("investigate should expose fewer than full surface; got %d", len(out.Tools))
+	var all bytes.Buffer
+	if err := dumpTools(&all, toolsets.Filter{}); err != nil {
+		t.Fatalf("dumpTools(all) failed: %v", err)
+	}
+	var full struct {
+		Tools []json.RawMessage `json:"tools"`
+	}
+	if err := json.Unmarshal(all.Bytes(), &full); err != nil {
+		t.Fatalf("full output is not valid JSON: %v", err)
+	}
+	if len(out.Tools) >= len(full.Tools) {
+		t.Fatalf("investigate should expose fewer than full surface; got %d of %d", len(out.Tools), len(full.Tools))
+	}
+}
+
+func TestDumpToolsAnalyzeChangeImpactToolsets(t *testing.T) {
+	for spec, want := range map[string]bool{
+		"investigate": true, "metrics": true, "alerts": true,
+		"logs": false, "traces": false, "dashboards": false,
+	} {
+		allowed, err := toolsets.Parse(spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var buf bytes.Buffer
+		if err := dumpTools(&buf, toolsets.Filter{Tools: allowed}); err != nil {
+			t.Fatalf("dumpTools(%s) failed: %v", spec, err)
+		}
+		var out struct {
+			Tools []struct {
+				Name        string `json:"name"`
+				Description string `json:"description"`
+				Annotations struct {
+					ReadOnlyHint bool `json:"readOnlyHint"`
+				} `json:"annotations"`
+			} `json:"tools"`
+		}
+		if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		served, servesChangeEvents := false, false
+		for _, tool := range out.Tools {
+			if tool.Name == "get_change_events" {
+				servesChangeEvents = true
+			}
+			if tool.Name != "analyze_change_impact" {
+				continue
+			}
+			served = true
+			if tool.Description != prompts.AnalyzeChangeImpactDescription || !tool.Annotations.ReadOnlyHint {
+				t.Errorf("%s: analyze_change_impact must serve its embedded description and be read-only", spec)
+			}
+		}
+		if served != want {
+			t.Errorf("%s toolset serves analyze_change_impact = %v, want %v", spec, served, want)
+		}
+		// Its documented input is a get_change_events element.
+		if served && !servesChangeEvents {
+			t.Errorf("%s toolset serves analyze_change_impact without get_change_events", spec)
+		}
+	}
+}
+
+func TestDumpToolsPatchDashboardToolsets(t *testing.T) {
+	for spec, want := range map[string]bool{
+		"all": true, "dashboards": true,
+		"investigate": false, "metrics": false, "alerts": false, "logs": false, "traces": false, "grafana": false,
+	} {
+		allowed, err := toolsets.Parse(spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var buf bytes.Buffer
+		if err := dumpTools(&buf, toolsets.Filter{Tools: allowed}); err != nil {
+			t.Fatalf("dumpTools(%s) failed: %v", spec, err)
+		}
+		var out struct {
+			Tools []struct {
+				Name        string `json:"name"`
+				Description string `json:"description"`
+			} `json:"tools"`
+		}
+		if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		served := false
+		for _, tool := range out.Tools {
+			if tool.Name != "patch_dashboard" {
+				continue
+			}
+			served = true
+			if tool.Description != prompts.PatchDashboardDescription {
+				t.Errorf("%s: patch_dashboard must serve its embedded description", spec)
+			}
+		}
+		if served != want {
+			t.Errorf("%s toolset serves patch_dashboard = %v, want %v", spec, served, want)
+		}
+	}
+}
+
+func TestDumpToolsServesCoreToolsUnderEveryToolset(t *testing.T) {
+	for _, spec := range append(toolsets.ValidNames(), "") {
+		t.Run("toolsets="+spec, func(t *testing.T) {
+			allowed, err := toolsets.Parse(spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var buf bytes.Buffer
+			if err := dumpTools(&buf, toolsets.Filter{Tools: allowed}); err != nil {
+				t.Fatalf("dumpTools failed: %v", err)
+			}
+			var out struct {
+				Tools []struct {
+					Name        string `json:"name"`
+					Description string `json:"description"`
+				} `json:"tools"`
+			}
+			if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+				t.Fatalf("output is not valid JSON: %v", err)
+			}
+			descriptions := map[string]string{}
+			for _, tool := range out.Tools {
+				descriptions[tool.Name] = tool.Description
+			}
+			wants := map[string][]string{
+				"get_current_time":       {"`range`", "`timezone`", "since <point>", "IST = Asia/Kolkata", "epoch_seconds"},
+				"get_workspace_overview": {"Recommended first call when a request names no service or tool", "names a service, signal or tool: call its tool directly", "`telemetry`", "`errors`", "`null`, which means unknown"},
+				"search_docs":            {"Searches Last9 product docs", "cite only URLs returned by this tool"},
+			}
+			for tool, phrases := range wants {
+				for _, want := range phrases {
+					if !strings.Contains(descriptions[tool], want) {
+						t.Errorf("%s description missing %q", tool, want)
+					}
+				}
+			}
+		})
 	}
 }
 
 func TestDumpToolsDashboardWriteSteer(t *testing.T) {
 	var buf bytes.Buffer
-	if err := dumpTools(&buf, nil); err != nil {
+	if err := dumpTools(&buf, toolsets.Filter{}); err != nil {
 		t.Fatalf("dumpTools failed: %v", err)
 	}
 	var out struct {
@@ -590,5 +1047,35 @@ func TestOnCallRunbookRoutesHTTPStatusToServiceLogs(t *testing.T) {
 	}
 	if strings.Contains(runbook, "write logjson") && !strings.Contains(runbook, "do not write logjson") {
 		t.Fatal("on_call_runbook must not tell the agent to write logjson for service 5xx")
+	}
+}
+
+func TestDumpToolsPreviewDashboardReadOnly(t *testing.T) {
+	for _, spec := range toolsets.ValidNames() {
+		for _, readOnly := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/read_only=%t", spec, readOnly), func(t *testing.T) {
+				allowed, err := toolsets.Parse(spec)
+				if err != nil {
+					t.Fatal(err)
+				}
+				found := false
+				for _, tool := range dumpServedTools(t, toolsets.Filter{Tools: allowed, ReadOnly: readOnly}) {
+					if tool.Name != "preview_dashboard" {
+						continue
+					}
+					found = true
+					if tool.Description != prompts.PreviewDashboardDescription {
+						t.Error("preview description differs from embedded Markdown")
+					}
+					if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
+						t.Fatal("preview must be annotated read-only")
+					}
+				}
+				want := spec == "all" || spec == "dashboards"
+				if found != want {
+					t.Fatalf("preview served=%t want %t", found, want)
+				}
+			})
+		}
 	}
 }

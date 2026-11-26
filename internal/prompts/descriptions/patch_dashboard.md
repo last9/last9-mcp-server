@@ -1,0 +1,13 @@
+Apply targeted edits to a custom dashboard by ID. Prefer this over update_dashboard for small refinements: unchanged panels are not re-sent. Use create_dashboard only for a net-new dashboard; after creation, refine it here or with update_dashboard.
+
+`ops` run in order; if one is invalid, nothing is written and the error names `ops[i]`. Panel ids come from get_dashboard. A query's `query_type` must fit its `telemetry`: `promql` for metrics; `log_json`, `log_ql` or `log_raw` for logs; `trace_json` or `trace_ql` for traces.
+- `add_panel`: `panel` (full panel object, same shape as create_dashboard; `version` defaults to 1), optional `index` (0-based insert position, default append).
+- `update_panel`: `panel_id`, `fields` (top-level panel keys to replace, e.g. `name`, `queries`, `layout`, `visualization`; `null` removes a key; `id` cannot change). `fields.visualization` replaces that whole object, so include its `type` and the full `table_config` when editing a table.
+- `remove_panel`: `panel_id`.
+- `move_panel`: `panel_id`, `index` (0-based position in `panels` after the move).
+- `set_title`: `title` (the dashboard name).
+- `set_variable`: `variable` object; replaces the variable with the same `target`, otherwise appends it.
+
+The tool reads the dashboard, applies the ops and writes it back, so an edit made elsewhere between those two calls is overwritten. Ops the dashboard already satisfies are left out of `changes`; if no op changes anything, nothing is written. After writing, the tool re-reads the dashboard: panel `fields` show the stored values, and `not_stored` lists keys the API dropped (it keeps only panel keys it knows) and `not_removed` keys a `null` did not remove (the API restored a default), so those edits did not land. Diff values longer than 200 characters are shortened but keep their JSON type: strings are cut, and trailing array items or object keys are dropped, marked with `…`. Readonly system dashboards return an error. A locked dashboard (`locked: true` in get_dashboard) is refused before anything is written, with an error starting `dashboard is locked` that names its `created_by`. Ask that author or an org admin to unlock it with `set_dashboard_lock`, or copy it with `create_dashboard`.
+
+MCP prompts: `create_dashboard_guide`, `dashboard_examples`, `query_guide`. Prepare the full edited candidate before approval: run `validate_dashboard` and each panel's query with current query tools, then apply the approved ops.

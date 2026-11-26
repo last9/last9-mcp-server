@@ -66,11 +66,11 @@ func TestGetAlertRuleDecodesOwner(t *testing.T) {
 		if r.Method != http.MethodGet || r.URL.EscapedPath() != "/entities/entity%2F1/alert-rules/rule%2F1" {
 			t.Errorf("request = %s %s", r.Method, r.URL.EscapedPath())
 		}
-		_, _ = w.Write([]byte(`{"id":"rule/1","entity_id":"entity-2","rule_name":"x"}`))
+		_, _ = w.Write([]byte(`{"id":"rule/1","entity_id":"entity-2","rule_name":"x","properties":{"description":"d","annotations":{"team":"core"}}}`))
 	}))
 	defer srv.Close()
 	rule, err := GetAlertRule(context.Background(), newTestClient(srv), AlertRuleInput{EntityID: "entity/1", RuleID: "rule/1"})
-	if err != nil || rule != (AlertRule{ID: "rule/1", EntityID: "entity-2", RuleName: "x"}) {
+	if err != nil || rule.ID != "rule/1" || rule.EntityID != "entity-2" || rule.RuleName != "x" || string(rule.Properties) != `{"description":"d","annotations":{"team":"core"}}` {
 		t.Fatalf("rule=%+v err=%v", rule, err)
 	}
 }
@@ -84,7 +84,7 @@ func TestListAlertRulesDecodesRules(t *testing.T) {
 	}))
 	defer srv.Close()
 	rules, err := ListAlertRules(context.Background(), newTestClient(srv), "entity/1")
-	if err != nil || len(rules) != 1 || rules[0] != (AlertRule{ID: "rule-1", EntityID: "entity/1", RuleName: "latency"}) {
+	if err != nil || len(rules) != 1 || rules[0].ID != "rule-1" || rules[0].EntityID != "entity/1" || rules[0].RuleName != "latency" {
 		t.Fatalf("rules=%+v err=%v", rules, err)
 	}
 }

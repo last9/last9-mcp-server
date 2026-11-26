@@ -50,7 +50,9 @@ onset conclusions (a narrow raw sample is not a trend):
 4. Translate the query to JSON pipeline format using the correct field references
 5. Call the `get_logs` tool with canonical time params:
    - Use `start_time_iso` + `end_time_iso` when the user gave explicit absolute dates/times
-   - Otherwise use `lookback_minutes` (default: 5 when no time is specified)
+   - Otherwise use `lookback_minutes` (default: 5, minimum: 1); Body contains-family searches, including `i`/`not` variants, must set it explicitly
+   - Chunked raw searches are limited to 24 chunks (currently at most 24 hours / 1440 minutes). Larger plans are refused before any log query is sent. Narrow `lookback_minutes` or the `start_time_iso`/`end_time_iso` window; do not retry unchanged. Lowering `limit` does not reduce the chunk count. Aggregate pipelines and server-side log search do not use this client-side chunk budget.
+   - Server-side log search (only when the server operator enabled it; otherwise the chunked rules above apply and neither `pieces` nor this refusal occurs) reads at most 336 hours per request. A longer non-aggregate range runs as contiguous pieces of at most 336 hours, newest first, merged up to `limit`; `search_stats.pieces` lists each piece's `start`, `end` and `status` (`complete`, `partial` when rows were cut, `failed` with `error`). Report a `failed` piece's span as not searched. An aggregate pipeline over 336 hours is refused before any query: narrow the range, or run one query per window of at most 336 hours and add the results only for counts or sums.
 6. Analyze the results and provide insights to the user
 
 **LOG SERVICE INVENTORY BEFORE BROAD SEARCH:**
@@ -63,7 +65,7 @@ onset conclusions (a narrow raw sample is not a trend):
 - After inventory, query one service/env/index at a time. Aggregate by `SeverityText`, a structured attribute, or a specific pattern before fetching raw lines.
 
 **CRITICAL TIME PARAMETER RULES:**
-- **ALWAYS use lookback_minutes: 5 when no time range is specified**
+- **ALWAYS use lookback_minutes: 5 when no time range is specified; Body contains-family searches require this explicit value**
 - **NEVER use 60 minutes unless explicitly requested**
 - **Default means 5 minutes, not 60 minutes**
 - **`start_time_iso` and `end_time_iso` are top-level request parameters — NEVER put them inside the pipeline as `Timestamp` filter conditions**
@@ -143,6 +145,8 @@ The JSON pipeline format supports filtering, parsing, aggregation on log data.
 3. **aggregate** - Perform aggregations (sum, avg, count, etc.)
 4. **window_aggregate** - Time-windowed aggregations
 
+No other stage type exists: `transform` and `select` are rejected.
+
 ### Filter Operations:
 ```json
 {
@@ -194,6 +198,7 @@ The JSON pipeline format supports filtering, parsing, aggregation on log data.
 
 ### Parse Operations:
 Note that regex parsing operators also work as regex filters
+Regexps (`$regex` family and the `regexp` parser) use RE2 syntax: no lookahead/lookbehind, backreferences or possessive quantifiers; negate with `$notregex`.
 ```json
 {
   "type": "parse",
@@ -202,6 +207,8 @@ Note that regex parsing operators also work as regex filters
   "labels": {"field": "alias"}  // Field mappings for json parsing
 }
 ```
+
+A parse stage can drop rows whose Body it cannot parse (for example multi-line key=value text after a header line). For a filter → parse → `$count` aggregate pipeline, get_logs also counts the filtered rows without the parse; when fewer survive, `l9_parse_check` gives `rows_before_parse`, `rows_after_parse`, `unparsed_rows` and `parsers` (every parse stage, any of which may have dropped them). Report that gap; never present the parsed count as the total. Count without parsing for the total, or try a `regexp` parse with named groups to extract fields from a different body format. If the pre-parse count fails, `l9_parse_check` contains `parsers`, `rows_after_parse`, and `error`. The size of the gap is unknown.
 
 ### Aggregate Operations:
 ```json

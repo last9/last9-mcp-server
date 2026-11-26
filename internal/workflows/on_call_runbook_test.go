@@ -107,3 +107,110 @@ func TestOnCallRunbookFleetTriageWhenNoService(t *testing.T) {
 		t.Errorf("no-service render should call profile after fleet triage:\n%s", got)
 	}
 }
+
+// Latency and error triage check a recent change with analyze_change_impact
+// right after the first performance read; other branches never call it.
+func TestOnCallRunbookChecksRecentChangeOnLatencyAndErrors(t *testing.T) {
+	for symptom, wantCall := range map[string]bool{"latency": true, "errors": true, "database": false, "weird": false} {
+		res, err := OnCallRunbook.Handler(context.Background(), &mcp.GetPromptRequest{
+			Params: &mcp.GetPromptParams{Arguments: map[string]string{"symptom": symptom, "time": "1h", "service": "checkout"}},
+		})
+		if err != nil {
+			t.Fatalf("symptom %q: %v", symptom, err)
+		}
+		got := res.Messages[0].Content.(*mcp.TextContent).Text
+		at := strings.Index(got, "analyze_change_impact")
+		if (at >= 0) != wantCall {
+			t.Fatalf("symptom %q: analyze_change_impact rendered = %v, want %v:\n%s", symptom, at >= 0, wantCall, got)
+		}
+		if !wantCall {
+			continue
+		}
+		assertChecksRecentChange(t, "on-call-runbook "+symptom, got)
+	}
+}
+
+func renderOnCallRunbook(t *testing.T, args map[string]string) string {
+	t.Helper()
+	res, err := OnCallRunbook.Handler(context.Background(), &mcp.GetPromptRequest{Params: &mcp.GetPromptParams{Arguments: args}})
+	if err != nil {
+		t.Fatalf("args %v: unexpected error: %v", args, err)
+	}
+	return res.Messages[0].Content.(*mcp.TextContent).Text
+}
+
+func TestOnCallRunbookChecksLogNoveltyOnlyBeforeLogSearches(t *testing.T) {
+	// Each name must appear, after the novelty check.
+	cases := map[string][]string{
+		"errors": {"get_service_logs", "get_logs only if", "get_log_patterns"},
+		"weird":  {"get_log_patterns"},
+	}
+	for symptom, after := range cases {
+		got := renderOnCallRunbook(t, map[string]string{"symptom": symptom, "time": "1h", "service": "checkout"})
+		novelty := strings.Index(got, "get_emerging_log_patterns(service_name=checkout)")
+		if novelty < 0 || !strings.Contains(got, "no log novelty above min_count and change_factor, not unchanged logs") {
+			t.Fatalf("symptom %q render must check log novelty before searching logs:\n%s", symptom, got)
+		}
+		for _, field := range []string{"below_min_count_patterns", "sample_limit_reached"} {
+			if !strings.Contains(got, field) {
+				t.Errorf("symptom %q render must qualify an empty novelty result with %s:\n%s", symptom, field, got)
+			}
+		}
+		for _, name := range after {
+			if i := strings.Index(got, name); i < novelty {
+				t.Errorf("symptom %q render must check log novelty before %s:\n%s", symptom, name, got)
+			}
+		}
+	}
+
+	// The unknown branch learns what is firing first; novelty only matters once it leads to a log search.
+	got := renderOnCallRunbook(t, map[string]string{"symptom": "weird", "time": "1h", "service": "checkout"})
+	if alerts, novelty := strings.Index(got, "get_alerts"), strings.Index(got, "get_emerging_log_patterns"); alerts < 0 || novelty < alerts {
+		t.Errorf("unknown symptom must reach get_alerts before log novelty:\n%s", got)
+	}
+	if !strings.Contains(got, "If it matches latency or database, do not call the log-pattern tools.") {
+		t.Errorf("unknown symptom must exclude the pattern tools for branches that read no logs:\n%s", got)
+	}
+	if gate, novelty := strings.Index(got, "If it matches errors: Before the first log search"), strings.Index(got, "get_emerging_log_patterns"); gate < 0 || novelty < gate {
+		t.Errorf("unknown symptom must render log novelty only under an explicit errors match:\n%s", got)
+	}
+
+	// Branches that never read logs must not pay for two log samples.
+	for _, symptom := range []string{"latency", "database"} {
+		got := renderOnCallRunbook(t, map[string]string{"symptom": symptom, "time": "1h", "service": "checkout"})
+		if strings.Contains(got, "get_emerging_log_patterns") || strings.Contains(got, "get_log_patterns") {
+			t.Errorf("symptom %q reads no logs, so its render must not call the pattern tools:\n%s", symptom, got)
+		}
+	}
+}
+
+func TestOnCallRunbookLogNoveltyFiltersSeverityOnlyWhenSeveritySetIsAll(t *testing.T) {
+	// Error triage should not let info/debug churn crowd error templates out of top_n,
+	// but severity_filters drop body-level lines when severity_set is none or partial.
+	const rule = `severity_filters=["error", "fatal", "critical"] only when severity_set is "all"`
+	for _, symptom := range []string{"errors", "weird"} {
+		got := renderOnCallRunbook(t, map[string]string{"symptom": symptom, "time": "1h", "service": "checkout"})
+		novelty := strings.Index(got, "get_emerging_log_patterns")
+		if filter := strings.Index(got, rule); filter < novelty {
+			t.Errorf("symptom %q render must scope log novelty to error severities per severity_set:\n%s", symptom, got)
+		}
+		// Unfiltered dominant templates would surface info/debug volume next to error-scoped novelty.
+		patterns := strings.Index(got, "get_log_patterns")
+		if patterns < 0 || !strings.Contains(got[patterns:], "with the same severity_filters and body_filters rules") {
+			t.Errorf("symptom %q render must apply the novelty filter rules to get_log_patterns:\n%s", symptom, got)
+		}
+		// Without severity_filters, info/debug churn can fill the sample and top_n, hiding error templates.
+		for _, want := range []string{`When severity_set is none or partial`, `body_filters=["error", "exception", "fatal"]`, `raise top_n`} {
+			if i := strings.Index(got, want); i < novelty || i > patterns {
+				t.Errorf("symptom %q render must say %q between the novelty and pattern calls:\n%s", symptom, want, got)
+			}
+		}
+	}
+}
+
+func TestOnCallRunbookLogNoveltyWithoutServiceTargetsTheTriagedService(t *testing.T) {
+	got := renderOnCallRunbook(t, map[string]string{"symptom": "errors", "time": "1h", "env": "prod"})
+	if !strings.Contains(got, "get_emerging_log_patterns(service_name=<service>, env=prod)") {
+		t.Errorf("no-service render must scope novelty to the service fleet triage picked:\n%s", got)
+	}
+}

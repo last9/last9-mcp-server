@@ -109,24 +109,8 @@ func (h escapingHandler) run(t *testing.T, serviceName, env string) []string {
 	return queries
 }
 
-// runHandlerWithCapture is the shared driver: it builds the handler via
-// construct, runs it over a fixed window ending 2026-01-01T12:00:00Z, and
-// returns all captured queries.
-func runHandlerWithCapture(
-	t *testing.T,
-	window time.Duration,
-	call func(cfgURL string, client *http.Client, startISO, endISO string) error,
-) []string {
-	t.Helper()
-	queries, err := tryHandlerWithCapture(t, window, call)
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	return queries
-}
-
-// tryHandlerWithCapture is runHandlerWithCapture without the fatal on a
-// handler error, for tests that assert the handler rejects an argument.
+// tryHandlerWithCapture runs the handler over a fixed window ending
+// 2026-01-01T12:00:00Z and returns all captured queries with the handler's error.
 func tryHandlerWithCapture(
 	t *testing.T,
 	window time.Duration,

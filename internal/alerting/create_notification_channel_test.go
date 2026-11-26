@@ -8,11 +8,14 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	"last9-mcp/internal/utils"
 )
 
 func testCACertPEM(t *testing.T) string {
@@ -64,6 +67,7 @@ func TestValidateCreateNotificationChannel(t *testing.T) {
 		"cert too large":        {CreateNotificationChannelArgs{Name: "n", Type: "generic_webhook", Destination: "https://h", WebhookCACertificate: "-----BEGIN CERTIFICATE-----" + strings.Repeat("A", 65*1024)}, "64 KiB"},
 		"bad user mention":      {CreateNotificationChannelArgs{Name: "n", Type: "slack", Destination: hook, MentionHandles: "user|bad|x"}, "mention_handles"},
 		"bad special mention":   {CreateNotificationChannelArgs{Name: "n", Type: "slack", Destination: hook, MentionHandles: "special|everyone"}, "mention_handles"},
+		"unknown typed mention": {CreateNotificationChannelArgs{Name: "n", Type: "slack", Destination: hook, MentionHandles: "alice, usr|U123|bob"}, "mention_handles"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			got := validateCreateNotificationChannel(tt.args)
@@ -86,7 +90,7 @@ func TestCreateNotificationChannelSendsBodyAndHidesSecrets(t *testing.T) {
 		Name: " oncall ", Type: "Slack", Destination: "https://hooks.slack.com/services/" + channelSecret, SendResolved: &no, MentionHandles: "special|here",
 	})
 	assertNoSecret(t, text, err)
-	want := `{"name":"oncall","type":"slack","destination":"https://hooks.slack.com/services/` + channelSecret + `","send_resolved":false,"property":{"service_owner_handle":"special|here"}}`
+	want := `{"name":"oncall","type":"slack","destination":"https://hooks.slack.com/services/` + channelSecret + `","send_resolved":false,"property":{"service_owner_handle":"special|here"},"created_via":"last9-mcp","created_via_client":"unknown/unknown"}`
 	if err != nil || isErr || text != `{"id":9,"name":"oncall","type":"slack","send_resolved":true}` ||
 		len(s.calls) != 1 || s.calls[0].method != "POST" || s.calls[0].uri != "/notification_settings/" || s.calls[0].body != want {
 		t.Fatalf("text=%s isErr=%v err=%v calls=%+v", text, isErr, err, s.calls)
@@ -125,8 +129,10 @@ func TestCreateNotificationChannelNamesEmailRejection(t *testing.T) {
 
 func TestCreateNotificationChannelErrorsNeverLeakSecrets(t *testing.T) {
 	for status, want := range map[int]string{
-		400: "HTTP 400", 422: "HTTP 422", 403: "write-scope", 500: "HTTP 500", 502: "HTTP 502",
+		400: "HTTP 400", 422: "HTTP 422", 403: "write-scope", 500: "HTTP 500",
 		409: "get_notification_channels scope=channels",
+		// 502/504 are unknown outcomes, passed through for the registration layer to explain.
+		502: "", 504: "",
 	} {
 		s := newChannelServer(t, func(*http.Request) (int, string) {
 			return status, `invalid destination ` + channelSecret + ` header ` + channelSecret
@@ -135,6 +141,13 @@ func TestCreateNotificationChannelErrorsNeverLeakSecrets(t *testing.T) {
 			Name: "n", Type: "generic_webhook", Destination: "https://h/" + channelSecret, WebhookHeaders: map[string]string{"k": channelSecret},
 		})
 		assertNoSecret(t, text, err)
+		if want == "" {
+			var unknown *utils.WriteOutcomeUnknownError
+			if !errors.As(err, &unknown) {
+				t.Errorf("status %d: want an unknown-outcome error, got text=%q err=%v", status, text, err)
+			}
+			continue
+		}
 		if err != nil || !isErr || !strings.Contains(text, want) {
 			t.Errorf("status %d: text=%q isErr=%v err=%v", status, text, isErr, err)
 		}

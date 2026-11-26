@@ -44,8 +44,6 @@ const (
 	EndpointNotificationSettings = "/notification_settings"
 	// EndpointSuggest returns fuzzy entity-name suggestions for the did_you_mean tool.
 	EndpointSuggest = "/suggest"
-	// EndpointServiceProfile derives per-service telemetry shape (POST body mirrors /suggest + region).
-	EndpointServiceProfile = "/service_profile"
 
 	// Dashboard API endpoints (v4)
 	EndpointDashboards            = "/dashboards"
@@ -59,6 +57,15 @@ const (
 	// PerChunkHTTPTimeout bounds a single chunked upstream call so one slow
 	// chunk can't stall the whole tool invocation.
 	PerChunkHTTPTimeout = 30 * time.Second
+
+	// ToolCallTimeout is the overall deadline of one tool call, across every
+	// upstream request it makes (chunks, probes, follow-ups).
+	ToolCallTimeout = DefaultHTTPTimeout
+
+	// LogSearchTimeout bounds one server-side log search. Well under
+	// DefaultHTTPTimeout so a slow body search fails fast with narrowing advice
+	// instead of holding the agent for the full client timeout.
+	LogSearchTimeout = 90 * time.Second
 )
 
 // HTTP Headers

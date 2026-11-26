@@ -55,13 +55,15 @@ type logSeriesResponse struct {
 // byte-truncated with a marker on long lines. sample_notes reports which of
 // those transforms fired, deduplicated across the returned lines.
 type LogAttribute struct {
-	Name           string   `json:"name"`
-	FilterField    string   `json:"filter_field"`
-	Hint           string   `json:"hint"`
-	Source         string   `json:"source,omitempty"`
-	SampleCoverage string   `json:"sample_coverage,omitempty"`
-	SampleBodies   []string `json:"sample_bodies,omitempty"`
-	SampleNotes    []string `json:"sample_notes,omitempty"`
+	Name           string         `json:"name"`
+	FilterField    string         `json:"filter_field"`
+	Hint           string         `json:"hint"`
+	Source         string         `json:"source,omitempty"`
+	SampleCoverage string         `json:"sample_coverage,omitempty"`
+	Confidence     string         `json:"confidence,omitempty"`
+	SampleFormats  map[string]int `json:"sample_formats,omitempty"`
+	SampleBodies   []string       `json:"sample_bodies,omitempty"`
+	SampleNotes    []string       `json:"sample_notes,omitempty"`
 }
 
 const (
@@ -206,25 +208,12 @@ func collectSampleBodies(lines []string, limit int) (samples []string, notes []s
 // backslashes would emit broken hints the model copies verbatim — skip them.
 var safeBodyKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.@/-]*$`)
 
-// bodyDerivedHint renders the two-stage example (parse Body, then filter on the
-// materialized key) via json.Marshal so key content can never break the JSON.
-func bodyDerivedHint(key string) string {
+// bodyDerivedHint renders the two-stage example (parse Body with a json or
+// logfmt parser, then filter on the materialized key) via json.Marshal so key
+// content can never break the JSON. The backend rejects such a parse without labels.
+func bodyDerivedHint(parser, key string) string {
 	stages := []map[string]interface{}{
-		{"type": "parse", "parser": "json", "field": "Body", "labels": map[string]string{key: key}},
-		{"type": "filter", "query": map[string]interface{}{"$eq": []string{fmt.Sprintf("attributes['%s']", key), "<value>"}}},
-	}
-	b, err := json.Marshal(stages)
-	if err != nil {
-		return ""
-	}
-	return string(b)
-}
-
-// logfmtBodyDerivedHint renders the two-stage example for a Body that is
-// logfmt-encoded (key=value pairs) rather than JSON.
-func logfmtBodyDerivedHint(key string) string {
-	stages := []map[string]interface{}{
-		{"type": "parse", "parser": "logfmt", "field": "Body"},
+		{"type": "parse", "parser": parser, "field": "Body", "labels": map[string]string{key: key}},
 		{"type": "filter", "query": map[string]interface{}{"$eq": []string{fmt.Sprintf("attributes['%s']", key), "<value>"}}},
 	}
 	b, err := json.Marshal(stages)
@@ -393,6 +382,7 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 
 	freq := map[string]int{}       // JSON body-derived key frequency
 	logfmtFreq := map[string]int{} // logfmt body-derived key frequency
+	formats := map[string]int{}
 	var levelTSCount, levelBracketCount int
 	var firstLevelTSLine, firstLevelBracketLine string
 
@@ -411,6 +401,7 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 				}
 				freq[key]++
 			}
+			formats["json"]++
 			continue
 		}
 
@@ -422,8 +413,10 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 				}
 				logfmtFreq[key]++
 			}
+			formats["logfmt"]++
 			continue
 		}
+		formats["text"]++
 
 		// Not logfmt either: fall back to a well-known plaintext-inline
 		// severity token, preferring a timestamp-anchored match.
@@ -440,64 +433,13 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 		}
 	}
 
-	// JSON path (unchanged, first priority): the original body-derived
-	// discovery for structured JSON bodies.
 	if len(freq) > 0 {
-		keys := make([]string, 0, len(freq))
-		for key := range freq {
-			keys = append(keys, key)
-		}
-		sort.Slice(keys, func(i, j int) bool {
-			if freq[keys[i]] != freq[keys[j]] {
-				return freq[keys[i]] > freq[keys[j]]
-			}
-			return keys[i] < keys[j]
-		})
-		if len(keys) > maxBodyDerivedKeys {
-			keys = keys[:maxBodyDerivedKeys]
-		}
-
-		out := make([]LogAttribute, 0, len(keys))
-		for _, key := range keys {
-			out = append(out, LogAttribute{
-				Name:           key,
-				FilterField:    fmt.Sprintf("attributes['%s']", key),
-				Hint:           bodyDerivedHint(key),
-				Source:         "body",
-				SampleCoverage: fmt.Sprintf("%d/%d", freq[key], len(lines)),
-			})
-		}
-		return out
+		return rankedBodyAttributes(freq, "json", formats)
 	}
-
 	// logfmt fallback: no line was JSON, but at least one line matched
 	// logfmt key=value pairs.
 	if len(logfmtFreq) > 0 {
-		keys := make([]string, 0, len(logfmtFreq))
-		for key := range logfmtFreq {
-			keys = append(keys, key)
-		}
-		sort.Slice(keys, func(i, j int) bool {
-			if logfmtFreq[keys[i]] != logfmtFreq[keys[j]] {
-				return logfmtFreq[keys[i]] > logfmtFreq[keys[j]]
-			}
-			return keys[i] < keys[j]
-		})
-		if len(keys) > maxBodyDerivedKeys {
-			keys = keys[:maxBodyDerivedKeys]
-		}
-
-		out := make([]LogAttribute, 0, len(keys))
-		for _, key := range keys {
-			out = append(out, LogAttribute{
-				Name:           key,
-				FilterField:    fmt.Sprintf("attributes['%s']", key),
-				Hint:           logfmtBodyDerivedHint(key),
-				Source:         "body",
-				SampleCoverage: fmt.Sprintf("%d/%d", logfmtFreq[key], len(lines)),
-			})
-		}
-		return out
+		return rankedBodyAttributes(logfmtFreq, "logfmt", formats)
 	}
 
 	// plaintext-inline fallback: neither JSON nor logfmt, but a severity
@@ -516,13 +458,8 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 				sampleBody, sampleNotes = fallback[0], fallbackNotes
 			}
 		}
-		attr := LogAttribute{
-			Name:           "level",
-			FilterField:    "attributes['level']",
-			Hint:           regexpBodyDerivedHint(pattern, "level", "<value>"),
-			Source:         "body",
-			SampleCoverage: fmt.Sprintf("%d/%d", count, len(lines)),
-		}
+		attr := bodyAttribute("level", count, formats)
+		attr.Hint = regexpBodyDerivedHint(pattern, "level", "<value>")
 		if sampleBody != "" {
 			attr.SampleBodies = []string{sampleBody}
 			attr.SampleNotes = sampleNotes
@@ -532,7 +469,7 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 
 	// Plaintext fallback: no recognized structure at all — the Body is
 	// neither JSON nor logfmt and carries no severity token, so a
-	// parser-based hint (bodyDerivedHint/logfmtBodyDerivedHint) would
+	// parser-based hint (bodyDerivedHint) would
 	// tell the model to guess a parser that matches nothing, producing the
 	// silent-zero failure this discovery exists to prevent. Instead, surface
 	// the real sample line (URLs/obvious credentials stripped, not PII-
@@ -553,6 +490,51 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 	}
 
 	return nil
+}
+
+func rankedBodyAttributes(freq map[string]int, parser string, formats map[string]int) []LogAttribute {
+	keys := make([]string, 0, len(freq))
+	for key := range freq {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if freq[keys[i]] != freq[keys[j]] {
+			return freq[keys[i]] > freq[keys[j]]
+		}
+		return keys[i] < keys[j]
+	})
+	if len(keys) > maxBodyDerivedKeys {
+		keys = keys[:maxBodyDerivedKeys]
+	}
+
+	out := make([]LogAttribute, 0, len(keys))
+	for _, key := range keys {
+		attr := bodyAttribute(key, freq[key], formats)
+		attr.Hint = bodyDerivedHint(parser, key)
+		out = append(out, attr)
+	}
+	return out
+}
+
+// bodyAttribute builds a body-derived entry (without Hint) seen in count of the
+// sampled rows. Under half coverage its parser was inferred from a minority of
+// rows, so the entry is marked low confidence with every sampled row's format.
+func bodyAttribute(key string, count int, formats map[string]int) LogAttribute {
+	total := 0
+	for _, n := range formats {
+		total += n
+	}
+	attr := LogAttribute{
+		Name:           key,
+		FilterField:    fmt.Sprintf("attributes['%s']", key),
+		Source:         "body",
+		SampleCoverage: fmt.Sprintf("%d/%d", count, total),
+	}
+	if 2*count < total {
+		attr.Confidence = "low"
+		attr.SampleFormats = formats
+	}
+	return attr
 }
 
 // extractSampleBodyLines pulls the raw Body line of each sampled log entry from
@@ -591,12 +573,14 @@ func extractSampleBodyLines(result map[string]interface{}) []string {
 //   - service    -> ServiceName
 //   - severity   -> SeverityText
 //   - body       -> Body
+//   - trace_id   -> TraceId
 //   - resource_x -> resources['x']
 //   - default    -> attributes['<name>']
 //
 // The series endpoint returns log attributes bare (only resource attributes are
 // prefixed, with resource_), so a field name keeps its full name: e.g. a real
 // attribute named log_level maps to attributes['log_level'], not attributes['level'].
+// span_id stays attributes['span_id']: the logs API rejects a SpanId filter.
 func logFieldFilterField(name string) string {
 	switch name {
 	case "service":
@@ -605,6 +589,8 @@ func logFieldFilterField(name string) string {
 		return "SeverityText"
 	case "body":
 		return "Body"
+	case "trace_id":
+		return "TraceId"
 	}
 	if rest, ok := strings.CutPrefix(name, "resource_"); ok {
 		return fmt.Sprintf("resources['%s']", rest)
@@ -647,9 +633,7 @@ func fetchLogSeriesFieldNames(ctx context.Context, client *http.Client, cfg mode
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		var errorBody map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&errorBody)
-		return nil, fmt.Errorf("API returned status %d: %v", resp.StatusCode, errorBody)
+		return nil, utils.NewUpstreamHTTPError(resp, "log series API")
 	}
 
 	var result logSeriesResponse
@@ -708,7 +692,8 @@ func discoverLogAttributes(ctx context.Context, client *http.Client, cfg models.
 	}
 
 	// Merge: drop a body-derived entry when (a) an indexed entry already
-	// exposes the SAME filter_field (true duplicate), or (b) it is a
+	// exposes the SAME filter_field or it is trace_id with TraceId indexed
+	// (parsed trace_id maps to attributes['trace_id']), or (b) it is a
 	// severity-family name (level/severity/SeverityText) and any indexed
 	// severity-family field is already present. Indexed severity is the
 	// directly-filterable signal the product UI renders; a parallel
@@ -743,6 +728,9 @@ func discoverLogAttributes(ctx context.Context, client *http.Client, cfg models.
 			}
 			continue
 		}
+		if _, dup := indexedFilterFields["TraceId"]; dup && attr.Name == "trace_id" {
+			continue
+		}
 		if indexedHasSeverity && isSeverityFamilyName(attr.Name) {
 			continue
 		}
@@ -765,28 +753,9 @@ func NewGetLogAttributesForPipelineHandler(client *http.Client, cfg models.Confi
 			return nil, nil, err
 		}
 
-		params := make(map[string]interface{})
-		if args.LookbackMinutes > 0 {
-			params["lookback_minutes"] = args.LookbackMinutes
-		}
-		if args.StartTimeISO != "" {
-			params["start_time_iso"] = args.StartTimeISO
-		}
-		if args.EndTimeISO != "" {
-			params["end_time_iso"] = args.EndTimeISO
-		}
-
-		const defaultLogAttributesLookback = 15
-		startTimeParsed, endTimeParsed, err := utils.GetTimeRange(params, defaultLogAttributesLookback)
+		startTime, endTime, err := logAttributeWindow(args.LookbackMinutes, args.StartTimeISO, args.EndTimeISO)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to parse time range: %w", err)
-		}
-		endTime := endTimeParsed.Unix()
-		startTime := startTimeParsed.Unix()
-		// Cap the window magnitude to keep server cost bounded, matching get_log_attributes.
-		maxWindowSeconds := int64(utils.MaxLogAttributeLookbackMinutes * 60)
-		if endTime-startTime > maxWindowSeconds {
-			startTime = endTime - maxWindowSeconds
+			return nil, nil, err
 		}
 
 		region := cfg.Region

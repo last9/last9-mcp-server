@@ -190,6 +190,23 @@ func TestGetServiceLogs_AmbiguousStatusFieldsMakeZeroQueryRange(t *testing.T) {
 	}
 }
 
+func TestServiceLogsKeepsResourceBodyStatusAmbiguity(t *testing.T) {
+	server := bodySamplingServer(t, `{"status":"success","data":[{"service":"checkout","resource_http_status_code":"200"}]}`, []string{`{"resource_http_status_code":500}`}, nil)
+	defer server.Close()
+
+	result, _, err := NewGetServiceLogsHandler(server.Client(), testLogsConfig(server.URL))(context.Background(), &mcp.CallToolRequest{}, GetServiceLogsArgs{
+		ServiceName:     "checkout",
+		LookbackMinutes: 5,
+		HTTPStatusClass: "5xx",
+	})
+	if err == nil {
+		t.Fatalf("expected ambiguity instead of silently choosing one status field; result=%+v", parseServiceLogsToolResult(t, result))
+	}
+	if !strings.Contains(err.Error(), "multiple HTTP status fields") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestGetServiceLogs_InvalidAttributeSyntaxMakesZeroUpstream(t *testing.T) {
 	var n atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

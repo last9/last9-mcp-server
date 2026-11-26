@@ -1,7 +1,10 @@
 package prompts_test
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -9,22 +12,38 @@ import (
 	"last9-mcp/internal/prompts"
 )
 
+func TestGetLogsDescriptionEvalGatedCopy(t *testing.T) {
+	const want = "c286db8f5ce7faef6e8574f0efec4d11d1faceb7ca9efd521c219f1fdde212a3"
+	got := fmt.Sprintf("%x", sha256.Sum256([]byte(prompts.GetLogsDescription)))
+	if got != want {
+		t.Fatalf("get_logs description changed without an lq-101 gate run: got sha256 %s, want %s", got, want)
+	}
+}
+
 var promptDescriptionFiles = map[string]string{
 	"add_drop_rule.md":                     prompts.AddDropRuleDescription,
+	"add_remapping_rule.md":                prompts.AddRemappingRuleDescription,
+	"analyze_change_impact.md":             prompts.AnalyzeChangeImpactDescription,
 	"create_alert.md":                      prompts.CreateAlertDescription,
 	"create_alert_from_chart.md":           prompts.CreateAlertFromChartDescription,
 	"create_dashboard.md":                  prompts.CreateDashboardDescription,
+	"create_kpi.md":                        prompts.CreateKPIDescription,
 	"delete_alert.md":                      prompts.DeleteAlertDescription,
 	"delete_dashboard.md":                  prompts.DeleteDashboardDescription,
 	"delete_dashboard_snapshot.md":         prompts.DeleteDashboardSnapshotDescription,
 	"describe_alert_chart.md":              prompts.DescribeAlertChartDescription,
 	"did_you_mean.md":                      prompts.DidYouMeanDescription,
+	"search_docs.md":                       prompts.SearchDocsDescription,
 	"get_alert_config.md":                  prompts.GetAlertConfigDescription,
+	"get_alert_coverage.md":                prompts.GetAlertCoverageDescription,
 	"get_alert_groups.md":                  prompts.GetAlertGroupsDescription,
+	"get_alert_hygiene.md":                 prompts.GetAlertHygieneDescription,
+	"get_alert_operations_summary.md":      prompts.GetAlertOperationsSummaryDescription,
 	"get_alert_rule_state.md":              prompts.GetAlertRuleStateDescription,
 	"get_alerts.md":                        prompts.GetAlertsDescription,
 	"get_apm_service_deviations.md":        prompts.GetAPMServiceDeviationsDescription,
 	"get_change_events.md":                 prompts.GetChangeEventsDescription,
+	"get_current_time.md":                  prompts.GetCurrentTimeDescription,
 	"get_dashboard.md":                     prompts.GetDashboardDescription,
 	"get_dashboard_snapshot.md":            prompts.GetDashboardSnapshotDescription,
 	"get_database_queries.md":              prompts.GetDatabaseQueriesDescription,
@@ -32,12 +51,19 @@ var promptDescriptionFiles = map[string]string{
 	"get_database_slow_queries.md":         prompts.GetDatabaseSlowQueriesDescription,
 	"get_databases.md":                     prompts.GetDatabasesDescription,
 	"get_drop_rules.md":                    prompts.GetDropRulesDescription,
+	"get_remapping_rules.md":               prompts.GetRemappingRulesDescription,
 	"get_entity_alert_rules.md":            prompts.GetEntityAlertRulesDescription,
+	"get_entity_kpis.md":                   prompts.GetEntityKPIsDescription,
+	"get_emerging_log_patterns.md":         prompts.GetEmergingLogPatternsDescription,
 	"get_exceptions.md":                    prompts.GetExceptionsInstructions,
 	"get_flamegraph.md":                    prompts.GetFlamegraphDescription,
 	"get_log_attributes.md":                prompts.GetLogAttributesDescription,
+	"get_log_services.md":                  prompts.GetLogServicesDescription,
 	"get_log_attributes_for_pipeline.md":   prompts.GetLogAttributesForPipelineDescription,
+	"get_log_patterns.md":                  prompts.GetLogPatternsDescription,
 	"get_logs_base.md":                     prompts.GetLogsDescription,
+	"get_metric_status.md":                 prompts.GetMetricStatusDescription,
+	"describe_metric.md":                   prompts.DescribeMetricDescription,
 	"get_notification_channels.md":         prompts.GetNotificationChannelsDescription,
 	"get_profile_services.md":              prompts.GetProfileServicesDescription,
 	"get_profile_summary.md":               prompts.GetProfileSummaryDescription,
@@ -55,6 +81,7 @@ var promptDescriptionFiles = map[string]string{
 	"get_trace_attributes.md":              prompts.GetTraceAttributesDescription,
 	"get_trace_attributes_for_pipeline.md": prompts.GetTraceAttributesForPipelineDescription,
 	"get_trace_waterfall.md":               prompts.GetTraceWaterfallDescription,
+	"get_workspace_overview.md":            prompts.GetWorkspaceOverviewDescription,
 	"get_traces_base.md":                   prompts.GetTracesDescription,
 	"grafana_get_dashboard.md":             prompts.GrafanaGetDashboardDescription,
 	"grafana_list_datasources.md":          prompts.GrafanaListDatasourcesDescription,
@@ -72,11 +99,15 @@ var promptDescriptionFiles = map[string]string{
 	"detach_notification_channel.md":       prompts.DetachNotificationChannelDescription,
 	"delete_notification_channel.md":       prompts.DeleteNotificationChannelDescription,
 	"patch_alert.md":                       prompts.PatchAlertDescription,
+	"patch_dashboard.md":                   prompts.PatchDashboardDescription,
+	"preview_dashboard.md":                 prompts.PreviewDashboardDescription,
 	"prometheus_instant_query.md":          prompts.PromqlInstantQueryDetails,
 	"prometheus_label_values.md":           prompts.PromqlLabelValuesQueryDetails,
 	"prometheus_labels.md":                 prompts.PromqlLabelsQueryDetails,
 	"prometheus_range_query_base.md":       prompts.PromqlRangeQueryDetails,
 	"recommend_alert_config.md":            prompts.RecommendAlertConfigDescription,
+	"send_feedback.md":                     prompts.SendFeedbackDescription,
+	"set_dashboard_lock.md":                prompts.SetDashboardLockDescription,
 	"update_alert.md":                      prompts.UpdateAlertDescription,
 	"update_dashboard.md":                  prompts.UpdateDashboardDescription,
 	"validate_alert_expression.md":         prompts.ValidateAlertExpressionDescription,
@@ -87,6 +118,7 @@ var simplePromptDescriptionFiles = map[string]bool{
 	"create_alert.md":              true,
 	"delete_alert.md":              true,
 	"patch_alert.md":               true,
+	"patch_dashboard.md":           true,
 	"recommend_alert_config.md":    true,
 	"update_alert.md":              true,
 	"add_drop_rule.md":             true,
@@ -239,7 +271,9 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"Ops: `$and`/`$or`/`$not`", "must retain a useful filter operator list"},
 		{"`$containsWords` args `[field,word]` (e.g. `[\"Body\",\"timeout\"]`)", "must show the required field argument for body-word filters"},
 		{"NOT SQL", "must clarify logjson_query is not SQL"},
+		{"Pass JSON stages in `logjson_query`, never `pipeline`", "must name the get_logs argument rather than a generic pipeline key"},
 		{"$neq", "must document existence idiom"},
+		{"`$neq` (is not X; never `$not`+`$eq`)", "must route negated equality to $neq"},
 		{"start_time_iso", "must document absolute time on tool args"},
 		{"resources['last9.tenant']", "must document tenant scoping"},
 		{"resources['deployment.environment']", "must document env scoping"},
@@ -249,7 +283,7 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"high→add filter, recount", "must repeat counts after narrowing broad filters"},
 		{"community_member_id", "must document bare single-token field mistake"},
 		{"attributes['key']", "must require attributes/resources wrapping"},
-		{"Parse Body-derived fields before filtering, grouping, or aggregation", "must parse Body fields before grouping or aggregation"},
+		{"Parse Body-derived fields before filtering, grouping, or aggregation, then reference labels as `attributes['key']`", "must parse Body fields first and say how to reference parsed labels"},
 		{"`$quantile` is the general/default percentile operator", "must default to approximate percentile aggregation"},
 		{"\"function\":{\"$quantile\":[0.99,\"attributes['latency_ms']\"]},\"as\":\"p99\",\"window\":[\"24\",\"hours\"]", "must show a complete day-wise percentile window"},
 		{"\"type\":\"window_aggregate\",\"function\":{\"$quantile\":[0.99,\"attributes['latency_ms']\"]}", "must include the required stage type in the windowed percentile example"},
@@ -264,18 +298,56 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"Only report returned P99 values; empty result→say unavailable and stop", "must prevent fallback counts from replacing an empty percentile result"},
 		{"ALL→`$and`; ANY→`$or`", "must document all/any-word Body searches"},
 		{"never `$icontainsWords`", "must avoid the slower case-insensitive word operator"},
-		{"no service→search `Body` with `$contains` (even service-like)", "must distinguish standalone identifiers from service names"},
+		{"word/ID (even service-like)→`Body` `$containsWords`", "must search standalone identifiers, even service-like ones, as Body words"},
+		{"`$contains` only for substrings", "must reserve the substring operator for true substrings"},
+		{"Service known/findable→scope `ServiceName` + narrow window first", "must scope free-text searches by service and window first"},
+		{"Stages: `filter`|`parse`|`aggregate`|`window_aggregate` (no `transform`/`select`)", "must list valid stage types up front"},
+		{"`$regex` (RE2: no lookaround)", "must state the accepted regexp flavor"},
+		{"`community_member_id`→`attributes['key']`, `resource_attributes['key']`→`resources['key']`", "must show wrong→right field references"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
 			t.Errorf("GetLogsDescription missing %q: %s", c.phrase, c.reason)
 		}
 	}
+	if strings.Contains(desc, "with `$contains`") {
+		t.Error("GetLogsDescription must NOT recommend `$contains` for Body text; `$containsWords` is the Body word operator")
+	}
 	if strings.Contains(desc, "window_minutes") {
 		t.Error("GetLogsDescription must NOT contain deprecated 'window_minutes' key")
 	}
 	if !strings.Contains(desc, `[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}]`) {
 		t.Error("GetLogsDescription must include its canonical JSON stage-array example")
+	}
+}
+
+// Each step of the pipeline order must be a real stage type: a bare "scope"
+// step led models to invent {"type":"scope"} stages (lq-mf-005).
+func TestGetLogsDescriptionOrderNamesOnlyStageTypes(t *testing.T) {
+	stageTypes := map[string]bool{"filter": true, "parse": true, "aggregate": true, "window_aggregate": true}
+	var order string
+	for _, line := range strings.Split(prompts.GetLogsDescription, "\n") {
+		if rest, ok := strings.CutPrefix(line, "**Order:**"); ok {
+			// Cut at the sentence end, not any dot: a step may hold a dotted key like resources['k8s.ns'].
+			order, _, _ = strings.Cut(rest, ". ")
+		}
+	}
+	if order == "" {
+		t.Fatal("GetLogsDescription has no **Order:** line")
+	}
+	for _, step := range strings.Split(order, "→") {
+		// The stage is the leading word, so a trailing note or a sentence glued on without a space doesn't count.
+		stage := strings.TrimSpace(step)
+		if end := strings.IndexFunc(stage, func(r rune) bool { return r != '_' && (r < 'a' || r > 'z') }); end >= 0 {
+			stage = stage[:end]
+		}
+		if !stageTypes[stage] {
+			t.Errorf("**Order:** step %q is not a stage type (filter, parse, aggregate, window_aggregate)", strings.TrimSpace(step))
+		}
+	}
+	// The post-parse filter→aggregate steps must say how parsed labels are referenced; without it models grouped by bare labels (lq-101).
+	if want := `Stage types: only filter/parse/aggregate/window_aggregate; parsed labels: attributes['key'].`; !strings.Contains(prompts.GetLogsDescription, want) {
+		t.Errorf("GetLogsDescription missing %q", want)
 	}
 }
 
@@ -297,19 +369,48 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 		{"`service.name`→`ServiceName`", "must map service.name to the canonical service field"},
 		{"last9://reference/tracejson", "must point at the tracejson resource"},
 		{"default **60**", "must document default lookback of 60 minutes"},
+		{"Average/mean→`{\"function\":{\"$avg\":[\"Duration\"]}", "must use average aggregation for mean duration requests"},
 		{"`$quantile` is the general/default percentile operator", "must default to approximate percentile aggregation"},
 		{"Compute from raw spans; never average percentile samples", "must document non-composable percentile semantics"},
 		{"`Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first", "must gate attribute values without gating Duration"},
 		{"For calendar buckets, use explicit ISO bounds and time zone", "must make calendar boundaries explicit"},
 		{"P99 `Duration` output remains nanoseconds", "must preserve Duration units"},
+		{"`filter`|`parse`|`transform`|`aggregate`|`window_aggregate`", "must list valid stage types up front"},
+		{"\"as\":[\"endpoint\"]", "must show transform as an array"},
+		{"read it as `attributes['endpoint']`", "must say how to reference transform output"},
+		{"`$regex` (RE2: no lookaround)", "must state the accepted regexp flavor"},
+		{"Percentile over the whole lookback (p95 latency, last hour) → ONE `aggregate` stage", "must steer lookback percentiles to a single aggregate"},
+		{`{"type":"aggregate","aggregates":[{"function":{"$quantile":[0.95,"Duration"]},"as":"p95"}]}`, "must show a complete lookback percentile stage"},
+		{"`window_aggregate` only when asked per time bucket / over time", "must reserve window_aggregate for bucketed series"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
 			t.Errorf("GetTracesDescription missing %q: %s", c.phrase, c.reason)
 		}
 	}
+	if strings.Contains(desc, "analysis → aggregate/window_aggregate") {
+		t.Error("GetTracesDescription must not offer aggregate and window_aggregate as interchangeable for analysis")
+	}
 	if !strings.Contains(desc, `[{"type":"filter","query":{"$and":[{"$eq":["StatusCode","STATUS_CODE_ERROR"]}]}}]`) {
 		t.Error("GetTracesDescription must include its canonical JSON stage-array example")
+	}
+}
+
+func TestTraceQueryGuidanceDistinguishesSpansFromTraces(t *testing.T) {
+	checks := map[string]string{
+		"description": prompts.GetTracesDescription,
+		"reference":   prompts.TracejsonReference,
+	}
+	for name, body := range checks {
+		for _, phrase := range []string{
+			"filter-only results contain one row per span",
+			"deduplicate by `TraceId`",
+			"fetch the complete trace with `get_service_traces`",
+		} {
+			if !strings.Contains(body, phrase) {
+				t.Errorf("%s missing %q", name, phrase)
+			}
+		}
 	}
 }
 
@@ -428,6 +529,69 @@ func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 	}
 }
 
+func TestRawLogDescriptionsReserveRawForExactText(t *testing.T) {
+	for name, desc := range map[string]string{
+		"get_logs":         prompts.GetLogsDescription,
+		"get_service_logs": prompts.GetServiceLogsDescription,
+	} {
+		if !strings.Contains(desc, "`raw` only for exact text") {
+			t.Errorf("%s description must reserve raw mode for exact text", name)
+		}
+	}
+}
+
+func TestLogPatternDescriptionsCriticalRules(t *testing.T) {
+	descriptions := map[string]string{
+		"get_log_patterns":          prompts.GetLogPatternsDescription,
+		"get_emerging_log_patterns": prompts.GetEmergingLogPatternsDescription,
+	}
+	checks := []struct {
+		phrase string
+		reason string
+	}{
+		{"empty", "must say an empty result is a valid answer"},
+		{"Do not invent", "must forbid manufacturing findings"},
+		{"instead of paging raw lines", "must be preferred over raw log paging during triage"},
+		{"sample_size", "must say counts are within a bounded sample"},
+		{"logs_truncated", "must say a truncated search's total is not complete"},
+		{"Failed search chunks return a tool error", "must say an incomplete search fails rather than reading as fewer patterns"},
+		{"A truncated or capped search still returns", "must say truncation is a success flagged by sample_limit_reached, not a failure"},
+		{"cut at 500 char", "must say templates and samples are cut, so a cut template is not read as the whole message"},
+	}
+	for name, desc := range descriptions {
+		for _, c := range checks {
+			if !strings.Contains(desc, c.phrase) {
+				t.Errorf("%s description missing %q: %s", name, c.phrase, c.reason)
+			}
+		}
+		if strings.Contains(desc, "Parameters:") {
+			t.Errorf("%s description carries a parameter catalog; per-argument docs belong on the input schema", name)
+		}
+		if strings.Contains(desc, "not a partial") {
+			t.Errorf("%s description says incomplete searches never return partial results, but truncated ones do", name)
+		}
+	}
+	if !strings.Contains(prompts.GetLogPatternsDescription, "An empty `patterns` list with `sample_limit_reached` true is not proof of an empty window") {
+		t.Error("get_log_patterns must say an empty but capped sample may have missed matching lines")
+	}
+	if !strings.Contains(prompts.GetLogPatternsDescription, "the sample holds only the window's newest lines") {
+		t.Error("get_log_patterns must say a capped sample (and its first_seen) covers only the newest lines")
+	}
+	if !strings.Contains(prompts.GetEmergingLogPatternsDescription, "`below_min_count_patterns`: templates that changed") {
+		t.Error("get_emerging_log_patterns must keep changes below min_count apart from unchanged templates")
+	}
+	if !strings.Contains(prompts.GetEmergingLogPatternsDescription, "not that the windows are unchanged") ||
+		strings.Contains(prompts.GetEmergingLogPatternsDescription, "Report that there is no log novelty") {
+		t.Error("get_emerging_log_patterns must say an empty result rules out only changes above both thresholds")
+	}
+	if !strings.Contains(prompts.GetEmergingLogPatternsDescription, "absent from the other window's sample, not from the window") {
+		t.Error("get_emerging_log_patterns must say new/disappeared are presence-in-sample once a sample is capped")
+	}
+	if !strings.Contains(prompts.GetEmergingLogPatternsDescription, "`increased` and `decreased` mean the template's share of its sample changed, not its rate") {
+		t.Error("get_emerging_log_patterns must say share_of_sample changes are composition, not rate")
+	}
+}
+
 // The API rejects expression_args keys other than the bound KPI's own name.
 func TestAlertRuleDescriptionsRequireKPINames(t *testing.T) {
 	for name, desc := range map[string]string{
@@ -470,6 +634,26 @@ func TestCreateAlertFromChartDescriptionStatesThresholdFloor(t *testing.T) {
 	}
 }
 
+func TestCreateAlertFromChartDescriptionWarnsWhenDisablingFails(t *testing.T) {
+	desc := prompts.CreateAlertFromChartDescription
+	for _, phrase := range []string{"If disabling fails", "rule id", "may be live"} {
+		if !strings.Contains(desc, phrase) {
+			t.Errorf("create_alert_from_chart does not preserve the failed-disable warning %q", phrase)
+		}
+	}
+}
+
+// create_alert_from_chart creates disabled drafts, so describe_alert_chart must not promise live rules.
+func TestDescribeAlertChartDescriptionSaysChartRulesAreDrafts(t *testing.T) {
+	desc := prompts.DescribeAlertChartDescription
+	if strings.Contains(desc, "fire immediately") {
+		t.Error("describe_alert_chart still says chart-derived rules fire immediately")
+	}
+	if !strings.Contains(desc, "are created disabled as drafts, like a rule bound to an alert-group KPI") {
+		t.Error("describe_alert_chart does not say chart-derived rules are created disabled")
+	}
+}
+
 // Write tools return their UI link in _meta, which many clients do not show the model.
 func TestDescriptionsSayWhereTheLinkIs(t *testing.T) {
 	for file, desc := range promptDescriptionFiles {
@@ -481,31 +665,102 @@ func TestDescriptionsSayWhereTheLinkIs(t *testing.T) {
 	}
 }
 
+// Redaction is server-side and per org; an agent that works around it leaks what the
+// org chose to hide.
+func TestGetTraceWaterfallDescriptionSendsRedactionToAnAdmin(t *testing.T) {
+	for _, phrase := range []string{
+		"redacted on the server under a per-org policy",
+		"ask an org admin to adjust the policy rather than working around it",
+		"span list truncated to satisfy trace-evidence-sanitizer/v1 serialized-byte limit",
+	} {
+		if !strings.Contains(prompts.GetTraceWaterfallDescription, phrase) {
+			t.Errorf("get_trace_waterfall description lacks %q", phrase)
+		}
+	}
+}
+
 func TestCreateAlertDescriptionStatesDuplicateNameRefusal(t *testing.T) {
 	if !strings.Contains(prompts.CreateAlertDescription, "already uses (case-insensitive) is refused") {
 		t.Error("create_alert does not say a duplicate rule_name is refused")
 	}
 }
 
-func TestWhaleDescriptionsBounded(t *testing.T) {
-	budgets := map[string]int{
-		"get_logs_base":         2900,
-		"get_traces_base":       2200,
-		"get_service_logs_base": 2000,
+// A Discover-chart request that pastes PromQL must stay on create_alert_from_chart
+// (no query parameter) instead of rebuilding the chart via create_alert/create_kpi.
+func TestDiscoverChartAlertsStayOnCatalogPath(t *testing.T) {
+	if i := strings.Index(prompts.CreateAlertDescription, "Not for Discover charts"); i < 0 || i > 200 {
+		t.Error("create_alert must refuse Discover charts near the start, not only at the end")
 	}
-	bodies := map[string]string{
-		"get_logs_base":         prompts.GetLogsDescription,
-		"get_traces_base":       prompts.GetTracesDescription,
-		"get_service_logs_base": prompts.GetServiceLogsDescription,
+	if !strings.Contains(prompts.CreateAlertFromChartDescription, "There is no query, PromQL or expression parameter") {
+		t.Error("create_alert_from_chart must say it has no custom-query parameter")
 	}
-	for name, body := range bodies {
-		if len(body) == 0 {
-			t.Errorf("%s empty", name)
+	if !strings.Contains(prompts.CreateAlertFromChartDescription, "never call create_alert, create_kpi, get_entity_kpis") {
+		t.Error("create_alert_from_chart must say not to fall through to create_alert/create_kpi")
+	}
+	if !strings.Contains(prompts.CreateKPIDescription, "Never use a Discover chart's eval_query") {
+		t.Error("create_kpi must refuse Discover-chart queries")
+	}
+	if !strings.Contains(prompts.GetEntityKPIsDescription, "If the user asked to alert on a Discover chart") {
+		t.Error("get_entity_kpis must not send Discover-chart alerts down the KPI path")
+	}
+	if !strings.Contains(prompts.DescribeAlertChartDescription, "eval_query is informational") {
+		t.Error("describe_alert_chart must not treat eval_query as create input")
+	}
+	if !strings.Contains(prompts.DescribeAlertChartDescription, "pasted PromQL is not a reason to leave this path") {
+		t.Error("describe_alert_chart must keep pasted PromQL on create_alert_from_chart")
+	}
+	if !strings.Contains(prompts.ValidateAlertExpressionDescription, "Not for Discover charts") {
+		t.Error("validate_alert_expression must refuse Discover-chart PromQL")
+	}
+	if !strings.Contains(prompts.RecommendAlertConfigDescription, "For a Discover chart, skip this tool") {
+		t.Error("recommend_alert_config must skip Discover-chart authoring")
+	}
+}
+
+// Cleanup and bulk removals must stay on resources an MCP agent created unless the user
+// names one; each tool must also say where the marker is listed.
+func TestRemovalDescriptionsScopeCleanupToMarkedResources(t *testing.T) {
+	for name, tc := range map[string]struct{ desc, listing string }{
+		"delete_alert":                {prompts.DeleteAlertDescription, "get_entity_alert_rules"},
+		"delete_notification_channel": {prompts.DeleteNotificationChannelDescription, "get_notification_channels scope=channels"},
+		"detach_notification_channel": {prompts.DetachNotificationChannelDescription, "get_notification_channels scope=attached"},
+	} {
+		for _, phrase := range []string{
+			"clean up",
+			"whose created_via is last9-mcp",
+			"shown by " + tc.listing,
+			"only when the user names that specific",
+			"explicitly says to include ones created elsewhere",
+		} {
+			if !strings.Contains(tc.desc, phrase) {
+				t.Errorf("%s missing cleanup-scope wording %q", name, phrase)
+			}
 		}
-		budget := budgets[name]
-		if len(body) > budget {
-			t.Errorf("%s length %d exceeds %d-char budget", name, len(body), budget)
+	}
+}
+
+// Models sent channel_id as "42", which the schema rejects, once get_entity_alert_rules listed
+// created_via; eval alc-022 recovered with exactly this wording, so pin it, not a paraphrase.
+func TestRemovalDescriptionsStateIntegerIDBeforeCleanupScope(t *testing.T) {
+	for name, tc := range map[string]struct{ desc, param string }{
+		"delete_notification_channel": {prompts.DeleteNotificationChannelDescription, "channel_id (required, an integer such as 42)"},
+		"detach_notification_channel": {prompts.DetachNotificationChannelDescription, "attachment_id (required, an integer such as 42)"},
+	} {
+		param, cleanup := strings.Index(tc.desc, tc.param), strings.Index(tc.desc, "To clean up")
+		if param < 0 {
+			t.Errorf("%s does not state %q", name, tc.param)
+			continue
 		}
+		if cleanup >= 0 && cleanup < param {
+			t.Errorf("%s puts cleanup scope before its id parameter", name)
+		}
+	}
+}
+
+// delete_alert points at this listing for the marker, so name the label it prints.
+func TestEntityAlertRulesDescriptionNamesCreatedViaLabel(t *testing.T) {
+	if !strings.Contains(prompts.GetEntityAlertRulesDescription, `"Created Via:"`) {
+		t.Error(`get_entity_alert_rules does not name its "Created Via:" output line`)
 	}
 }
 
@@ -515,6 +770,8 @@ func TestReferenceManualsEmbedded(t *testing.T) {
 		"tracejson":    prompts.TracejsonReference,
 		"service_logs": prompts.ServiceLogsReference,
 		"metrics":      prompts.MetricsReference,
+		"alerting":     prompts.AlertingReference,
+		"tool_recipes": prompts.ToolRecipesReference,
 	} {
 		if len(body) < 1000 {
 			t.Errorf("%s reference too short (%d chars) — embed may be wrong", name, len(body))
@@ -531,6 +788,7 @@ func TestAPMServiceDeviationsDescription(t *testing.T) {
 		{"equal-duration baseline", "must describe comparative rather than snapshot behavior"},
 		{"get_service_summary", "must disambiguate one-window snapshots"},
 		{"call this tool first and by itself", "must prevent speculative parallel investigation"},
+		{"do not call `get_service_profile` first", "must route known-service comparisons directly"},
 		{"do not batch speculative corroboration", "must require inspecting the comparison before follow-ups"},
 		{"service_name", "must explain fleet and service scope"},
 		{"environments remain separate", "must prevent merged environment conclusions"},
@@ -552,6 +810,22 @@ func TestAPMServiceDeviationsDescription(t *testing.T) {
 	for _, check := range checks {
 		if !strings.Contains(description, check.phrase) {
 			t.Errorf("description missing %q: %s", check.phrase, check.reason)
+		}
+	}
+	if strings.Contains(description, "`get_service_profile` (first)") {
+		t.Error("Pairs well with must not send comparisons to get_service_profile first; routing says to skip it")
+	}
+}
+
+func TestServiceProfileDescriptionSkipsSpecializedTools(t *testing.T) {
+	description := strings.ToLower(prompts.GetServiceProfileDescription)
+	for _, phrase := range []string{
+		"skip it when a specialized tool directly answers",
+		"get_apm_service_deviations` for equal-window comparisons",
+		"dashboard tools for dashboard changes",
+	} {
+		if !strings.Contains(description, phrase) {
+			t.Errorf("service profile description missing routing exception %q", phrase)
 		}
 	}
 }
@@ -591,18 +865,24 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 		{"dashboard.id", "must keep the returned id"},
 		{"`layout: {x, y, w, h}`", "must document the API panel layout shape"},
 		{"`legend: {type, value}`", "must document the API query legend shape"},
+		{"When the user provides only a name, use `panels: []`", "must avoid inventing metrics for a name-only dashboard"},
 		{"Do not use `gridPos` or a panel-level `type`", "must rule out the rejected legacy panel shape"},
+		{"grouping by service or environment does not replace the window", "must keep groupby from standing in for the timeslice"},
 	} {
 		if !strings.Contains(create, c.phrase) {
 			t.Errorf("CreateDashboardDescription missing %q: %s", c.phrase, c.reason)
 		}
 	}
+	// The description sits near its byte budget; state the log_json window rule once.
+	if n := strings.Count(create, "For `log_json` line, timeseries, or bar panels"); n != 1 {
+		t.Errorf("CreateDashboardDescription states the log_json window rule %d times, want 1", n)
+	}
 	for _, c := range []struct {
 		phrase string
 		reason string
 	}{
-		{"Prefer this tool", "refine is the default after create"},
-		{"after create", "must sequence after create"},
+		{"only to restructure most of a dashboard", "full replacement is for restructuring, not single-panel edits"},
+		{"- Add, edit, remove or move individual panels: `patch_dashboard`", "must route individual panel edits to patch_dashboard"},
 		{"existing dashboard id", "must pass the known id"},
 		{"do not call create_dashboard", "must not create-for-refine"},
 		{"full replacement", "must state PUT is a full replacement"},
@@ -612,9 +892,183 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 			t.Errorf("UpdateDashboardDescription missing %q: %s", c.phrase, c.reason)
 		}
 	}
-	// Any mention at all, not three exact phrasings a reword would slip past.
-	if strings.Contains(create, "list_dashboards") {
+	// A model reading either description first must not be sent to full replacement for a
+	// one-panel change.
+	if strings.Contains(update, "Prefer this tool") {
+		t.Error("UpdateDashboardDescription must not prefer full replacement for panel changes")
+	}
+	if strings.Contains(create, "call update_dashboard for any panel") {
+		t.Error("CreateDashboardDescription must not send every panel change to update_dashboard")
+	}
+	for _, phrase := range []string{
+		"- Edit panels of an existing dashboard: `patch_dashboard`",
+		"- `patch_dashboard` (edit panels by the returned id)",
+	} {
+		if !strings.Contains(create, phrase) {
+			t.Errorf("CreateDashboardDescription missing route %q", phrase)
+		}
+	}
+	// Any mention outside the timeout-recovery sentence, not three exact phrasings a reword
+	// would slip past.
+	if strings.Contains(strings.Replace(create, createRetrySentence("list_dashboards"), "", 1), "list_dashboards") {
 		t.Error("CreateDashboardDescription must not require list_dashboards before create")
+	}
+}
+
+var templateIndicatorKey = regexp.MustCompile(`"([^"]+)": \{"id":`)
+
+func TestAlertingReferenceCoversAuthoringContract(t *testing.T) {
+	for _, phrase := range []string{
+		"adaptive_std_cmp(<primary_indicator>, <sensitivity>, <window>)",
+		"One to three distinct indicator names",
+		"There is **no `for:` clause**",
+		`"count_true(result) >= <bad_minutes>"` + "` with `eval_window: <total_minutes>`",
+		"**required**, minutes, 0-60",
+		"default `expr > 0`",
+		"default `count_true(result) >= 1`",
+		"The KPI `unit` is a label",
+		"**inner metric expression**",
+		"`invalid indicator details for <name>`",
+		"`missing indicator details for <name>`",
+		"`expression yields 0 timeseries`",
+		"If validation of an expression with two or more indicators returns `data source client not in context`",
+		"It does **not** check `condition`, `alert_condition`, `eval_window`",
+		"### Latency", "### Error rate", "### Saturation",
+		"## Alert from a dashboard panel",
+		"only after the user explicitly confirms",
+		"must be the exact name of the KPI it binds",
+	} {
+		if !strings.Contains(prompts.AlertingReference, phrase) {
+			t.Errorf("alerting reference missing %q", phrase)
+		}
+	}
+	if strings.Contains(prompts.AlertingReference, "currently fails with `data source client not in context`") {
+		t.Error("alerting reference must not describe an unverified validator failure as current behavior")
+	}
+	if strings.Contains(prompts.AlertingReference, "need not equal the KPI's own name") {
+		t.Error("alerting reference says indicator names need not match KPI names; create_alert rejects that")
+	}
+	// Each template section must show both a static and an adaptive rule.
+	for _, section := range strings.Split(strings.SplitN(prompts.AlertingReference, "## Templates", 2)[1], "\n### ")[1:] {
+		title := strings.SplitN(section, "\n", 2)[0]
+		if title == "Saturation" {
+			section = strings.SplitN(section, "\n## ", 2)[0]
+		}
+		if !strings.Contains(section, `"condition": "expr >`) || !strings.Contains(section, `"expression": "adaptive_std_cmp(`) {
+			t.Errorf("template %q must show a static and an adaptive rule", title)
+		}
+		// create_alert rejects expression_args keys that are not the bound KPI's name.
+		for _, key := range templateIndicatorKey.FindAllStringSubmatch(section, -1) {
+			if !strings.Contains(section, "KPI `"+key[1]+"`") {
+				t.Errorf("template %q binds indicator %q without declaring a KPI of that name", title, key[1])
+			}
+		}
+	}
+}
+
+func TestAlertToolDescriptionsPointAtAlertingReference(t *testing.T) {
+	for name, body := range map[string]string{
+		"create_alert":              prompts.CreateAlertDescription,
+		"update_alert":              prompts.UpdateAlertDescription,
+		"validate_alert_expression": prompts.ValidateAlertExpressionDescription,
+		"recommend_alert_config":    prompts.RecommendAlertConfigDescription,
+		"get_entity_kpis":           prompts.GetEntityKPIsDescription,
+		"create_kpi":                prompts.CreateKPIDescription,
+	} {
+		if !strings.Contains(body, "last9://reference/alerting") {
+			t.Errorf("%s description must point at last9://reference/alerting", name)
+		}
+	}
+	if !strings.Contains(prompts.ValidateAlertExpressionDescription, "get_entity_kpis") {
+		t.Error("validate_alert_expression must send agents to get_entity_kpis for KPI ids")
+	}
+}
+
+// Dashboard descriptions only point at the alerting manual: the eval bisect on
+// #336 showed any KPI -> alert chain in them makes the model skip
+// update_dashboard (dash-010) or invent get_custom_dashboard (dash-005).
+func TestDashboardDescriptionsOnlyPointAtAlertingReference(t *testing.T) {
+	if !strings.HasSuffix(prompts.GetDashboardDescription, "\n\nTo alert on a panel, see last9://reference/alerting.") {
+		t.Errorf("get_dashboard must end with its own pointer paragraph to last9://reference/alerting:\n%s", prompts.GetDashboardDescription)
+	}
+	for name, body := range map[string]string{
+		"get_dashboard":    prompts.GetDashboardDescription,
+		"create_dashboard": prompts.CreateDashboardDescription,
+	} {
+		for _, phrase := range []string{"create_kpi", "create_alert", "author-alert"} {
+			if strings.Contains(body, phrase) {
+				t.Errorf("%s description must not spell out the alert flow (%q)", name, phrase)
+			}
+		}
+	}
+	if strings.Contains(prompts.CreateDashboardDescription, "last9://reference/alerting") {
+		t.Error("create_dashboard must not mention alerting")
+	}
+	if !strings.Contains(prompts.CreateAlertDescription, "create one from the panel's PromQL with create_kpi") {
+		t.Error("create_alert must route custom dashboard panels through create_kpi")
+	}
+}
+
+func assertPhrasesInOrder(t *testing.T, name, body string, phrases ...string) {
+	t.Helper()
+	last := -1
+	for _, phrase := range phrases {
+		i := strings.Index(body, phrase)
+		if i < 0 {
+			t.Errorf("%s description missing %q", name, phrase)
+			return
+		}
+		if i < last {
+			t.Errorf("%s description names %q out of order", name, phrase)
+		}
+		last = i
+	}
+}
+
+func TestKPIToolDescriptionsSteerAuthoring(t *testing.T) {
+	for name, c := range map[string]struct {
+		body    string
+		phrases []string
+	}{
+		"get_entity_kpis": {prompts.GetEntityKPIsDescription, []string{
+			"never invent a KPI id", "prometheus_range_query", "`unit` is a display label only", "`create_kpi`",
+		}},
+		"create_kpi": {prompts.CreateKPIDescription, []string{
+			"`get_entity_kpis`", "`prometheus_range_query`", "Units matter", "Create once and keep the returned id",
+			"Never call create_kpi again for the same query", "`get_dashboard`",
+			"rejects only a query that does not parse", "no MCP tool deletes or edits a KPI",
+		}},
+	} {
+		for _, phrase := range c.phrases {
+			if !strings.Contains(c.body, phrase) {
+				t.Errorf("%s description missing %q", name, phrase)
+			}
+		}
+	}
+	// The API saves a parseable query for a metric that does not exist.
+	if strings.Contains(prompts.CreateKPIDescription, "fails on the alert group's data source") {
+		t.Error("create_kpi claims the API rejects queries that fail on the data source; it only rejects unparseable ones")
+	}
+}
+
+func createRetrySentence(readCall string) string {
+	return "On a timeout or connection error the create may or may not have been applied; check by name with " + readCall + " before retrying."
+}
+
+// A create whose response was lost may still have landed; a blind retry duplicates it.
+func TestCreateToolDescriptionsExplainUnknownOutcome(t *testing.T) {
+	for name, c := range map[string]struct{ desc, readCall string }{
+		"add_drop_rule":               {prompts.AddDropRuleDescription, "get_drop_rules"},
+		"add_remapping_rule":          {prompts.AddRemappingRuleDescription, "get_remapping_rules"},
+		"create_alert":                {prompts.CreateAlertDescription, "get_alert_config (rule_name)"},
+		"create_alert_from_chart":     {prompts.CreateAlertFromChartDescription, "get_alert_config (rule_name)"},
+		"create_dashboard":            {prompts.CreateDashboardDescription, "list_dashboards"},
+		"create_kpi":                  {prompts.CreateKPIDescription, "get_entity_kpis"},
+		"create_notification_channel": {prompts.CreateNotificationChannelDescription, "get_notification_channels (scope=channels)"},
+	} {
+		if !strings.Contains(c.desc, createRetrySentence(c.readCall)) {
+			t.Errorf("%s description does not say how to check a create after a timeout: want %q", name, createRetrySentence(c.readCall))
+		}
 	}
 }
 
@@ -627,5 +1081,44 @@ func TestAPMServiceDeviationsDescriptionLookbackFloor(t *testing.T) {
 	description := strings.ToLower(prompts.GetAPMServiceDeviationsDescription)
 	if !strings.Contains(description, "short lookbacks are unreliable") {
 		t.Error("description missing short-lookback floor guidance")
+	}
+}
+
+func TestAlertCoverageDescription(t *testing.T) {
+	for _, want := range []string{
+		`"what am I not alerting on?"`,
+		"Read-only",
+		"uncovered_signal", "all_rules_disabled", "no_notification_channel", "muted_too_long",
+		"Default: 7", "0 means the default",
+		"no gaps, every count is 0, and an alert group matches the scope",
+		"At most 10 gaps per kind",
+		"if available in this session",
+		"suggested_args holds only\ninputs that tool accepts", "Fill its other required inputs first",
+		"entity_id, id, is_disabled=false or mute_until=0", "alert_group_id, breach or threat severity",
+		"## Pairs well with", "`create_alert`", "`create_alert_from_chart`", "`attach_notification_channel`", "`patch_alert`",
+	} {
+		if !strings.Contains(prompts.GetAlertCoverageDescription, want) {
+			t.Errorf("get_alert_coverage description missing %q", want)
+		}
+	}
+}
+
+// The routing section must quote the window parameter's default and cap, or
+// agents pass a full hour when the user asks for current alerts.
+func TestGetAlertsRoutingStatesDefaultWindow(t *testing.T) {
+	_, routing, _ := strings.Cut(prompts.GetAlertsDescription, "## When to use")
+	routing, _, _ = strings.Cut(routing, "##")
+	for _, phrase := range []string{"default 15 minutes", "at most 1 hour"} {
+		if !strings.Contains(routing, phrase) {
+			t.Errorf("get_alerts When to use section missing %q:\n%s", phrase, routing)
+		}
+	}
+}
+
+func TestPreviewDashboardDescriptionExplainsLockState(t *testing.T) {
+	for _, phrase := range []string{"locked:false", "dashboard is locked"} {
+		if !strings.Contains(prompts.PreviewDashboardDescription, phrase) {
+			t.Errorf("preview_dashboard description missing %q", phrase)
+		}
 	}
 }

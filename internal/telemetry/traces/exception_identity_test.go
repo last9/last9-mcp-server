@@ -136,7 +136,7 @@ func runGetExceptions(t *testing.T, args GetExceptionsArgs, instantBody string, 
 	}))
 	defer server.Close()
 
-	args.StartTimeISO = exceptionTestWindow.start.Format(time.RFC3339)
+	args.StartTimeISO = new(exceptionTestWindow.start.Format(time.RFC3339))
 	args.EndTimeISO = exceptionTestWindow.end.Format(time.RFC3339)
 	result, _, err := NewGetExceptionsHandler(server.Client(), exceptionTestConfig(server.URL))(context.Background(), &mcp.CallToolRequest{}, args)
 	if err != nil {

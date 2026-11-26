@@ -35,6 +35,12 @@ func GetLogsInputSchema() map[string]interface{} {
 				"type":        []string{"string", "null"},
 				"description": "Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Use a user-named index or a non-default physical index discovered by get_service_profile; omit for default or when unknown.",
 			},
+			// No schema enum: a nullable enum fails as an opaque anyOf, so
+			// validateLogResponseMode rejects unknown values, quoting them.
+			"response_mode": map[string]interface{}{
+				"type":        []string{"string", "null"},
+				"description": `"summary" (default; over 20 lines, ≤4000 chars); "raw" only for exact text, max 32000 bytes (truncates/errors). Aggregates unchanged.`,
+			},
 		},
 		"required":             []string{"logjson_query"},
 		"additionalProperties": false,
@@ -159,7 +165,7 @@ func logWindowAggregateStageSchema() map[string]interface{} {
 			},
 			"window": map[string]interface{}{
 				"type":        "array",
-				"description": "Window duration as [\"duration\", \"unit\"]. Units: minutes, seconds, hours. Example: [\"1\", \"minutes\"]",
+				"description": "Window duration as [\"duration\", \"unit\"]. Units: minutes, seconds, hours, days. Example: [\"1\", \"minutes\"]",
 			},
 			"groupby": map[string]interface{}{
 				"type":        "object",

@@ -1,34 +1,217 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/toolsets"
+	"last9-mcp/internal/utils"
 
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+const (
+	// toolsetsHeader narrows one request's tool surface; the query parameter
+	// is for clients that cannot set headers. A non-blank header wins over it.
+	toolsetsHeader     = "X-Last9-Toolsets"
+	toolsetsQueryParam = "toolsets"
+	sessionIDHeader    = "Mcp-Session-Id"
+	// maxRequestBodyBytes bounds every POST body, both where we look for initialize and in the SDK.
+	maxRequestBodyBytes = mcp.DefaultMaxRequestBodyBytes
+)
+
 // HTTPServer wraps the MCP server for HTTP transport
 type HTTPServer struct {
-	server *last9mcp.Last9MCPServer
-	config models.Config
+	server  *last9mcp.Last9MCPServer
+	config  models.Config
+	servers *toolsetServers
 }
 
-// NewHTTPServer creates a new HTTP-based MCP server
-func NewHTTPServer(server *last9mcp.Last9MCPServer, config models.Config) *HTTPServer {
+// NewHTTPServer creates a new HTTP-based MCP server. server serves the startup
+// toolsets; build creates a server for a narrower set a request asks for.
+func NewHTTPServer(server *last9mcp.Last9MCPServer, config models.Config, build func(toolsets.Set) (*last9mcp.Last9MCPServer, error)) *HTTPServer {
 	return &HTTPServer{
 		server: server,
 		config: config,
+		servers: &toolsetServers{
+			build:  build,
+			cached: map[string]*toolsetServer{},
+		},
 	}
+}
+
+// Handler routes MCP requests to the server for the request's toolsets.
+func (h *HTTPServer) Handler() http.Handler {
+	// Stateless: stateful mode keeps sessions per-instance, so behind a load
+	// balancer a follow-up request routed to another replica 404s. The
+	// instrumented helper sets the transport, needed for client attribution.
+	startup := h.server.NewStreamableHTTPHandler(streamableOptions())
+	mcpHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		allowed, narrowed, err := requestToolsets(r, h.config.ToolFilter.Tools)
+		if err != nil {
+			reject(w, r, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if !narrowed {
+			startup.ServeHTTP(w, r)
+			return
+		}
+		handler, err := h.servers.handler(allowed)
+		if err != nil {
+			log.Printf("❌ build server for toolsets: %v", err)
+			reject(w, r, "failed to build server for the requested toolsets", http.StatusInternalServerError)
+			return
+		}
+		handler.ServeHTTP(w, r)
+	})
+
+	// Register handlers on both root and /mcp paths for maximum client flexibility
+	mux := http.NewServeMux()
+	sessions := withRequestLifetime(withClientSessions(mcpHandler))
+	mux.Handle("/", sessions)    // Root endpoint for standard MCP clients
+	mux.Handle("/mcp", sessions) // /mcp endpoint for explicit MCP usage
+	mux.HandleFunc("/health", h.handleHealth)
+	return mux
+}
+
+// reject drains the body before answering: an unread body makes net/http
+// close the connection instead of reusing it for the client's next request.
+func reject(w http.ResponseWriter, r *http.Request, msg string, status int) {
+	_, _ = io.Copy(io.Discard, r.Body)
+	http.Error(w, msg, status)
+}
+
+// withClientSessions keeps an old-protocol client's initialize clientInfo, which the stateless
+// SDK drops: initialize gets a session ID encoding it, and requests echoing that ID carry it
+// in their context for tools that report the client.
+func withClientSessions(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if sessionID := r.Header.Get(sessionIDHeader); sessionID != "" {
+			next.ServeHTTP(w, r.WithContext(utils.WithClientSession(r.Context(), sessionID)))
+			return
+		}
+		if r.Method == http.MethodPost {
+			body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBodyBytes))
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				http.Error(w, fmt.Sprintf("request body exceeds %d bytes", tooLarge.Limit), http.StatusRequestEntityTooLarge)
+				return
+			}
+			if err != nil {
+				reject(w, r, "failed to read body", http.StatusBadRequest)
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			if info := initializeClientInfo(body); info != nil {
+				w.Header().Set(sessionIDHeader, utils.NewClientSessionID(*info))
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+type requestLifetimeKey struct{}
+
+// withRequestLifetime lets a tool call stop when its POST ends. Before
+// protocol 2026-07-28 the SDK runs the handler on a context detached from the
+// POST, but it keeps the POST context's values, so the POST travels as one.
+func withRequestLifetime(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestLifetimeKey{}, r.Context())))
+	})
+}
+
+// stopWithRequest returns ctx cancelled once the HTTP request that carried the
+// call ends, as when the client cancels or disconnects. Outside HTTP it returns ctx.
+func stopWithRequest(ctx context.Context) (context.Context, context.CancelFunc) {
+	request, ok := ctx.Value(requestLifetimeKey{}).(context.Context)
+	if !ok {
+		return ctx, func() {}
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(request, cancel)
+	return ctx, func() {
+		stop()
+		cancel()
+	}
+}
+
+// initializeClientInfo returns the clientInfo of a single initialize request, else nil.
+func initializeClientInfo(body []byte) *mcp.Implementation {
+	var msg struct {
+		Method string `json:"method"`
+		Params struct {
+			ClientInfo *mcp.Implementation `json:"clientInfo"`
+		} `json:"params"`
+	}
+	if json.Unmarshal(body, &msg) != nil || msg.Method != "initialize" || msg.Params.ClientInfo == nil || msg.Params.ClientInfo.Name == "" {
+		return nil
+	}
+	return msg.Params.ClientInfo
+}
+
+// streamableOptions ties a tool call to its POST, so a client that cancels or
+// disconnects stops the call. The SDK does this only for protocol 2026-07-28
+// and later; older clients' calls run until the tool-call deadline.
+func streamableOptions() *mcp.StreamableHTTPOptions {
+	return &mcp.StreamableHTTPOptions{Stateless: true, MaxRequestBodyBytes: maxRequestBodyBytes, PropagateRequestCancellation: true}
+}
+
+// requestToolsets returns the tools a request may see: the startup set
+// intersected with the toolsets it asks for, so a request can narrow but never
+// widen. narrowed is false when the request asks for nothing, for all, or for
+// a set whose intersection is the whole startup set.
+func requestToolsets(r *http.Request, startup toolsets.Set) (toolsets.Set, bool, error) {
+	requested, err := toolsets.Parse(requestToolsetsSpec(r))
+	if err != nil {
+		return nil, false, err
+	}
+	if requested == nil {
+		return startup, false, nil
+	}
+	if startup == nil {
+		return requested, true, nil
+	}
+	effective := toolsets.Set{}
+	for tool := range requested {
+		if startup.Allows(tool) {
+			effective[tool] = struct{}{}
+		}
+	}
+	// effective ⊆ startup, so equal sizes mean the request restates startup.
+	if len(effective) == len(startup) {
+		return startup, false, nil
+	}
+	return effective, true, nil
+}
+
+// requestToolsetsSpec prefers the header to the query parameter, treating
+// blank header lines as absent so they cannot discard the query's toolsets.
+func requestToolsetsSpec(r *http.Request) string {
+	var values []string
+	for _, value := range r.Header.Values(toolsetsHeader) {
+		if strings.TrimSpace(value) != "" {
+			values = append(values, value)
+		}
+	}
+	if len(values) == 0 {
+		return r.URL.Query().Get(toolsetsQueryParam)
+	}
+	return strings.Join(values, ",")
 }
 
 // Start starts the HTTP server with streamable HTTP support
@@ -36,23 +219,10 @@ func (h *HTTPServer) Start() error {
 	// url is host:port
 	url := h.config.Host + ":" + h.config.Port
 
-	// Create a mux to handle multiple endpoints
-	mux := http.NewServeMux()
-
-	// Stateless: stateful mode keeps sessions per-instance, so behind a load
-	// balancer a follow-up request routed to another replica 404s. The
-	// instrumented helper sets the transport, needed for client attribution.
-	httpHandler := h.server.NewStreamableHTTPHandler(&mcp.StreamableHTTPOptions{Stateless: true})
-
-	// Register handlers on both root and /mcp paths for maximum client flexibility
-	mux.Handle("/", httpHandler)    // Root endpoint for standard MCP clients
-	mux.Handle("/mcp", httpHandler) // /mcp endpoint for explicit MCP usage
-	mux.HandleFunc("/health", h.handleHealth)
-
 	// Create HTTP server with timeouts
 	httpServer := &http.Server{
 		Addr:         url,
-		Handler:      mux,
+		Handler:      h.Handler(),
 		ReadTimeout:  constants.DefaultHTTPTimeout,
 		WriteTimeout: constants.DefaultHTTPTimeout,
 		IdleTimeout:  60 * time.Second,
@@ -93,7 +263,7 @@ func (h *HTTPServer) Start() error {
 	}
 	log.Printf("✅ HTTP server shutdown complete")
 
-	if err := h.server.Shutdown(shutdownCtx); err != nil {
+	if err := errors.Join(h.server.Shutdown(shutdownCtx), h.servers.shutdown(shutdownCtx)); err != nil {
 		log.Printf("❌ MCP server shutdown error: %v", err)
 		return err
 	}

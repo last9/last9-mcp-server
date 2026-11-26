@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/entities"
 	"last9-mcp/internal/models"
@@ -32,17 +33,30 @@ func NewUpdateAlertHandler(client *http.Client, cfg models.Config) func(context.
 			return utils.ToolErrorResult(err.Error()), nil, nil
 		}
 		api := last9api.NewClient(client, cfg)
-		if refusal, err := requireRuleInGroup(ctx, api, args.EntityID, args.ID); refusal != nil || err != nil {
+		stored, refusal, err := requireRuleInGroup(ctx, api, args.EntityID, args.ID)
+		if refusal != nil || err != nil {
 			return refusal, nil, err
 		}
+		marker, err := storedCreatedViaMarker(stored)
+		if err != nil {
+			return unreadableStoredPropertiesResult(args.ID, err), nil, nil
+		}
+		if args.AlertRule.OnNoData == nil {
+			args.AlertRule.OnNoData = stored.OnNoData
+		}
+		args.AlertRule.Properties = withCreatedViaAnnotations(args.AlertRule.Properties, marker)
 		body, err := entities.UpdateAlertRule(ctx, api,
 			entities.AlertRuleInput{EntityID: args.EntityID, RuleID: args.ID, Body: args.AlertRule})
 		if err != nil {
 			return alertRuleWriteError(err)
 		}
-		if err := validateMutationIDResponse(body); err != nil {
-			return nil, nil, fmt.Errorf("invalid update alert response: %w", err)
+		response, err := parseMutationIDResponse(body)
+		if err != nil {
+			return nil, nil, utils.MarkUnusableWriteResponse(fmt.Errorf("invalid update alert response: %w", err))
 		}
-		return alertMutationResult(cfg, body, ""), nil, nil
+		if strings.TrimSpace(response.GroupName) == "" {
+			response.GroupName = stored.GroupName
+		}
+		return alertRuleMutationResult(cfg, strings.TrimSpace(string(body)), deeplink.AlertRuleReference{RuleID: response.ID, GroupID: args.EntityID, GroupName: response.GroupName}), nil, nil
 	}
 }

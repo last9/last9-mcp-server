@@ -2,8 +2,8 @@ package alerting
 
 import (
 	"context"
+	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"last9-mcp/internal/last9api"
@@ -27,7 +27,7 @@ type notificationChannelAttachment struct {
 }
 
 func NewAttachNotificationChannelHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, AttachNotificationChannelArgs) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, args AttachNotificationChannelArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args AttachNotificationChannelArgs) (*mcp.CallToolResult, any, error) {
 		groupID, severity := strings.TrimSpace(args.AlertGroupID), strings.ToLower(strings.TrimSpace(args.Severity))
 		if args.ChannelID <= 0 || groupID == "" {
 			return utils.ToolErrorResult("channel_id and alert_group_id are required"), nil, nil
@@ -50,10 +50,11 @@ func NewAttachNotificationChannelHandler(client *http.Client, cfg models.Config)
 		if !found {
 			return utils.ToolErrorResult("channel_id is not a channel id; nothing was sent. Use the id column of get_notification_channels with scope=channels"), nil, nil
 		}
+		createdVia := newCreatedViaFields(req)
 		done := make([]notificationChannelAttachment, 0, len(severities))
 		for _, sev := range severities {
 			row, err := notifications.AttachNotificationSetting(ctx, api, args.ChannelID,
-				notifications.AttachNotificationSettingInput{EntityID: groupID, Severity: sev, Property: property})
+				notifications.AttachNotificationSettingInput{EntityID: groupID, Severity: sev, Property: property, CreatedVia: createdVia})
 			if err != nil {
 				return attachNotificationChannelFailure(err, sev, done)
 			}
@@ -72,6 +73,9 @@ func attachNotificationChannelFailure(err error, severity string, done []notific
 	if rerr != nil || len(done) == 0 {
 		return res, nil, rerr
 	}
+	// No rollback: detaching needs a delete-scope token this write may not have. The API
+	// upserts attachments per alert group and severity, so either retry finishes the job.
 	cause := res.Content[0].(*mcp.TextContent).Text
-	return utils.ToolErrorResult("attached " + done[0].Severity + " (attachment_id " + strconv.Itoa(done[0].AttachmentID) + ") but " + severity + " failed: " + cause), nil, nil
+	return utils.ToolErrorResult(fmt.Sprintf("attached %s (attachment_id %d) but %s failed: %s. %s stays attached; to finish, retry with severity=%s (re-attaching is idempotent, so severity=both is also safe)",
+		done[0].Severity, done[0].AttachmentID, severity, cause, done[0].Severity, severity)), nil, nil
 }

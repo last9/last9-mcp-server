@@ -32,6 +32,10 @@ type ServiceLogsResponse struct {
 	TotalMatchingLines *int           `json:"total_matching_lines,omitempty"`
 	LogsTruncated      *bool          `json:"logs_truncated,omitempty"`
 	SearchStats        map[string]any `json:"search_stats,omitempty"`
+	RawLimit           map[string]any `json:"l9_raw_limit,omitempty"`
+	Hint               string         `json:"hint,omitempty"`
+	WindowSource       string         `json:"window_source,omitempty"`
+	WindowMinutes      int            `json:"window_minutes,omitempty"`
 	coverageStatus     string
 }
 
@@ -43,13 +47,21 @@ type LogEntry struct {
 	ServiceName string `json:"service_name"`
 }
 
+// A summary stays within maxSummaryChars whatever its line count, so summary
+// mode fetches enough lines by default to pass maxRawLinesInSummaryMode.
+const (
+	defaultServiceLogsRawLimit     = 20
+	defaultServiceLogsSummaryLimit = 100
+	defaultServiceLogsLookback     = 60
+)
+
 // GetServiceLogsArgs represents the input arguments for the get_service_logs tool
 type GetServiceLogsArgs struct {
 	ServiceName      string                      `json:"service_name" jsonschema:"(Required) Name of the service to retrieve logs for (e.g. api)"`
 	StartTimeISO     string                      `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2023-10-01T10:00:00Z). If not provided lookback_minutes is used"`
 	EndTimeISO       string                      `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2023-10-01T11:00:00Z). If not provided current time is used"`
 	LookbackMinutes  int                         `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from current time if start_time_iso not provided (default: 60, minimum: 1)"`
-	Limit            int                         `json:"limit,omitempty" jsonschema:"Maximum number of log entries to return (optional, default: 20)"`
+	Limit            int                         `json:"limit,omitempty" jsonschema:"Maximum number of log entries to return (optional, default: 100; 20 in raw mode)"`
 	SeverityFilters  []string                    `json:"severity_filters,omitempty" jsonschema:"Array of severity patterns to match (uses OR logic) (e.g. [error warn])"`
 	BodyFilters      []string                    `json:"body_filters,omitempty" jsonschema:"Array of message content patterns to match (uses OR logic) (e.g. [timeout failed])"`
 	HTTPStatusClass  string                      `json:"http_status_class,omitempty" jsonschema:"HTTP status class to match: 2xx, 3xx, 4xx, or 5xx. Discovers the status field unless http_status_field is set."`
@@ -58,6 +70,7 @@ type GetServiceLogsArgs struct {
 	AttributeFilters []ServiceLogAttributeFilter `json:"attribute_filters,omitempty" jsonschema:"Equality filters on named log attributes. Each entry is field plus value. field uses logjson syntax such as attributes['user_id']. Unknown org fields are allowed; invalid syntax is rejected."`
 	Env              string                      `json:"env,omitempty" jsonschema:"Environment to filter by. Empty string if environment is unknown (e.g. production)"`
 	Index            string                      `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Use a user-named index or a non-default physical index discovered by get_service_profile; omit for default or when unknown."`
+	ResponseMode     string                      `json:"response_mode,omitempty" jsonschema:"summary (default) or raw"`
 }
 
 // ServiceLogAttributeFilter is a structured equality filter compiled into logjson.
@@ -73,16 +86,25 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		if args.ServiceName == "" {
 			return nil, nil, fmt.Errorf("service_name is required")
 		}
+		if err := validateLogResponseMode(args.ResponseMode); err != nil {
+			return nil, nil, err
+		}
+		if len(args.BodyFilters) > 0 && !hasExplicitLogWindow(args.StartTimeISO, args.LookbackMinutes) {
+			return nil, nil, fmt.Errorf("body_filters requires an explicit window: set lookback_minutes or start_time_iso")
+		}
 
 		// Set default values
 		limit := args.Limit
 		if limit == 0 {
-			limit = 20
+			limit = defaultServiceLogsSummaryLimit
+			if args.ResponseMode == logResponseModeRaw {
+				limit = defaultServiceLogsRawLimit
+			}
 		}
 
 		lookbackMinutes := args.LookbackMinutes
 		if lookbackMinutes == 0 {
-			lookbackMinutes = 60
+			lookbackMinutes = defaultServiceLogsLookback
 		}
 
 		// Convert args to map for GetTimeRange utility
@@ -126,50 +148,109 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
 		}
 		logs.HTTPStatusField = statusField
+		if args.StartTimeISO == "" && args.EndTimeISO == "" && args.LookbackMinutes == 0 {
+			logs.WindowSource = "default"
+			logs.WindowMinutes = defaultServiceLogsLookback
+		}
+		addServiceLogsGuidance(logs, args, limit)
+
+		bounds := serviceLogsScope{startTime, endTime, normalizedIndex}
+		var response any = logs
+		if args.ResponseMode != logResponseModeRaw {
+			if summarized, ok := summarizeServiceLogs(logs, bounds, limit); ok {
+				response = summarized
+			}
+		}
 
 		// Format response as JSON for better readability
-		responseJSON, err := json.MarshalIndent(logs, "", "  ")
+		responseJSON, err := json.MarshalIndent(response, "", "  ")
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to format response: %w", err)
 		}
 
-		// Build deep link URL with filters matching dashboard conventions
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		dashboardQuery := cloneLogJSONQuery(logjsonQuery)
-
-		dashboardIndex := ""
-		if normalizedIndex != "" {
-			resolvedIndex, err := utils.ResolveLogIndexDashboardParam(ctx, client, cfg, normalizedIndex)
-			if err == nil {
-				dashboardIndex = resolvedIndex
-			}
-		}
-		dashboardURL := dlBuilder.BuildLogsLink(startTime.UnixMilli(), endTime.UnixMilli(), dashboardQuery, dashboardIndex)
-		var meta mcp.Meta
-		if normalizedIndex == "" || dashboardIndex != "" {
-			meta = deeplink.ToMeta(dashboardURL)
-		}
-		if coverage := serviceLogsCoverage(logs, logjsonQuery, serviceLogsScope{startTime, endTime, normalizedIndex}); coverage != nil {
+		meta := serviceLogsDeepLink(ctx, client, cfg, serviceLogsSearch{logjsonQuery, bounds})
+		if coverage := serviceLogsCoverage(logs, logjsonQuery, bounds); coverage != nil {
 			if meta == nil {
 				meta = mcp.Meta{}
 			}
 			meta["last9/coverage"] = coverage
 		}
 
-		return &mcp.CallToolResult{
+		full := &mcp.CallToolResult{
 			Meta: meta,
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(responseJSON),
 				},
 			},
-		}, nil, nil
+		}
+		if response != logs {
+			return full, nil, nil
+		}
+		count := len(logs.Logs)
+		bounded, err := boundRawResult(full, count, cfg.MCPServerInfo, func(n int) (*mcp.CallToolResult, error) {
+			limited := *logs
+			limited.Logs = logs.Logs[:n]
+			limited.Count = n
+			truncated := true
+			limited.LogsTruncated = &truncated
+			limited.RawLimit = map[string]any{"returned_entries": n, "fetched_entries": count, "max_bytes": maxRawResultBytes}
+			limited.Hint = rawLimitHint(n, count, limit)
+			limited.coverageStatus = "partial"
+			encoded, err := json.MarshalIndent(&limited, "", "  ")
+			if err != nil {
+				return nil, err
+			}
+			limitedMeta := mapsClone(meta)
+			if coverage := serviceLogsCoverage(&limited, logjsonQuery, bounds); coverage != nil {
+				limitedMeta["last9/coverage"] = coverage
+			}
+			return &mcp.CallToolResult{Meta: limitedMeta, Content: []mcp.Content{&mcp.TextContent{Text: string(encoded)}}}, nil
+		})
+		return bounded, nil, err
 	}
 }
 
 type serviceLogsScope struct {
 	start, end time.Time
 	index      string
+}
+
+func summarizeServiceLogs(logs *ServiceLogsResponse, bounds serviceLogsScope, limit int) (map[string]any, bool) {
+	encoded, err := json.Marshal(logs)
+	if err != nil {
+		return nil, false
+	}
+	var retained map[string]any
+	if err := json.Unmarshal(encoded, &retained); err != nil {
+		return nil, false
+	}
+	// The top-level hint counts returned lines; summary.hint says what a summary covers.
+	delete(retained, "logs")
+	delete(retained, "hint")
+	scope := logSummaryScope{bounds.start.UnixMilli(), bounds.end.UnixMilli(), logs.mayMissLines(limit)}
+	return summarizeLogEntries(retained, logs.Logs, scope)
+}
+
+type serviceLogsSearch struct {
+	query []map[string]interface{}
+	serviceLogsScope
+}
+
+// serviceLogsDeepLink links the dashboard logs view for a search. An explicit
+// index the dashboard cannot resolve gets no link: without it the view would
+// show the default index's lines instead.
+func serviceLogsDeepLink(ctx context.Context, client *http.Client, cfg models.Config, search serviceLogsSearch) mcp.Meta {
+	dashboardIndex := ""
+	if search.index != "" {
+		resolved, err := utils.ResolveLogIndexDashboardParam(ctx, client, cfg, search.index)
+		if err != nil || resolved == "" {
+			return nil
+		}
+		dashboardIndex = resolved
+	}
+	dashboardURL := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildLogsLink(search.start.UnixMilli(), search.end.UnixMilli(), cloneLogJSONQuery(search.query), dashboardIndex)
+	return deeplink.ToMeta(dashboardURL)
 }
 
 func serviceLogsCoverage(logs *ServiceLogsResponse, query []map[string]interface{}, bounds serviceLogsScope) map[string]any {
@@ -326,6 +407,7 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 	if cfg.UseLogSearchAPI {
 		return fetchServiceLogsViaSearchAPI(ctx, client, cfg, service, startTime, endTime, limit, logjsonQuery, index)
 	}
+	utils.TagLogSearchPath(ctx, utils.LogSearchPathChunked)
 
 	startMs := startTime.UnixMilli()
 	endMs := endTime.UnixMilli()
@@ -471,25 +553,14 @@ func fetchServiceLogsViaSearchAPI(
 	ctx context.Context, client *http.Client, cfg models.Config, service string,
 	startTime, endTime time.Time, limit int, logjsonQuery []map[string]interface{}, index string,
 ) (*ServiceLogsResponse, error) {
-	// The shared client's timeout applies. Deliberately NOT PerChunkHTTPTimeout:
-	// that bounds one chunk, and the server runs the whole sweep in this call.
-	resp, err := utils.MakeLogSearchAPI(ctx, client, cfg, utils.LogSearchRequest{
+	result, err := searchLogsByWindow(ctx, client, cfg, utils.LogSearchRequest{
+		Op:       "service logs query",
 		Pipeline: logjsonQuery,
 		StartMs:  startTime.UnixMilli(),
 		EndMs:    endTime.UnixMilli(),
 		Limit:    limit,
 		Index:    index,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to call log search API: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, utils.NewUpstreamHTTPError(resp, "service logs query", utils.LogsPipelineSchemaHint)
-	}
-
-	result, err := utils.DecodeLogSearchResponse(resp)
 	if err != nil {
 		return nil, err
 	}

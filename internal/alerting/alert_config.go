@@ -13,6 +13,7 @@ import (
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 )
 
 const (
@@ -151,8 +152,7 @@ func fetchKPI(
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return kpiResponse{}, fmt.Errorf("API returned %d: %s", resp.StatusCode, string(body))
+		return kpiResponse{}, utils.NewUpstreamHTTPError(resp, "kpi lookup")
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -231,8 +231,7 @@ func fetchAlertConfig(
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, utils.NewUpstreamHTTPError(resp, "alert config")
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -287,8 +286,7 @@ func fetchAlertGroupEntities(
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("entity lookup failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, utils.NewUpstreamHTTPError(resp, "entity lookup")
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -610,19 +608,9 @@ func formatAlertGroupLabels(labels map[string]string) string {
 	return strings.Join(parts, ", ")
 }
 
-// formatAlertRulePatchableFields renders what patch_alert changes besides state, so a patch
-// can be read back; each line is omitted when the field is unset.
-func formatAlertRulePatchableFields(rule AlertRule) string {
-	var out string
-	switch {
-	case rule.MuteUntil < 0:
-		out += "  Mute Until: indefinitely\n"
-	case rule.MuteUntil > 0:
-		out += fmt.Sprintf("  Mute Until: %s\n", time.Unix(rule.MuteUntil, 0).UTC().Format("2006-01-02 15:04:05 UTC"))
-	}
-	if schedule := bytes.TrimSpace(rule.RecurringMuteSchedule); len(schedule) > 0 && string(schedule) != "null" {
-		out += fmt.Sprintf("  Recurring Mute Schedule: %s\n", schedule)
-	}
+// formatAlertRuleProperties renders the properties patch_alert sets, so a patch can be read
+// back; it is empty when no property has a value.
+func formatAlertRuleProperties(rule AlertRule) string {
 	propKeys := make([]string, 0, len(rule.Properties))
 	for k := range rule.Properties {
 		propKeys = append(propKeys, k)
@@ -634,10 +622,10 @@ func formatAlertRulePatchableFields(rule AlertRule) string {
 			props += fmt.Sprintf("    %s: %s\n", k, value)
 		}
 	}
-	if props != "" {
-		out += "  Properties:\n" + props
+	if props == "" {
+		return ""
 	}
-	return out
+	return "  Properties:\n" + props
 }
 
 // formatAlertRuleProperty renders a property value, nested ones as JSON. ok is false for the
@@ -725,6 +713,8 @@ func formatAlertConfigResponse(
 			}
 		}
 		formattedResponse += fmt.Sprintf("  State: %s\n", rule.State)
+		formattedResponse += formatRuleLifecycle(rule)
+		formattedResponse += formatRecentEvaluations(rule)
 		formattedResponse += fmt.Sprintf("  Severity: %s\n", rule.Severity)
 		formattedResponse += fmt.Sprintf("  Algorithm: %s\n", rule.Algorithm)
 		formattedResponse += fmt.Sprintf("  Entity ID: %s\n", rule.EntityID)
@@ -767,13 +757,16 @@ func formatAlertConfigResponse(
 			formattedResponse += fmt.Sprintf("  Error Since: %s\n", errorTime)
 		}
 
-		formattedResponse += formatAlertRulePatchableFields(rule)
+		formattedResponse += formatAlertRuleProperties(rule)
 
 		createdTime := time.Unix(rule.CreatedAt, 0).UTC().Format("2006-01-02 15:04:05 UTC")
 		updatedTime := time.Unix(rule.UpdatedAt, 0).UTC().Format("2006-01-02 15:04:05 UTC")
 		formattedResponse += fmt.Sprintf("  Created: %s\n", createdTime)
 		formattedResponse += fmt.Sprintf("  Updated: %s\n", updatedTime)
 		formattedResponse += fmt.Sprintf("  Group Timeseries Notifications: %v\n", rule.GroupTimeseriesNotifications)
+		if rule.OnNoData != nil && *rule.OnNoData == "alert" {
+			formattedResponse += "  On No Data: alert\n"
+		}
 		formattedResponse += "\n"
 	}
 

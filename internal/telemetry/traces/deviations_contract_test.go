@@ -124,11 +124,35 @@ func TestDeviationDescriptionWarningStringsAreDocumented(t *testing.T) {
 	}
 }
 
+func TestDeviationDescriptionDistinguishesComparisonWindows(t *testing.T) {
+	description, err := os.ReadFile(filepath.Clean("../../prompts/descriptions/get_trace_attribute_deviations.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipes, err := os.ReadFile(filepath.Clean("../../prompts/references/tool_recipes.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{"description": string(description), "recipes": string(recipes)} {
+		for _, want := range []string{
+			"`latency` and `errors` split spans within the same target window",
+			"Only `time` compares separate target and baseline windows",
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s must state %q", name, want)
+			}
+		}
+	}
+}
+
 func TestDeviationNonConformingResponseIsRejected(t *testing.T) {
 	cases := map[string]string{
-		"wrong contract version": `{"contract_version":"investigation-evidence/v2","analysis_version":"trace-attribute-deviations/v1"}`,
-		"missing contract":       `{"data":{"deviations":[]}}`,
-		"wrong analysis version": `{"contract_version":"investigation-evidence/v1","analysis_version":"trace-waterfall/v1"}`,
+		"wrong contract version":       `{"contract_version":"investigation-evidence/v2","analysis_version":"trace-attribute-deviations/v1"}`,
+		"missing contract":             `{"data":{"deviations":[]}}`,
+		"wrong analysis version":       `{"contract_version":"investigation-evidence/v1","analysis_version":"trace-waterfall/v1"}`,
+		"contract key in another case": `{"CONTRACT_VERSION":"investigation-evidence/v1","analysis_version":"trace-attribute-deviations/v1"}`,
+		"analysis key in another case": `{"contract_version":"investigation-evidence/v1","Analysis_Version":"trace-attribute-deviations/v1"}`,
+		"contract key duplicated":      `{"contract_version":"investigation-evidence/v2","contract_version":"investigation-evidence/v1","analysis_version":"trace-attribute-deviations/v1"}`,
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {

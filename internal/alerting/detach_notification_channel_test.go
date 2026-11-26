@@ -48,7 +48,7 @@ func TestDetachNotificationChannelRefusals(t *testing.T) {
 }
 
 func TestDetachNotificationChannelAllowsAttachmentRow(t *testing.T) {
-	for _, group := range []string{"", " g1 "} {
+	for _, group := range []string{"", " g1 ", "G1"} {
 		s := newDetachServer(t, 200)
 		text, isErr, err := runDetachChannel(s, DetachNotificationChannelArgs{AttachmentID: 12, AlertGroupID: group})
 		assertNoSecret(t, text, err)

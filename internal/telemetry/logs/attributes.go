@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"time"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -49,9 +50,7 @@ func fetchLogLabels(ctx context.Context, client *http.Client, cfg models.Config,
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		var errorBody map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&errorBody)
-		return nil, fmt.Errorf("API returned status %d: %v", resp.StatusCode, errorBody)
+		return nil, utils.NewUpstreamHTTPError(resp, "log labels API")
 	}
 
 	var result struct {
@@ -154,7 +153,9 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(con
 			}
 		}
 
+		dashboardURL := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildLogsLink(startTime*1000, endTime*1000, nil, "")
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: summary,

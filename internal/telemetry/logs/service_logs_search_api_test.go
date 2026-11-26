@@ -3,6 +3,7 @@ package logs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"last9-mcp/internal/utils"
 )
 
 func serviceLogsPipeline() []map[string]interface{} {
@@ -76,6 +79,46 @@ func TestFetchServiceLogs_APIMode_SingleCallWithCoverage(t *testing.T) {
 	}
 	if got.SearchStats["chunks_failed"] != float64(1) {
 		t.Errorf("search_stats = %#v, want chunks_failed carried through", got.SearchStats)
+	}
+}
+
+func TestFetchServiceLogs_APIMode_PartialLongWindowNamesFailure(t *testing.T) {
+	var calls int
+	var mu sync.Mutex
+	end := time.Unix(1_800_000_000, 0).UTC()
+	middleStart := end.Add(-28 * 24 * time.Hour).Unix()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		if int64(body["start"].(float64)) == middleStart {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":"window unavailable"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"query_result":{"status":"success","data":{"resultType":"streams","result":[]}},"total_matching_lines":4,"search_stats":{"chunks_planned":1}}`))
+	}))
+	defer srv.Close()
+
+	got, err := fetchServiceLogs(context.Background(), srv.Client(), apiModeCfg(srv.URL), "checkout",
+		end.Add(-30*24*time.Hour), end, 20, serviceLogsPipeline(), "")
+	if err != nil {
+		t.Fatalf("fetchServiceLogs: %v", err)
+	}
+	if calls != 3 {
+		t.Fatalf("requests = %d, want 3", calls)
+	}
+	if got.TotalMatchingLines == nil || *got.TotalMatchingLines != 8 {
+		t.Errorf("total_matching_lines = %v, want successful-window sum 8", got.TotalMatchingLines)
+	}
+	if got.SearchStats["windows_queried"] != float64(3) || got.SearchStats["windows_failed"] != float64(1) {
+		t.Errorf("search_stats = %#v, want one of three windows failed", got.SearchStats)
+	}
+	errors, ok := got.SearchStats["errors"].([]any)
+	if !ok || len(errors) != 1 || !strings.Contains(errors[0].(string), "window 2/3") {
+		t.Errorf("search_stats errors = %#v, want failed window 2/3", got.SearchStats["errors"])
 	}
 }
 
@@ -156,6 +199,27 @@ func TestFetchServiceLogs_APIMode_SurfacesUpstreamMessage(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "limit must be positive") {
 		t.Errorf("error = %q, want the upstream message preserved", err)
+	}
+}
+
+func TestFetchServiceLogs_APIMode_SlowSearchReturnsAdviceWithinBudget(t *testing.T) {
+	srv := stalledSearchServer(t)
+	cfg := apiModeCfg(srv.URL)
+	cfg.LogSearchTimeout = 50 * time.Millisecond
+
+	start, end := serviceLogsWindow()
+	started := time.Now()
+	_, err := fetchServiceLogs(
+		utils.DeadlineContext(t, 5*time.Second), srv.Client(), cfg, "checkout",
+		start, end, 20, serviceLogsPipeline(), "")
+	if !errors.Is(err, utils.ErrLogSearchTimeout) {
+		t.Fatalf("err = %v, want utils.ErrLogSearchTimeout", err)
+	}
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Errorf("returned after %s, want within the 50ms budget", elapsed)
+	}
+	if !strings.Contains(err.Error(), "service logs query timed out") {
+		t.Errorf("error %q does not name the service logs query", err)
 	}
 }
 

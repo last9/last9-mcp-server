@@ -28,14 +28,18 @@ const (
 	serviceSummarySpanKind       = `span_kind="SPAN_KIND_SERVER"`
 	serviceSummaryGRPCMatcher    = `grpc_status_code!="",grpc_status_code!~"^(0|OK)$"`
 	serviceSummaryCoverage       = "Ranking covers APM server-span metrics only. Log-only services are absent from rows, not listed as zero. Dual-instrumented services (multiple l9_source series for the same service and env) are summed together, so request_count and class counts can be inflated versus a single instrumentation source."
-	serviceSummaryEmptyHint      = "No APM server-span series matched this interval and env_scope. rows is empty; the interval was not widened and no placeholder service names were added."
 	serviceSummarySortRequest    = "request_count"
 	serviceSummarySortRPM        = "throughput_rpm"
 	serviceSummarySort4xx        = "http_4xx_count"
 	serviceSummarySort5xx        = "http_5xx_count"
 	serviceSummarySortGRPC       = "grpc_error_count"
 	serviceSummaryFingerprintEnv = "<env>"
+	serviceSummaryMetric         = "trace_endpoint_count"
 )
+
+// ServiceSummarySeries selects the server-span series get_service_summary
+// ranks, across every env.
+const ServiceSummarySeries = serviceSummaryMetric + "{" + serviceSummarySpanKind + "}"
 
 type ServiceSummaryRow struct {
 	Rank           int     `json:"rank"`
@@ -126,15 +130,9 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 		// not only the caller-requested bounds.
 		queriedStart := endTimeParam - int64(windowMin)*60
 
-		joined := map[string]*ServiceSummaryRow{}
-		for _, class := range serviceSummaryQueried {
-			series, err := fetchPromInstantSeries(ctx, client, cfg, class.key, class.query(envMatcher, windowMin), endTimeParam)
-			if err != nil {
-				return nil, nil, err
-			}
-			if err := mergeServiceSummarySeries(joined, series, class.set); err != nil {
-				return nil, nil, err
-			}
+		joined, err := summarizeServiceCounts(ctx, client, cfg, serviceCountScope{matcher: envMatcher, windowMin: windowMin, end: endTimeParam})
+		if err != nil {
+			return nil, nil, err
 		}
 
 		rows := make([]ServiceSummaryRow, 0, len(joined))
@@ -177,7 +175,19 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 			Coverage:         serviceSummaryCoverage,
 		}
 		if len(rows) == 0 {
-			result.Hint = serviceSummaryEmptyHint
+			result.Hint = apmEmptyAdvice(
+				"APM services",
+				apmGuidanceArgs{env: envScope, startUnix: queriedStart, endUnix: endTimeParam},
+				"verify the environment param",
+				"confirm services emit APM server spans",
+			)
+		} else if truncated {
+			result.Hint = utils.TruncatedResultAdvice(utils.TruncatedResultOptions{
+				Subject:  "services",
+				Returned: len(rows),
+				Total:    matchedCount,
+				MaxLimit: serviceSummaryMaxLimit,
+			})
 		}
 
 		returnText, err := json.Marshal(result)
@@ -198,6 +208,28 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 			},
 		}, nil, nil
 	}
+}
+
+type serviceCountScope struct {
+	matcher   string
+	windowMin int
+	end       int64
+}
+
+// summarizeServiceCounts runs every serviceSummaryQueried class over scope and
+// joins the results per (service, env).
+func summarizeServiceCounts(ctx context.Context, client *http.Client, cfg models.Config, scope serviceCountScope) (map[string]*ServiceSummaryRow, error) {
+	joined := map[string]*ServiceSummaryRow{}
+	for _, class := range serviceSummaryQueried {
+		series, err := fetchPromInstantSeries(ctx, client, cfg, "service summary "+class.key, class.query(scope.matcher, scope.windowMin), scope.end)
+		if err != nil {
+			return nil, err
+		}
+		if err := mergeServiceSummarySeries(joined, series, class.set); err != nil {
+			return nil, err
+		}
+	}
+	return joined, nil
 }
 
 func (c serviceSummaryClass) query(envMatcher string, windowMin int) string {
@@ -252,7 +284,7 @@ func serviceSummaryCountQuery(envMatcher string, windowMin int, extraMatcher str
 	if extraMatcher != "" {
 		matchers += "," + extraMatcher
 	}
-	return fmt.Sprintf("sum by (service_name, env)(sum_over_time(trace_endpoint_count{%s}[%dm]))", matchers, windowMin)
+	return fmt.Sprintf("sum by (service_name, env)(sum_over_time(%s{%s}[%dm]))", serviceSummaryMetric, matchers, windowMin)
 }
 
 func serviceSummaryFingerprint(windowMin int) string {
@@ -279,18 +311,18 @@ func intervalMinutes(startUnix, endUnix int64) int {
 	return minutes
 }
 
-func fetchPromInstantSeries(ctx context.Context, client *http.Client, cfg models.Config, classKey, query string, endTime int64) (apiPromInstantResp, error) {
+func fetchPromInstantSeries(ctx context.Context, client *http.Client, cfg models.Config, op, query string, endTime int64) (apiPromInstantResp, error) {
 	httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, query, endTime, cfg)
 	if err != nil {
 		return nil, err
 	}
 	defer httpResp.Body.Close()
 	if httpResp.StatusCode != http.StatusOK {
-		return nil, promErr(httpResp, "service summary "+classKey)
+		return nil, promErr(httpResp, op)
 	}
 	var parsed apiPromInstantResp
 	if err := json.NewDecoder(httpResp.Body).Decode(&parsed); err != nil {
-		return nil, fmt.Errorf("failed to decode service summary %s: %w", classKey, err)
+		return nil, fmt.Errorf("failed to decode %s: %w", op, err)
 	}
 	return parsed, nil
 }

@@ -16,8 +16,11 @@ var named = map[string][]string{
 		"get_service_profile",
 		"get_logs",
 		"get_service_logs",
+		"get_log_patterns",
+		"get_emerging_log_patterns",
 		"get_log_attributes",
 		"get_log_attributes_for_pipeline",
+		"get_log_services",
 		"get_exceptions",
 		"prometheus_instant_query",
 	},
@@ -35,6 +38,8 @@ var named = map[string][]string{
 	"metrics": {
 		"did_you_mean",
 		"get_service_profile",
+		"get_metric_status",
+		"describe_metric",
 		"prometheus_range_query",
 		"prometheus_instant_query",
 		"prometheus_label_values",
@@ -46,6 +51,7 @@ var named = map[string][]string{
 		"get_service_operations_summary",
 		"get_service_dependency_graph",
 		"get_change_events",
+		"analyze_change_impact",
 		"get_databases",
 		"get_database_slow_queries",
 		"get_database_queries",
@@ -68,21 +74,33 @@ var named = map[string][]string{
 		"delete_notification_channel",
 		"recommend_alert_config",
 		"get_alert_groups",
+		"get_alert_coverage",
 		"get_entity_alert_rules",
+		"get_entity_kpis",
+		"create_kpi",
+		"prometheus_range_query",
+		"get_dashboard",
 		"describe_alert_chart",
 		"create_alert_from_chart",
 		"get_alert_rule_state",
+		"get_change_events",
+		"analyze_change_impact",
 		"get_notification_channels",
 		"get_drop_rules",
 		"add_drop_rule",
+		"get_remapping_rules",
+		"add_remapping_rule",
 	},
 	"dashboards": {
 		"list_dashboards",
 		"get_dashboard",
 		"validate_dashboard",
+		"preview_dashboard",
 		"create_dashboard",
 		"update_dashboard",
+		"patch_dashboard",
 		"delete_dashboard",
+		"set_dashboard_lock",
 		"list_dashboard_snapshots",
 		"get_dashboard_snapshot",
 		"delete_dashboard_snapshot",
@@ -102,11 +120,29 @@ var named = map[string][]string{
 	},
 }
 
+// core tools are served under every toolset: other tools' arguments depend on
+// them, or the server instructions name them as the first call.
+var core = []string{
+	"get_current_time",
+	"get_workspace_overview",
+	"search_docs",
+}
+
+// feedback tools join every named toolset so any agent can report a problem. The
+// investigate composite leaves them out: its surface and instructions are eval-budgeted.
+var feedback = []string{
+	"send_feedback",
+}
+
 // discovery tools included in the investigate composite (R9a).
+// get_alert_coverage joins them so an investigation can ask what is not alerted on
+// without pulling in the rest of the alerts toolset.
 var investigateExtras = []string{
 	"did_you_mean",
 	"get_service_profile",
 	"list_datasources",
+	"get_entity_kpis",
+	"get_alert_coverage",
 }
 
 // ValidNames returns sorted valid toolset tokens for error messages.
@@ -134,6 +170,7 @@ func (s Set) Allows(toolName string) bool {
 
 // Parse expands a comma-separated toolset spec into allowed tool names.
 // Empty / whitespace-only → nil (all tools). "all" supersedes other tokens.
+// Every non-nil result includes the core tools.
 // Unknown names return an error listing ValidNames.
 func Parse(spec string) (Set, error) {
 	spec = strings.TrimSpace(spec)
@@ -173,6 +210,9 @@ func Parse(spec string) (Set, error) {
 	}
 
 	out := make(Set)
+	for _, tool := range core {
+		out[tool] = struct{}{}
+	}
 	for _, t := range tokens {
 		switch t {
 		case "investigate":
@@ -190,6 +230,9 @@ func Parse(spec string) (Set, error) {
 				return nil, fmt.Errorf("unknown toolset %q; valid names: %s", t, strings.Join(ValidNames(), ", "))
 			}
 			for _, tool := range tools {
+				out[tool] = struct{}{}
+			}
+			for _, tool := range feedback {
 				out[tool] = struct{}{}
 			}
 		}

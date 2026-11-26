@@ -52,15 +52,6 @@ func (rec *traceRequestRecorder) all() []recordedRequest {
 	return append([]recordedRequest(nil), rec.requests...)
 }
 
-func (rec *traceRequestRecorder) only(t *testing.T) recordedRequest {
-	t.Helper()
-	got := rec.all()
-	if len(got) != 1 {
-		t.Fatalf("want exactly 1 upstream request, got %d: %v", len(got), got)
-	}
-	return got[0]
-}
-
 func countingTraceDetailsServer(t *testing.T) (*httptest.Server, *atomic.Int32) {
 	server, n, _ := recordingTraceDetailsServer(t)
 	return server, n
@@ -133,25 +124,23 @@ func TestGetTraceWaterfall_InvalidIDsMakeZeroUpstreamRequests(t *testing.T) {
 }
 
 func TestGetTraceWaterfall_UppercaseIDsReachTheWireLowercased(t *testing.T) {
-	server, n, rec := recordingTraceDetailsServer(t)
-	handler := NewGetTraceWaterfallHandler(server.Client(), verifyTraceCfg(server.URL))
-	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceWaterfallArgs{
+	call := callWaterfallHandler(t, http.StatusOK, waterfallFixture(t), GetTraceWaterfallArgs{
 		TraceID:        strings.ToUpper(testValidTraceID),
 		SelectedSpanID: strings.ToUpper(testValidSpanID),
 	})
-	if err != nil {
-		t.Fatalf("valid IDs should proceed: %v", err)
-	}
-	if got := n.Load(); got != 1 {
-		t.Fatalf("valid waterfall made %d upstream requests, want 1", got)
+	if call.err != nil {
+		t.Fatalf("valid IDs should proceed: %v", call.err)
 	}
 
-	sent := rec.only(t)
-	if !strings.Contains(sent.URL, testValidTraceID) {
-		t.Errorf("want lowercased trace ID in the upstream URL, got %q", sent.URL)
+	sent := call.request.URL
+	if !strings.Contains(sent.Path, testValidTraceID) {
+		t.Errorf("want lowercased trace ID in the upstream URL, got %q", sent)
 	}
-	if strings.Contains(sent.URL, strings.ToUpper(testValidTraceID)) {
-		t.Errorf("raw uppercase trace ID reached the wire: %q", sent.URL)
+	if strings.Contains(sent.String(), strings.ToUpper(testValidTraceID)) || strings.Contains(sent.String(), strings.ToUpper(testValidSpanID)) {
+		t.Errorf("raw uppercase ID reached the wire: %q", sent)
+	}
+	if got := sent.Query().Get("selected_span_id"); got != testValidSpanID {
+		t.Errorf("selected_span_id = %q, want %q", got, testValidSpanID)
 	}
 }
 

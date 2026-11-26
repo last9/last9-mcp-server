@@ -18,10 +18,10 @@ func dashboardObjectSchema(description string) map[string]interface{} {
 func panelObjectSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":     "object",
-		"required": []string{"name", "layout", "visualization"},
+		"required": []string{"name", "visualization"},
 		"properties": map[string]interface{}{
 			"name":    map[string]interface{}{"type": "string"},
-			"version": map[string]interface{}{"type": "integer", "enum": []int{1}},
+			"version": map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 1},
 			"layout": map[string]interface{}{
 				"type":     "object",
 				"required": []string{"x", "y", "w", "h"},
@@ -38,9 +38,9 @@ func panelObjectSchema() map[string]interface{} {
 						"type": "object", "required": []string{"columns"},
 						"description": "Required when type is logs. Choose one or more columns from timestamp, reason, severity, kind, service, body.",
 						"properties": map[string]interface{}{
-							"columns": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string", "enum": []string{"timestamp", "reason", "severity", "kind", "service", "body"}}},
-							"row_limit": map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 1000},
-							"sort_order": map[string]interface{}{"type": "string", "enum": []string{"asc", "desc"}},
+							"columns":           map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string", "enum": []string{"timestamp", "reason", "severity", "kind", "service", "body"}}},
+							"row_limit":         map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 1000},
+							"sort_order":        map[string]interface{}{"type": "string", "enum": []string{"asc", "desc"}},
 							"severity_coloring": map[string]interface{}{"type": "boolean"},
 						},
 					},
@@ -51,12 +51,24 @@ func panelObjectSchema() map[string]interface{} {
 		"anyOf": []interface{}{
 			panelVisualizationTypeSchema("section"),
 			panelVisualizationTypeSchema("markdown"),
+			map[string]interface{}{
+				"required": []string{"csv"},
+				"properties": map[string]interface{}{
+					"csv": map[string]interface{}{"type": "object"},
+				},
+			},
 			map[string]interface{}{"required": []string{"queries"}},
 		},
-		"allOf": []interface{}{map[string]interface{}{
-			"if": map[string]interface{}{"required": []string{"visualization"}, "properties": map[string]interface{}{"visualization": map[string]interface{}{"required": []string{"type"}, "properties": map[string]interface{}{"type": map[string]interface{}{"const": "logs"}}}}},
-			"then": map[string]interface{}{"properties": map[string]interface{}{"visualization": map[string]interface{}{"required": []string{"logs_config"}}}},
-		}},
+		"allOf": []interface{}{
+			map[string]interface{}{
+				"if":   map[string]interface{}{"properties": map[string]interface{}{"visualization": map[string]interface{}{"required": []string{"type"}, "properties": map[string]interface{}{"type": map[string]interface{}{"not": map[string]interface{}{"enum": []string{"section", "markdown"}}}}}}},
+				"then": map[string]interface{}{"required": []string{"layout"}},
+			},
+			map[string]interface{}{
+				"if":   map[string]interface{}{"required": []string{"visualization"}, "properties": map[string]interface{}{"visualization": map[string]interface{}{"required": []string{"type"}, "properties": map[string]interface{}{"type": map[string]interface{}{"const": "logs"}}}}},
+				"then": map[string]interface{}{"properties": map[string]interface{}{"visualization": map[string]interface{}{"required": []string{"logs_config"}}}},
+			},
+		},
 	}
 }
 
@@ -73,6 +85,13 @@ func panelVisualizationTypeSchema(kind string) map[string]interface{} {
 	}
 }
 
+func queryModeSchema() map[string]any {
+	return map[string]any{
+		"type": "string", "enum": []string{"range", "instant"},
+		"description": "Execution mode. Set telemetry to metrics, logs, or traces.",
+	}
+}
+
 func queriesArraySchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "array",
@@ -80,21 +99,21 @@ func queriesArraySchema() map[string]interface{} {
 			"type":     "object",
 			"required": []string{"name", "type", "query_type", "telemetry", "expr", "legend"},
 			"properties": map[string]interface{}{
-				"name": map[string]interface{}{"type": "string"}, "type": map[string]interface{}{"type": "string"},
+				"name": map[string]interface{}{"type": "string"}, "type": queryModeSchema(),
 				"query_type": map[string]interface{}{
 					"type":        "string",
 					"enum":        []string{"promql", "log_json", "log_ql", "log_raw", "trace_json", "trace_ql"},
 					"description": "Use promql for metrics, log_json or log_ql for logs, log_raw or log_ql for raw log panels, and trace_json or trace_ql for traces.",
 				},
-				"telemetry":  map[string]interface{}{"type": "string"},
+				"telemetry": map[string]interface{}{"type": "string"},
 				"expr": map[string]interface{}{
-					"type": "string",
-					"description": `Every log_json expression must be a JSON pipeline with an aggregate stage; use log_ql for a raw logs panel. For log_json line, timeseries, or bar panels, include exactly one time-windowed aggregate (window_aggregate or aggregate with window); grouping by service or environment does not replace the window. Example: [{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"],"groupby":{"ServiceName":"service"}}].`,
+					"type":        "string",
+					"description": `Every log_json expression must be a JSON pipeline with an aggregate stage; use log_ql for a raw logs panel. For log_json line, timeseries, or bar panels, include exactly one time-windowed aggregate (window_aggregate or aggregate with window); grouping by service or environment does not replace the window. Example: [{"type":"filter","query":{"$and":[{"$eq":["ServiceName","checkout"]},{"$eq":["resources['deployment.environment']","prod"]}]}},{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["1","minutes"]}].`,
 				},
 				"legend": map[string]interface{}{
 					"type": "object", "required": []string{"type", "value"},
 					"properties": map[string]interface{}{
-						"type": map[string]interface{}{"type": "string", "enum": []string{"auto", "custom"}},
+						"type":  map[string]interface{}{"type": "string", "enum": []string{"auto", "custom"}},
 						"value": map[string]interface{}{"type": "string"},
 					},
 				},
@@ -115,7 +134,8 @@ func metadataObjectSchema() map[string]interface{} {
 // metadata as JSON objects rather than byte arrays.
 func GetCreateDashboardInputSchema() map[string]interface{} {
 	return map[string]interface{}{
-		"type": "object",
+		"type":                 "object",
+		"additionalProperties": false,
 		"properties": map[string]interface{}{
 			"dashboard": dashboardObjectSchema("(Required) Dashboard definition with name and panels."),
 			"metadata":  metadataObjectSchema(),
@@ -127,7 +147,8 @@ func GetCreateDashboardInputSchema() map[string]interface{} {
 // GetUpdateDashboardInputSchema returns the MCP-facing schema for update_dashboard.
 func GetUpdateDashboardInputSchema() map[string]interface{} {
 	return map[string]interface{}{
-		"type": "object",
+		"type":                 "object",
+		"additionalProperties": false,
 		"properties": map[string]interface{}{
 			"id": map[string]interface{}{
 				"type":        "string",

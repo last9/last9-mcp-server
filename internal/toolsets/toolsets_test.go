@@ -14,7 +14,7 @@ func TestParse(t *testing.T) {
 				want[tool] = true
 			}
 		}
-		for _, tool := range investigateExtras {
+		for _, tool := range append(investigateExtras, core...) {
 			want[tool] = true
 		}
 		return want
@@ -27,12 +27,12 @@ func TestParse(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "empty means all", spec: "", wantNil: true},
-		{name: "whitespace trims and lowercases", spec: " Alerts ", wantSet: toSet(named["alerts"])},
+		{name: "whitespace trims and lowercases", spec: " Alerts ", wantSet: toSet(named["alerts"], core, feedback)},
 		{name: "unknown token errors", spec: "bogus", wantErr: true},
 		{name: "all supersedes others", spec: "all", wantNil: true},
 		{name: "all supersedes later tokens", spec: "all,logs", wantNil: true},
 		{name: "investigate composite excludes alerts domain", spec: "investigate", wantSet: investigate},
-		{name: "uppercase valid token", spec: "METRICS", wantSet: toSet(named["metrics"])},
+		{name: "uppercase valid token", spec: "METRICS", wantSet: toSet(named["metrics"], core, feedback)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -81,7 +81,7 @@ func TestInvestigateExcludesAlertsDomainTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, tool := range []string{"get_alerts", "describe_alert_chart", "create_alert_from_chart", "get_drop_rules", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel"} {
+	for _, tool := range []string{"get_alerts", "describe_alert_chart", "create_alert_from_chart", "get_drop_rules", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel", "create_kpi"} {
 		if set.Allows(tool) {
 			t.Errorf("investigate must not include alerts-domain tool %q", tool)
 		}
@@ -91,12 +91,27 @@ func TestInvestigateExcludesAlertsDomainTools(t *testing.T) {
 	}
 }
 
+func TestFeedbackJoinsNamedToolsetsButNotInvestigate(t *testing.T) {
+	for _, spec := range ValidNames() {
+		if spec == "all" {
+			continue
+		}
+		set, err := Parse(spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := set.Allows("send_feedback"), spec != "investigate"; got != want {
+			t.Errorf("Parse(%q).Allows(send_feedback) = %v, want %v", spec, got, want)
+		}
+	}
+}
+
 func TestAlertsToolsetMembership(t *testing.T) {
 	set, err := Parse("alerts")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, tool := range []string{"get_alerts", "add_drop_rule", "describe_alert_chart", "create_alert_from_chart", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel"} {
+	for _, tool := range []string{"get_alerts", "add_drop_rule", "describe_alert_chart", "create_alert_from_chart", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel", "get_entity_kpis", "create_kpi", "prometheus_range_query", "get_dashboard"} {
 		if !set.Allows(tool) {
 			t.Errorf("alerts toolset must include %q", tool)
 		}
@@ -117,10 +132,12 @@ func TestAllows(t *testing.T) {
 	}
 }
 
-func toSet(names []string) map[string]bool {
-	m := make(map[string]bool, len(names))
-	for _, n := range names {
-		m[n] = true
+func toSet(lists ...[]string) map[string]bool {
+	m := map[string]bool{}
+	for _, names := range lists {
+		for _, n := range names {
+			m[n] = true
+		}
 	}
 	return m
 }
@@ -193,7 +210,7 @@ func TestParseInvestigate(t *testing.T) {
 	if set == nil {
 		t.Fatal("investigate must not expand to nil/all")
 	}
-	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "get_service_profile", "list_datasources", "get_apm_service_deviations", "get_flamegraph", "get_profile_services"} {
+	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "get_service_profile", "list_datasources", "get_apm_service_deviations", "get_flamegraph", "get_profile_services", "get_entity_kpis", "get_alert_coverage"} {
 		if !set.Allows(want) {
 			t.Errorf("investigate missing %q", want)
 		}
@@ -201,6 +218,30 @@ func TestParseInvestigate(t *testing.T) {
 	for _, deny := range []string{"get_alerts", "get_alert_groups", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard", "grafana_get_dashboard"} {
 		if set.Allows(deny) {
 			t.Errorf("investigate should exclude %q", deny)
+		}
+	}
+}
+
+func TestParseAlertCoverageMembership(t *testing.T) {
+	for _, tc := range []struct {
+		spec string
+		want bool
+	}{
+		{"alerts", true},
+		{"investigate", true},
+		{"logs", false},
+		{"traces", false},
+		{"metrics", false},
+		{"profiles", false},
+		{"dashboards", false},
+		{"grafana", false},
+	} {
+		set, err := Parse(tc.spec)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", tc.spec, err)
+		}
+		if got := set.Allows("get_alert_coverage"); got != tc.want {
+			t.Errorf("%s allows get_alert_coverage = %v, want %v", tc.spec, got, tc.want)
 		}
 	}
 }
@@ -260,6 +301,20 @@ func TestParseUnknown(t *testing.T) {
 	for _, name := range []string{"logs", "investigate", "all"} {
 		if !strings.Contains(msg, name) {
 			t.Errorf("error should list %q; got %q", name, msg)
+		}
+	}
+}
+
+func TestEveryToolsetIncludesCore(t *testing.T) {
+	for _, spec := range append(ValidNames(), "logs,alerts") {
+		set, err := Parse(spec)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", spec, err)
+		}
+		for _, tool := range []string{"get_current_time", "get_workspace_overview"} {
+			if !set.Allows(tool) {
+				t.Errorf("toolsets=%s hides core tool %q", spec, tool)
+			}
 		}
 	}
 }

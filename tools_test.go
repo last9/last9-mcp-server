@@ -11,6 +11,7 @@ import (
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/toolsets"
 
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -100,9 +101,14 @@ func TestRegisterIfAllowedConvertsSchemaPanicToError(t *testing.T) {
 	type badIn struct {
 		Ch chan int `json:"ch"`
 	}
-	err = registerIfAllowed(server, nil, &mcp.Tool{Name: "bad_tool", Description: "bad"}, func(_ context.Context, _ *mcp.CallToolRequest, _ badIn) (*mcp.CallToolResult, any, error) {
+	gate := newToolGate(toolsets.Filter{})
+	err = registerIfAllowed(server, gate, &mcp.Tool{Name: "bad_tool", Description: "bad"}, func(_ context.Context, _ *mcp.CallToolRequest, _ badIn) (*mcp.CallToolResult, any, error) {
 		return nil, nil, nil
 	})
+	if err != nil {
+		t.Fatalf("queueing an admitted tool returned error: %v", err)
+	}
+	err = gate.registerAdmitted()
 	if err == nil {
 		t.Fatal("expected registration error for invalid tool schema")
 	}
@@ -119,7 +125,7 @@ func TestRegisterAllTools_ExposesDashboardObjectSchemas(t *testing.T) {
 	defer server.Shutdown(context.Background())
 
 	cfg := testToolRegistrationConfig()
-	if err := registerAllTools(server, cfg); err != nil {
+	if _, err := registerAllTools(server, cfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -145,17 +151,49 @@ func TestRegisterAllTools_ExposesDashboardObjectSchemas(t *testing.T) {
 	assertRegisteredDashboardSchema(t, toolByName(t, list.Tools, "create_dashboard"), []string{"dashboard"})
 	assertRegisteredDashboardSchema(t, toolByName(t, list.Tools, "update_dashboard"), []string{"id", "dashboard"})
 
-	if got, want := schemaAsMap(t, toolByName(t, list.Tools, "create_dashboard").InputSchema), schemaAsMap(t, dashboards.GetCreateDashboardInputSchema()); !reflect.DeepEqual(got, want) {
+	if got, want := schemaAsMap(t, toolByName(t, list.Tools, "create_dashboard").InputSchema), normalizedSchemaMap(t, dashboards.GetCreateDashboardInputSchema()); !reflect.DeepEqual(got, want) {
 		t.Fatalf("create_dashboard InputSchema mismatch:\ngot  %v\nwant %v", got, want)
 	}
-	if got, want := schemaAsMap(t, toolByName(t, list.Tools, "update_dashboard").InputSchema), schemaAsMap(t, dashboards.GetUpdateDashboardInputSchema()); !reflect.DeepEqual(got, want) {
+	if got, want := schemaAsMap(t, toolByName(t, list.Tools, "update_dashboard").InputSchema), normalizedSchemaMap(t, dashboards.GetUpdateDashboardInputSchema()); !reflect.DeepEqual(got, want) {
 		t.Fatalf("update_dashboard InputSchema mismatch:\ngot  %v\nwant %v", got, want)
 	}
 
 	for _, name := range []string{"list_dashboard_snapshots", "get_dashboard_snapshot", "delete_dashboard_snapshot", "validate_dashboard"} {
 		_ = toolByName(t, list.Tools, name)
 	}
-	if got, want := schemaAsMap(t, toolByName(t, list.Tools, "validate_dashboard").InputSchema), schemaAsMap(t, dashboards.GetValidateDashboardInputSchema()); !reflect.DeepEqual(got, want) {
+	if got, want := schemaAsMap(t, toolByName(t, list.Tools, "validate_dashboard").InputSchema), normalizedSchemaMap(t, dashboards.GetValidateDashboardInputSchema()); !reflect.DeepEqual(got, want) {
 		t.Fatalf("validate_dashboard InputSchema mismatch:\ngot  %v\nwant %v", got, want)
 	}
+}
+
+func TestGetDashboardSchemaAcceptsEitherIDSpelling(t *testing.T) {
+	tools, _ := servedSurface(t)
+	schema := schemaAsMap(t, toolByName(t, tools, "get_dashboard").InputSchema)
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("get_dashboard InputSchema missing properties: %v", schema)
+	}
+	for _, name := range []string{"id", "dashboard_id"} {
+		property, ok := properties[name].(map[string]any)
+		if !ok || property["type"] != "string" {
+			t.Errorf("property %q must be a string: %v", name, property)
+		}
+	}
+	if required, exists := schema["required"]; exists {
+		t.Errorf("neither ID spelling can be unconditionally required: %v", required)
+	}
+	want := []any{
+		map[string]any{"required": []any{"id"}},
+		map[string]any{"required": []any{"dashboard_id"}},
+	}
+	if got := schema["anyOf"]; !reflect.DeepEqual(got, want) {
+		t.Errorf("anyOf = %v, want %v", got, want)
+	}
+}
+
+func normalizedSchemaMap(t *testing.T, schema any) map[string]any {
+	t.Helper()
+	m := schemaAsMap(t, schema)
+	normalizeSchema(m, false)
+	return m
 }

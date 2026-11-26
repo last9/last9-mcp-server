@@ -1,0 +1,428 @@
+package logs
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+
+	"last9-mcp/internal/constants"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func TestGetLogsHandler_EmptyResultIncludesRetryGuidance(t *testing.T) {
+	client := &http.Client{Transport: logsRoundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != constants.EndpointLogsQueryRange {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		return jsonResponse(http.StatusOK, `{"status":"success","data":{"resultType":"streams","result":[]}}`), nil
+	})}
+
+	result, _, err := NewGetLogsHandler(client, testLogsConfig("https://last9.example"))(
+		context.Background(),
+		&mcp.CallToolRequest{},
+		GetLogsArgs{
+			LogjsonQuery: []map[string]interface{}{{
+				"type": "filter",
+				"query": map[string]interface{}{
+					"$and": []interface{}{
+						map[string]interface{}{"$eq": []interface{}{"ServiceName", "checkut"}},
+						map[string]interface{}{"$eq": []interface{}{"resources['deployment.environment']", "prod"}},
+					},
+				},
+			}},
+			LookbackMinutes: 60,
+		},
+	)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	payload := parseToolJSONResult(t, result)
+	guidance, ok := payload["l9_guidance"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected l9_guidance in empty response, got %#v", payload)
+	}
+	text := guidanceText(guidance)
+	for _, want := range []string{"No logs found", "checkut", "last 1h", "widen", "6h", "did_you_mean", "env"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("guidance %q missing %q", text, want)
+		}
+	}
+}
+
+func TestGetLogsHandler_EmptyGuidanceMatchesResultType(t *testing.T) {
+	for _, tc := range []struct {
+		name, resultType, result string
+		aggregate, wantEmpty     bool
+	}{
+		{"aggregate rows", "matrix", `[{"metric":{"level":"error","count":4},"values":[]}]`, true, false},
+		{"dataframe rows", "dataframe", `[{"metric":{"level":"error","count":4},"values":[]}]`, true, false},
+		{"empty aggregate", "matrix", `[]`, true, true},
+		{"empty stream values", "streams", `[{"stream":{},"values":[]}]`, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &http.Client{Transport: logsRoundTripperFunc(func(*http.Request) (*http.Response, error) {
+				return jsonResponse(http.StatusOK, `{"status":"success","data":{"resultType":"`+tc.resultType+`","result":`+tc.result+`}}`), nil
+			})}
+			query := []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "api"}}}}
+			if tc.aggregate {
+				query = append(query, map[string]interface{}{"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{"function": map[string]interface{}{"$count": []interface{}{}}, "as": "count"}}})
+			}
+			result, _, err := NewGetLogsHandler(client, testLogsConfig("https://last9.example"))(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{LogjsonQuery: query})
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload := parseToolJSONResult(t, result)
+			guidance, _ := payload["l9_guidance"].(map[string]interface{})
+			if got := strings.Contains(guidanceText(guidance), "No matches in the last 5 minutes (default window)"); got != tc.wantEmpty {
+				t.Errorf("empty guidance = %v, want %v", got, tc.wantEmpty)
+			}
+		})
+	}
+}
+
+func TestGetLogsHandler_GroupedCountWithMatchesHasNoEmptyGuidance(t *testing.T) {
+	for _, resultType := range []string{"matrix", "dataframe", "streams"} {
+		t.Run(resultType, func(t *testing.T) {
+			client := &http.Client{Transport: logsRoundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				if strings.Contains(r.URL.Path, "prom_query_instant") {
+					return jsonResponse(http.StatusOK, `[{"metric":{},"value":[1700000000,"1000"]}]`), nil
+				}
+				return jsonResponse(http.StatusOK, `{"query_result":{"status":"success","data":{"resultType":"`+resultType+`","result":[`+
+					`{"metric":{"severity":"error","c":4},"values":[]},`+
+					`{"metric":{"severity":"info","c":96},"values":[]}]}}}`), nil
+			})}
+			pipeline := countAggregatePipeline()
+			pipeline[1]["groupby"] = map[string]interface{}{"SeverityText": "severity"}
+
+			result, _, err := NewGetLogsHandler(client, apiModeCfg("https://last9.example"))(
+				context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{LogjsonQuery: pipeline, LookbackMinutes: 1440})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			payload := parseToolJSONResult(t, result)
+			sanity, _ := payload["l9_sanity"].(map[string]interface{})
+			if matched, _ := sanity["matched_count"].(float64); matched != 100 {
+				t.Fatalf("l9_sanity.matched_count = %v, want 100", sanity["matched_count"])
+			}
+			if guidance, ok := payload["l9_guidance"]; ok {
+				t.Fatalf("grouped count with matches must not carry l9_guidance, got %#v", guidance)
+			}
+		})
+	}
+}
+
+func TestGetServiceLogsHandler_EmptyResultIncludesRetryGuidance(t *testing.T) {
+	client := &http.Client{Transport: logsRoundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != constants.EndpointLogsQueryRange {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		return jsonResponse(http.StatusOK, `{"status":"success","data":{"resultType":"streams","result":[]}}`), nil
+	})}
+
+	result, _, err := NewGetServiceLogsHandler(client, testLogsConfig("https://last9.example"))(
+		context.Background(),
+		&mcp.CallToolRequest{},
+		GetServiceLogsArgs{ServiceName: "checkut", Env: "prod", LookbackMinutes: 60},
+	)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &payload); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	hint, _ := payload["hint"].(string)
+	for _, want := range []string{"No logs found", "checkut", "last 1h", "widen", "6h", "did_you_mean", "environment"} {
+		if !strings.Contains(hint, want) {
+			t.Fatalf("hint %q missing %q", hint, want)
+		}
+	}
+}
+
+func TestGetServiceLogsHandler_TruncatedResultIncludesNextStepGuidance(t *testing.T) {
+	total := 4832
+	truncated := true
+	response := &ServiceLogsResponse{
+		Service:            "checkout",
+		StartTime:          "2026-01-01T00:00:00Z",
+		EndTime:            "2026-01-01T01:00:00Z",
+		Count:              100,
+		Logs:               make([]LogEntry, 100),
+		TotalMatchingLines: &total,
+		LogsTruncated:      &truncated,
+	}
+
+	addServiceLogsGuidance(response, GetServiceLogsArgs{ServiceName: "checkout", Limit: 100}, 100)
+
+	if response.Hint == "" {
+		t.Fatal("truncated service logs response must include a hint")
+	}
+	for _, want := range []string{"Returned 100 of 4,832 logs", "start_time_iso", "end_time_iso", "increase limit"} {
+		if !strings.Contains(response.Hint, want) {
+			t.Fatalf("hint %q missing %q", response.Hint, want)
+		}
+	}
+}
+
+func TestGetLogsHandler_LogSearchAggregateTruncationIncludesNextStepGuidance(t *testing.T) {
+	rows := make([]map[string]any, 0, 12)
+	for i := 0; i < 12; i++ {
+		rows = append(rows, map[string]any{
+			"metric": map[string]any{"service": "checkout"},
+			"values": []any{},
+		})
+	}
+	body, err := json.Marshal(map[string]any{
+		"query_result": map[string]any{
+			"status": "success",
+			"data":   map[string]any{"resultType": "matrix", "result": rows},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal response: %v", err)
+	}
+
+	client := &http.Client{Transport: logsRoundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != constants.EndpointLogSearch {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		return jsonResponse(http.StatusOK, string(body)), nil
+	})}
+	cfg := testLogsConfig("https://last9.example")
+	cfg.UseLogSearchAPI = true
+
+	result, _, err := NewGetLogsHandler(client, cfg)(
+		context.Background(),
+		&mcp.CallToolRequest{},
+		GetLogsArgs{LogjsonQuery: countAggregatePipeline(), Limit: 10},
+	)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	payload := parseToolJSONResult(t, result)
+	marker, ok := payload["l9_result"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected partial marker, got %#v", payload["l9_result"])
+	}
+	hint, _ := marker["hint"].(string)
+	for _, want := range []string{"Returned", "log rows", "start_time_iso", "end_time_iso", "increase limit", "5,000"} {
+		if !strings.Contains(hint, want) {
+			t.Fatalf("hint %q missing %q", hint, want)
+		}
+	}
+}
+
+func TestGetLogsHandler_LogSearchRawTruncationUsesServerCap(t *testing.T) {
+	values := make([]any, 0, 5000)
+	for i := 0; i < 5000; i++ {
+		values = append(values, []any{"1700000000000000000", "line"})
+	}
+	body, err := json.Marshal(map[string]any{
+		"query_result": map[string]any{
+			"status": "success",
+			"data": map[string]any{
+				"resultType": "streams",
+				"result": []any{
+					map[string]any{
+						"stream": map[string]any{"ServiceName": "checkout"},
+						"values": values,
+					},
+				},
+			},
+		},
+		"logs_truncated": true,
+	})
+	if err != nil {
+		t.Fatalf("marshal response: %v", err)
+	}
+
+	client := &http.Client{Transport: logsRoundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != constants.EndpointLogSearch {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		return jsonResponse(http.StatusOK, string(body)), nil
+	})}
+	cfg := testLogsConfig("https://last9.example")
+	cfg.UseLogSearchAPI = true
+	cfg.MaxGetLogsEntries = 10000
+
+	result, _, err := NewGetLogsHandler(client, cfg)(
+		context.Background(),
+		&mcp.CallToolRequest{},
+		GetLogsArgs{
+			LogjsonQuery: []map[string]interface{}{{
+				"type":  "filter",
+				"query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "checkout"}},
+			}},
+		},
+	)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	payload := parseToolJSONResult(t, result)
+	guidance, ok := payload["l9_guidance"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected l9_guidance in truncated response, got %#v", payload)
+	}
+	text := guidanceText(guidance)
+	for _, want := range []string{"Returned the first 5,000 logs", "start_time_iso", "end_time_iso", "add more selective filters"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("guidance %q missing %q", text, want)
+		}
+	}
+	if strings.Contains(text, "10,000") {
+		t.Fatalf("guidance must not suggest configured limit beyond server cap: %q", text)
+	}
+}
+
+func TestGetLogsHandler_LogSearchAggregateNullResultIncludesEmptyGuidance(t *testing.T) {
+	client := &http.Client{Transport: logsRoundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != constants.EndpointLogSearch {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		return jsonResponse(http.StatusOK, `{
+			"query_result":{"status":"success","data":{"resultType":"matrix","result":null}}
+		}`), nil
+	})}
+	cfg := testLogsConfig("https://last9.example")
+	cfg.UseLogSearchAPI = true
+
+	result, _, err := NewGetLogsHandler(client, cfg)(
+		context.Background(),
+		&mcp.CallToolRequest{},
+		GetLogsArgs{LogjsonQuery: countAggregatePipeline(), Limit: 10},
+	)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	payload := parseToolJSONResult(t, result)
+	guidance, ok := payload["l9_guidance"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected l9_guidance for null aggregate result, got %#v", payload)
+	}
+	text := guidanceText(guidance)
+	for _, want := range []string{"No matches in the last 5 minutes (default window)", "widen", "6h", "did_you_mean"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("guidance %q missing %q", text, want)
+		}
+	}
+}
+
+func TestAddGetLogsGuidance_EmptyGuidanceOnlyWhenNoRows(t *testing.T) {
+	rawPipeline := countAggregatePipeline()[:1]
+	aggregateRow := map[string]interface{}{
+		"metric": map[string]interface{}{"c": float64(42)},
+		"values": []interface{}{},
+	}
+	lineStream := map[string]interface{}{
+		"stream": map[string]interface{}{"ServiceName": "checkout"},
+		"values": []interface{}{[]interface{}{"1700000000000000000", "line"}},
+	}
+	emptyStream := map[string]interface{}{
+		"stream": map[string]interface{}{"ServiceName": "checkout"},
+		"values": []interface{}{},
+	}
+	tests := []struct {
+		name       string
+		pipeline   []map[string]interface{}
+		resultType string
+		rows       []interface{}
+		omitResult bool
+		wantEmpty  bool
+	}{
+		{name: "raw search returns lines", pipeline: rawPipeline, resultType: "streams", rows: []interface{}{lineStream}},
+		{name: "aggregate returns rows", pipeline: countAggregatePipeline(), resultType: "matrix", rows: []interface{}{aggregateRow}},
+		{name: "raw search returns nothing", pipeline: rawPipeline, resultType: "streams", rows: []interface{}{}, wantEmpty: true},
+		{name: "aggregate returns nothing", pipeline: countAggregatePipeline(), resultType: "matrix", rows: []interface{}{}, wantEmpty: true},
+		{name: "raw search returns streams without lines", pipeline: rawPipeline, resultType: "streams", rows: []interface{}{emptyStream}, wantEmpty: true},
+		{name: "aggregate rows labelled streams", pipeline: countAggregatePipeline(), resultType: "streams", rows: []interface{}{aggregateRow}},
+		{name: "aggregate dataframe rows", pipeline: countAggregatePipeline(), resultType: "dataframe", rows: []interface{}{aggregateRow}},
+		{name: "empty dataframe", pipeline: countAggregatePipeline(), resultType: "dataframe", rows: []interface{}{}, wantEmpty: true},
+		{name: "empty aggregate labelled streams", pipeline: countAggregatePipeline(), resultType: "streams", rows: []interface{}{}, wantEmpty: true},
+		{name: "null dataframe", pipeline: countAggregatePipeline(), resultType: "dataframe", rows: nil, wantEmpty: true},
+		{name: "null matrix", pipeline: countAggregatePipeline(), resultType: "matrix", rows: nil, wantEmpty: true},
+		{name: "dataframe without result", pipeline: countAggregatePipeline(), resultType: "dataframe", omitResult: true, wantEmpty: true},
+		{name: "matrix without result", pipeline: countAggregatePipeline(), resultType: "matrix", omitResult: true, wantEmpty: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := map[string]interface{}{"resultType": tt.resultType}
+			if !tt.omitResult {
+				data["result"] = tt.rows
+			}
+			result := decodeJSONRoundTrip(t, map[string]interface{}{"status": "success", "data": data})
+
+			addGetLogsGuidance(result, GetLogsArgs{LogjsonQuery: tt.pipeline}, getLogsGuidanceContext{
+				startMs:        0,
+				endMs:          60 * 60 * 1000,
+				effectiveLimit: 100,
+				maxLimit:       5000,
+			})
+
+			guidance, hasGuidance := result["l9_guidance"].(map[string]interface{})
+			if !tt.wantEmpty {
+				if hasGuidance {
+					t.Fatalf("result with rows must not carry l9_guidance, got %#v", guidance)
+				}
+				return
+			}
+			if !hasGuidance || !strings.Contains(guidanceText(guidance), "No logs found") {
+				t.Fatalf("empty result must carry empty-result l9_guidance, got %#v", result["l9_guidance"])
+			}
+		})
+	}
+}
+
+// decodeJSONRoundTrip gives a fixture the shape of a decoded response, so a nil
+// slice becomes JSON null rather than a typed nil.
+func decodeJSONRoundTrip(t *testing.T, value map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal fixture: %v", err)
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal fixture: %v", err)
+	}
+	return decoded
+}
+
+func guidanceText(guidance map[string]interface{}) string {
+	var parts []string
+	for _, value := range guidance {
+		switch value := value.(type) {
+		case string:
+			parts = append(parts, value)
+		case []interface{}:
+			for _, item := range value {
+				parts = append(parts, item.(string))
+			}
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+type logsRoundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (fn logsRoundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return fn(r)
+}
+
+func jsonResponse(status int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: status,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+}

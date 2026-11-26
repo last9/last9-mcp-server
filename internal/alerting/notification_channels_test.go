@@ -49,6 +49,7 @@ func TestGetNotificationChannelsHandler_TSVFormat(t *testing.T) {
 			SendResolved: &boolTrue,
 			Severity:     "critical",
 			Priority:     1,
+			CreatedVia:   "last9-mcp",
 		},
 	}
 
@@ -68,7 +69,7 @@ func TestGetNotificationChannelsHandler_TSVFormat(t *testing.T) {
 	}
 
 	// Header
-	wantHeader := "id\tname\ttype\tglobal\tin_use\tsend_resolved\tsnoozed_until\tseverity\tpriority\tservices\tservice_fqid"
+	wantHeader := "id\tname\ttype\tglobal\tin_use\tsend_resolved\tsnoozed_until\tseverity\tpriority\tservices\tservice_fqid\tcreated_via"
 	if lines[1] != wantHeader {
 		t.Fatalf("header mismatch\ngot:  %s\nwant: %s", lines[1], wantHeader)
 	}
@@ -86,6 +87,9 @@ func TestGetNotificationChannelsHandler_TSVFormat(t *testing.T) {
 	}
 	if cols[9] != "-" {
 		t.Fatalf("services: got %q, want %q (global, no services)", cols[9], "-")
+	}
+	if cols[11] != "last9-mcp" {
+		t.Fatalf("created_via: got %q, want last9-mcp", cols[11])
 	}
 }
 
@@ -304,15 +308,15 @@ func TestGetNotificationChannelsHandler_APIError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for non-200 API response")
 	}
-	if !strings.Contains(err.Error(), "API request failed with status 500") {
+	if !strings.Contains(err.Error(), "notification channels failed with HTTP 500") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestGetNotificationChannelsHandler_APIErrorTruncatesBody(t *testing.T) {
+func TestGetNotificationChannelsHandler_APIErrorOmitsBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(strings.Repeat("x", maxNotificationChannelsErrorBodyBytes+32) + "END"))
+		_, _ = w.Write([]byte("END"))
 	}))
 	defer server.Close()
 
@@ -322,11 +326,8 @@ func TestGetNotificationChannelsHandler_APIErrorTruncatesBody(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for non-200 API response")
 	}
-	if !strings.Contains(err.Error(), "...(truncated)") {
-		t.Fatalf("expected truncated marker in error, got: %v", err)
-	}
 	if strings.Contains(err.Error(), "END") {
-		t.Fatalf("expected truncated body to omit tail marker, got: %v", err)
+		t.Fatalf("expected upstream body to be omitted, got: %v", err)
 	}
 }
 
@@ -442,8 +443,8 @@ func assertStableNotificationChannelsTSV(t *testing.T, text string, wantDataRows
 	rows := make([][]string, 0, wantDataRows)
 	for i, line := range lines[2:] {
 		cols := strings.Split(line, "\t")
-		if len(cols) != 11 {
-			t.Fatalf("row %d: expected 11 TSV columns, got %d: %v", i+1, len(cols), cols)
+		if len(cols) != 12 {
+			t.Fatalf("row %d: expected 12 TSV columns, got %d: %v", i+1, len(cols), cols)
 		}
 		for _, col := range cols {
 			if strings.ContainsAny(col, "\n\r") {

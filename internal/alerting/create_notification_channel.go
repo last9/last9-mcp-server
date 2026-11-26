@@ -44,13 +44,14 @@ type createdNotificationChannel struct {
 }
 
 func NewCreateNotificationChannelHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, CreateNotificationChannelArgs) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, args CreateNotificationChannelArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args CreateNotificationChannelArgs) (*mcp.CallToolResult, any, error) {
 		args.Name, args.Type, args.Destination = strings.TrimSpace(args.Name), strings.ToLower(strings.TrimSpace(args.Type)), strings.TrimSpace(args.Destination)
 		if msg := validateCreateNotificationChannel(args); msg != "" {
 			return utils.ToolErrorResult(msg), nil, nil
 		}
 		in := notifications.CreateNotificationSettingInput{
 			Name: args.Name, Type: args.Type, Destination: args.Destination, SendResolved: args.SendResolved,
+			CreatedVia: newCreatedViaFields(req),
 		}
 		if prop := (notifications.Property{
 			ServiceOwnerHandle:   strings.TrimSpace(args.MentionHandles),
@@ -187,8 +188,6 @@ func validMentionHandles(handles string) bool {
 			ok = len(parts) == 3 && slackUsergroupIDPattern.MatchString(parts[1])
 		case "special":
 			ok = len(parts) == 2 && (parts[1] == "here" || parts[1] == "channel")
-		default:
-			ok = true
 		}
 		if !ok {
 			return false
