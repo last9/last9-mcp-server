@@ -1711,24 +1711,31 @@ func TestPrepareLogJSONQueryAcceptsDottedParseLabelKey(t *testing.T) {
 }
 
 func TestQuotedJSONParseSourceKeys(t *testing.T) {
-	for _, tc := range []struct{ parser, key, wantError string }{
-		{"json", "`@timestamp`", ""},
-		{"json", "`request-id`", ""},
-		{"json", "@timestamp", "`@timestamp`"},
-		{"json", "`@timestamp", "invalid"},
-		{"json", "`@time``stamp`", "invalid"},
-		{"json", "``", "invalid"},
-		{"json", "`$invalid`", "invalid"},
-		{"logfmt", "`@timestamp`", "invalid"},
-		{"regexp", "`@timestamp`", "invalid"},
+	for _, tc := range []struct{ parser, key, alias, wantError string }{
+		{"json", "`@timestamp`", "parsed_timestamp", ""},
+		{"json", "`request-id`", "parsed_request_id", ""},
+		{"json", "@timestamp", "parsed_timestamp", "`@timestamp`"},
+		{"json", "`@timestamp", "parsed_timestamp", "invalid"},
+		{"json", "`@time``stamp`", "parsed_timestamp", "invalid"},
+		{"json", "``", "parsed_timestamp", "invalid"},
+		{"json", "`$invalid`", "parsed_timestamp", "invalid"},
+		{"json", "`.hidden`", "hidden", "invalid"},
+		{"json", "`-flag`", "flag", "invalid"},
+		{"json", "`/root`", "root", "invalid"},
+		{"logfmt", "`@timestamp`", "parsed_timestamp", "invalid"},
+		{"regexp", "`@timestamp`", "parsed_timestamp", "invalid"},
 	} {
 		t.Run(tc.parser+"/"+tc.key, func(t *testing.T) {
-			_, err := prepareLogJSONQuery([]map[string]interface{}{{
-				"type": "parse", "parser": tc.parser, "labels": map[string]interface{}{tc.key: "parsed_field"},
+			got, err := prepareLogJSONQuery([]map[string]interface{}{{
+				"type": "parse", "parser": tc.parser, "labels": map[string]interface{}{tc.key: tc.alias},
 			}}, "logjson_query")
 			if tc.wantError == "" {
 				if err != nil {
 					t.Fatal(err)
+				}
+				labels := got[0]["labels"].(map[string]interface{})
+				if len(labels) != 1 || labels[tc.key] != tc.alias {
+					t.Fatalf("parse labels changed: got %#v, want {%q: %q}", labels, tc.key, tc.alias)
 				}
 			} else if err == nil || !strings.Contains(err.Error(), tc.wantError) {
 				t.Fatalf("expected error containing %q, got %v", tc.wantError, err)
