@@ -2,8 +2,11 @@ package logs
 
 import (
 	"context"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"last9-mcp/internal/models"
@@ -100,6 +103,74 @@ func TestGetLogsGuardrailAllowedQueryRunsWithoutHints(t *testing.T) {
 	}
 	if h := guardrailtest.EnvelopeHint(t, result, "query_guardrail"); h != "" {
 		t.Fatalf("allowed query carries a guardrail hint: %q", h)
+	}
+}
+
+func TestGetLogsGuardrailCoversParseControlQuery(t *testing.T) {
+	var estimates, queries atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		if strings.HasSuffix(r.URL.Path, "/estimate") {
+			estimates.Add(1)
+			_, _ = w.Write([]byte(`{"data":{"bytes":10}}`))
+			return
+		}
+		queries.Add(1)
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"c":1},"values":[]}]}}`))
+	}))
+	defer srv.Close()
+
+	pipeline := []map[string]interface{}{
+		{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "api"}}},
+		{"type": "parse", "parser": "json"},
+		{"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{
+			"function": map[string]interface{}{"$count": []interface{}{}}, "as": "c",
+		}}},
+	}
+	result, _, err := NewGetLogsHandler(srv.Client(), guardrailConfig(srv.URL, guardrail.ModeEnforce))(
+		context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{LogjsonQuery: pipeline, LookbackMinutes: 60})
+	if err != nil || result.IsError {
+		t.Fatalf("handler failed: err=%v isError=%v", err, result.IsError)
+	}
+	if estimates.Load() != queries.Load() {
+		t.Fatalf("estimates=%d queries=%d; every generated query must be admitted", estimates.Load(), queries.Load())
+	}
+	if queries.Load() != 3 {
+		t.Fatalf("queries=%d, want primary, count-sanity, and parse-control queries", queries.Load())
+	}
+}
+
+func TestGetLogsGuardrailRejectsAuxiliaryQueryBeforeAnyQueryRuns(t *testing.T) {
+	var estimates, queries atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		if strings.HasSuffix(r.URL.Path, "/estimate") {
+			if estimates.Add(1) == 1 {
+				_, _ = w.Write([]byte(`{"data":{"bytes":10}}`))
+			} else {
+				_, _ = w.Write([]byte(`{"data":{"bytes":5001}}`))
+			}
+			return
+		}
+		queries.Add(1)
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
+	}))
+	defer srv.Close()
+
+	pipeline := []map[string]interface{}{
+		{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "api"}}},
+		{"type": "parse", "parser": "json"},
+		{"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{
+			"function": map[string]interface{}{"$count": []interface{}{}}, "as": "c",
+		}}},
+	}
+	result, _, err := NewGetLogsHandler(srv.Client(), guardrailConfig(srv.URL, guardrail.ModeEnforce))(
+		context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{LogjsonQuery: pipeline, LookbackMinutes: 60})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if !result.IsError || queries.Load() != 0 {
+		t.Fatalf("isError=%v queries=%d; auxiliary rejection must precede every query", result.IsError, queries.Load())
 	}
 }
 
