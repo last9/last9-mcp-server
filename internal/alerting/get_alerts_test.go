@@ -414,13 +414,17 @@ func TestGetAlertsHandler_ShowsReassignIdentity(t *testing.T) {
 
 func TestGetAlertsStateFiltersInstancesBeforeGrouping(t *testing.T) {
 	for _, tc := range []struct {
-		state, wantRuleState string
-		wantInstances        int
-		invalid              bool
+		name, state, wantRuleState string
+		wantInstances              int
+		invalid                    bool
 	}{
-		{"", "firing", 2, false}, {"firing", "firing", 1, false}, {"normal", "normal", 1, false}, {"pending", "", 0, true}, {"resolved", "", 0, true},
+		{"empty direct-handler state is omission", "", "firing", 2, false},
+		{"firing", "firing", "firing", 1, false},
+		{"normal", "normal", "normal", 1, false},
+		{"pending is invalid", "pending", "", 0, true},
+		{"resolved is invalid", "resolved", "", 0, true},
 	} {
-		t.Run("state="+tc.state, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			var calls atomic.Int32
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls.Add(1)
