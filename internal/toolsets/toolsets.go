@@ -20,6 +20,7 @@ var named = map[string][]string{
 		"get_emerging_log_patterns",
 		"get_log_attributes",
 		"get_log_attributes_for_pipeline",
+		"get_log_services",
 		"get_exceptions",
 		"prometheus_instant_query",
 	},
@@ -38,6 +39,7 @@ var named = map[string][]string{
 		"did_you_mean",
 		"get_service_profile",
 		"get_metric_status",
+		"describe_metric",
 		"prometheus_range_query",
 		"prometheus_instant_query",
 		"prometheus_label_values",
@@ -123,6 +125,7 @@ var named = map[string][]string{
 var core = []string{
 	"get_current_time",
 	"get_workspace_overview",
+	"search_docs",
 }
 
 // feedback tools join every named toolset so any agent can report a problem. The

@@ -13,7 +13,7 @@ import (
 )
 
 func TestGetLogsDescriptionEvalGatedCopy(t *testing.T) {
-	const want = "2cd585a4ef43c8f611a60eed7afc89ea66bd9bef446034a79eceecbb9189996c"
+	const want = "c286db8f5ce7faef6e8574f0efec4d11d1faceb7ca9efd521c219f1fdde212a3"
 	got := fmt.Sprintf("%x", sha256.Sum256([]byte(prompts.GetLogsDescription)))
 	if got != want {
 		t.Fatalf("get_logs description changed without an lq-101 gate run: got sha256 %s, want %s", got, want)
@@ -33,6 +33,7 @@ var promptDescriptionFiles = map[string]string{
 	"delete_dashboard_snapshot.md":         prompts.DeleteDashboardSnapshotDescription,
 	"describe_alert_chart.md":              prompts.DescribeAlertChartDescription,
 	"did_you_mean.md":                      prompts.DidYouMeanDescription,
+	"search_docs.md":                       prompts.SearchDocsDescription,
 	"get_alert_config.md":                  prompts.GetAlertConfigDescription,
 	"get_alert_coverage.md":                prompts.GetAlertCoverageDescription,
 	"get_alert_groups.md":                  prompts.GetAlertGroupsDescription,
@@ -57,10 +58,12 @@ var promptDescriptionFiles = map[string]string{
 	"get_exceptions.md":                    prompts.GetExceptionsInstructions,
 	"get_flamegraph.md":                    prompts.GetFlamegraphDescription,
 	"get_log_attributes.md":                prompts.GetLogAttributesDescription,
+	"get_log_services.md":                  prompts.GetLogServicesDescription,
 	"get_log_attributes_for_pipeline.md":   prompts.GetLogAttributesForPipelineDescription,
 	"get_log_patterns.md":                  prompts.GetLogPatternsDescription,
 	"get_logs_base.md":                     prompts.GetLogsDescription,
 	"get_metric_status.md":                 prompts.GetMetricStatusDescription,
+	"describe_metric.md":                   prompts.DescribeMetricDescription,
 	"get_notification_channels.md":         prompts.GetNotificationChannelsDescription,
 	"get_profile_services.md":              prompts.GetProfileServicesDescription,
 	"get_profile_summary.md":               prompts.GetProfileSummaryDescription,
@@ -295,7 +298,9 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"Only report returned P99 values; empty result→say unavailable and stop", "must prevent fallback counts from replacing an empty percentile result"},
 		{"ALL→`$and`; ANY→`$or`", "must document all/any-word Body searches"},
 		{"never `$icontainsWords`", "must avoid the slower case-insensitive word operator"},
-		{"no service→search `Body` with `$contains` (even service-like)", "must distinguish standalone identifiers from service names"},
+		{"word/ID (even service-like)→`Body` `$containsWords`", "must search standalone identifiers, even service-like ones, as Body words"},
+		{"`$contains` only for substrings", "must reserve the substring operator for true substrings"},
+		{"Service known/findable→scope `ServiceName` + narrow window first", "must scope free-text searches by service and window first"},
 		{"Stages: `filter`|`parse`|`aggregate`|`window_aggregate` (no `transform`/`select`)", "must list valid stage types up front"},
 		{"`$regex` (RE2: no lookaround)", "must state the accepted regexp flavor"},
 		{"`community_member_id`→`attributes['key']`, `resource_attributes['key']`→`resources['key']`", "must show wrong→right field references"},
@@ -304,6 +309,9 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		if !strings.Contains(desc, c.phrase) {
 			t.Errorf("GetLogsDescription missing %q: %s", c.phrase, c.reason)
 		}
+	}
+	if strings.Contains(desc, "with `$contains`") {
+		t.Error("GetLogsDescription must NOT recommend `$contains` for Body text; `$containsWords` is the Body word operator")
 	}
 	if strings.Contains(desc, "window_minutes") {
 		t.Error("GetLogsDescription must NOT contain deprecated 'window_minutes' key")

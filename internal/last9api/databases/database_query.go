@@ -74,6 +74,7 @@ type DiscoverDatabasesResponse struct {
 }
 
 type DiscoverDatabasesInput struct {
+	DBSystem  string
 	TimeRange TimeRange
 	Filters   []Filter
 }
@@ -86,6 +87,7 @@ type queryResult struct {
 }
 
 type discoverRequest struct {
+	DBSystem  string    `json:"db_system,omitempty"`
 	Template  string    `json:"template"`
 	ClusterID string    `json:"cluster_id"`
 	TimeRange TimeRange `json:"time_range"`
@@ -101,6 +103,7 @@ func DiscoverDatabases(
 	}
 
 	body := discoverRequest{
+		DBSystem:  in.DBSystem,
 		Template:  "discover",
 		ClusterID: c.ClusterID(),
 		TimeRange: in.TimeRange,

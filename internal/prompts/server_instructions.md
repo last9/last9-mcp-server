@@ -1,9 +1,10 @@
 {{- $overview := tools "get_workspace_overview" -}}
 {{- $time := tools "get_current_time" -}}
-{{- $services := tools "did_you_mean" "get_service_environments" "get_profile_services" "list_datasources" "grafana_list_datasources" -}}
+{{- $docs := tools "search_docs" -}}
+{{- $services := tools "did_you_mean" "get_log_services" "get_service_environments" "get_profile_services" "list_datasources" "grafana_list_datasources" -}}
 {{- $attributes := tools "get_log_attributes" "get_log_attributes_for_pipeline" "get_trace_attributes" "get_trace_attributes_for_pipeline" "get_trace_attribute_values" -}}
 {{- $metricNames := tools "prometheus_labels" "prometheus_label_values" -}}
-{{- $metricLookups := tools "prometheus_labels" "prometheus_label_values" "get_metric_status" -}}
+{{- $metricLookups := tools "prometheus_labels" "prometheus_label_values" "get_metric_status" "describe_metric" -}}
 {{- $alertRules := tools "get_alert_groups" "get_alert_config" "get_entity_alert_rules" "get_entity_kpis" "get_notification_channels" -}}
 {{- $dashboards := tools "list_dashboards" "list_dashboard_snapshots" "grafana_search_dashboards" "grafana_list_folders" "grafana_list_folder_dashboards" -}}
 {{- $dashboardReads := tools "get_dashboard" "get_dashboard_snapshot" "grafana_get_dashboard" -}}
@@ -41,10 +42,13 @@ When a request names no service or tool, call {{.}} first: it returns environmen
 For today's date or a relative window ("since 9am IST"), call {{.}}.
 {{- end}}
 {{- end}}
-{{- if or $services $attributes $metricNames $metricLookups $logInventory $alertRules $dashboards $dashboardReads}}
+{{- if or $docs $services $attributes $metricNames $metricLookups $logInventory $alertRules $dashboards $dashboardReads}}
 
 ## Discover before you query
 Never guess service, environment, attribute, metric or label names, or dashboard ids; look them up and reuse the exact values.
+{{- with $docs}}
+- Last9 documentation: {{.}}.
+{{- end}}
 {{- with $services}}
 - Services, environments and datasources: {{.}}.
 {{- end}}

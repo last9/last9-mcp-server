@@ -52,6 +52,11 @@ func scanErrorResult(err error, steps []string) *mcp.CallToolResult {
 }
 
 func classifyScanError(err error) (cause, message string) {
+	// The caller ended the search; the scan itself neither failed nor ran long.
+	var stopped *utils.CallerStoppedError
+	if errors.As(err, &stopped) {
+		return "", ""
+	}
 	var upstream *utils.UpstreamHTTPError
 	if errors.As(err, &upstream) {
 		switch status := upstream.StatusCode; {
