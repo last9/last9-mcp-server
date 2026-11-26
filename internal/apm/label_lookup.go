@@ -48,6 +48,9 @@ func resolveLabelWindow(startTimeISO, endTimeISO string, lookbackMinutes float64
 	if err != nil {
 		return labelWindow{}, err
 	}
+	if start >= end {
+		return labelWindow{}, fmt.Errorf("end_time_iso must be after start_time_iso")
+	}
 	isDefault := startTimeISO == "" && endTimeISO == "" && lookbackMinutes == 0
 	return labelWindow{start: start, end: end, isDefault: isDefault}, nil
 }
