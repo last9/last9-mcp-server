@@ -175,7 +175,9 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 func TestGetExceptionsHandler_OmitsUnsafeReferenceURL(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != constants.EndpointPromQueryInstant {
-			t.Fatalf("unexpected path: %s", r.URL.Path)
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			http.Error(w, "unexpected path", http.StatusNotFound)
+			return
 		}
 		w.WriteHeader(http.StatusOK)
 		io.WriteString(w, `[]`)
