@@ -58,6 +58,9 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 		arguments map[string]any
 		wantText  string // substring the surfaced error content should contain
 	}{
+		{name: "pattern body correction", tool: "get_log_patterns", arguments: map[string]any{"service_name": "example", "body": "timeout"}, wantText: `Use body_filters with an array of message substrings, for example ["timeout"]`},
+		{name: "pattern service correction", tool: "get_log_patterns", arguments: map[string]any{"service": "example"}, wantText: "Use service_name"},
+		{name: "all pattern corrections", tool: "get_log_patterns", arguments: map[string]any{"service": "example", "body": "timeout", "other": 1}, wantText: `Use body_filters with an array of message substrings, for example ["timeout"]. Unknown argument "other". Unknown argument "service". Use service_name`},
 		{
 			name:      "service environment filter correction",
 			tool:      "get_service_environments",

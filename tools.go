@@ -195,7 +195,12 @@ func registerTool[In, Out any](server *last9mcp.Last9MCPServer, tool *mcp.Tool, 
 		return fmt.Errorf("register %q: %w", tool.Name, regErr)
 	}
 	// Middleware added later runs first, so integer coercion precedes the check.
-	if check, ok := argumentChecks[tool.Name]; ok {
+	check := argumentChecks[tool.Name]
+	if tool.Name == "get_log_patterns" {
+		properties := tool.InputSchema.(map[string]any)["properties"].(map[string]any)
+		check = logPatternArgumentCheck(properties)
+	}
+	if check != nil {
 		server.Server.AddReceivingMiddleware(argumentCheckMiddleware(tool.Name, check, served))
 	}
 	if coerceErr := addIntegerArgsCoercion[In](server.Server, tool); coerceErr != nil {
