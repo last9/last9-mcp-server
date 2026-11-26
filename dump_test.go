@@ -48,8 +48,8 @@ func TestServedQueryToolSchemas(t *testing.T) {
 		"get_service_traces": {valid: map[string]any{"trace_id": "0123456789abcdef0123456789abcdef"}, invalid: []map[string]any{
 			{"service_name": "api", "unexpected": true}, {"trace_id": 1},
 		}},
-		"prometheus_range_query": {valid: map[string]any{"query": "up", "lookback_minutes": 5.5}, invalid: []map[string]any{
-			{"query": "up", "step": "1m"}, {}, {"query": 1},
+		"prometheus_range_query": {valid: map[string]any{"query": "up", "lookback_minutes": 5.5, "step": 120}, invalid: []map[string]any{
+			{"query": "up", "step": "1m"}, {"query": "up", "step": 1.5}, {"query": "up", "unexpected": true}, {}, {"query": 1},
 		}, requiredFields: []string{"query"}},
 		"prometheus_instant_query": {valid: map[string]any{"query": "up", "lookback_minutes": 5.5}, invalid: []map[string]any{
 			{"promql": "up"}, {}, {"query": 1},
@@ -94,6 +94,72 @@ func TestServedQueryToolSchemas(t *testing.T) {
 	}
 	if len(tests) != 0 {
 		t.Fatalf("tools missing from served schema: %v", tests)
+	}
+}
+
+func TestGetDatabasesDescriptionFollowUpContract(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, toolsets.Filter{}); err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Tools []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			InputSchema struct {
+				Properties map[string]any `json:"properties"`
+			} `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+
+	tools := map[string]struct {
+		description string
+		properties  map[string]any
+	}{}
+	for _, tool := range out.Tools {
+		tools[tool.Name] = struct {
+			description string
+			properties  map[string]any
+		}{tool.Description, tool.InputSchema.Properties}
+	}
+
+	for tool, fields := range map[string]map[string]bool{
+		"get_database_slow_queries": {
+			"id": false, "database_id": false, "db_system": true, "env": true, "host": true,
+			"lookback_minutes": true, "start_time_iso": true, "end_time_iso": true,
+		},
+		"get_database_server_metrics": {
+			"id": false, "database_id": false, "db_system": true, "env": false, "host": false,
+			"lookback_minutes": true, "start_time_iso": true, "end_time_iso": true,
+		},
+	} {
+		properties := tools[tool].properties
+		for field, want := range fields {
+			_, got := properties[field]
+			if got != want {
+				t.Errorf("%s schema field %q present = %t, want %t", tool, field, got, want)
+			}
+		}
+	}
+
+	description := tools["get_databases"].description
+	for _, want := range []string{
+		"The `id` can repeat across environments",
+		"Follow-up tools do not accept `id` or `database_id`",
+		"Omit the discovery row's `host`",
+		"`get_database_server_metrics` scopes instances only by `db_system`",
+		"`lookback_minutes`, `start_time_iso`, or `end_time_iso`",
+		"When `resolved_labels` is present",
+	} {
+		if !strings.Contains(description, want) {
+			t.Errorf("get_databases description missing %q", want)
+		}
+	}
+	if strings.HasSuffix(description, "\n") {
+		t.Error("get_databases description gained a trailing newline")
 	}
 }
 
@@ -775,7 +841,7 @@ func TestDumpToolsInvestigate(t *testing.T) {
 	for _, tool := range out.Tools {
 		byName[tool.Name] = true
 	}
-	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "get_metric_status", "did_you_mean", "get_service_profile", "list_datasources", "get_entity_kpis"} {
+	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "get_metric_status", "did_you_mean", "search_docs", "get_service_profile", "list_datasources", "get_entity_kpis"} {
 		if !byName[want] {
 			t.Errorf("investigate dump missing %q", want)
 		}
@@ -785,7 +851,7 @@ func TestDumpToolsInvestigate(t *testing.T) {
 			t.Errorf("investigate dump should exclude %q", deny)
 		}
 	}
-	if len(out.Tools) >= 44 {
+	if len(out.Tools) >= 45 {
 		t.Fatalf("investigate should expose fewer than full surface; got %d", len(out.Tools))
 	}
 }
@@ -903,6 +969,7 @@ func TestDumpToolsServesCoreToolsUnderEveryToolset(t *testing.T) {
 			wants := map[string][]string{
 				"get_current_time":       {"`range`", "`timezone`", "since <point>", "IST = Asia/Kolkata", "epoch_seconds"},
 				"get_workspace_overview": {"Recommended first call when a request names no service or tool", "names a service, signal or tool: call its tool directly", "`telemetry`", "`errors`", "`null`, which means unknown"},
+				"search_docs":            {"Searches Last9 product docs", "cite only URLs returned by this tool"},
 			}
 			for tool, phrases := range wants {
 				for _, want := range phrases {

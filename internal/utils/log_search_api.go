@@ -133,6 +133,28 @@ func (e *logSearchTimeoutError) Is(target error) bool { return target == ErrLogS
 // SystemError marks the exhausted budget as the backend being slow, not a bad request.
 func (e *logSearchTimeoutError) SystemError() bool { return true }
 
+// CallerStoppedError reports a search the caller ended, by a cancel or by its
+// own deadline arriving before the search's budget. The scan was not slow, so
+// it carries no narrowing advice.
+type CallerStoppedError struct {
+	Op    string
+	Cause error // context.Canceled or context.DeadlineExceeded
+}
+
+// CallerStopped returns the error for op once ctx has ended.
+func CallerStopped(ctx context.Context, op string) error {
+	return &CallerStoppedError{Op: op, Cause: ctx.Err()}
+}
+
+func (e *CallerStoppedError) Error() string {
+	if errors.Is(e.Cause, context.DeadlineExceeded) {
+		return fmt.Sprintf("%s stopped at the caller's deadline: %v", e.Op, e.Cause)
+	}
+	return fmt.Sprintf("%s cancelled: %v", e.Op, e.Cause)
+}
+
+func (e *CallerStoppedError) Unwrap() error { return e.Cause }
+
 func logSearchBudget(cfg models.Config) time.Duration {
 	if cfg.LogSearchTimeout > 0 {
 		return cfg.LogSearchTimeout
@@ -140,9 +162,9 @@ func logSearchBudget(cfg models.Config) time.Duration {
 	return constants.LogSearchTimeout
 }
 
-// SearchLogs runs one search within the log search time budget and decodes it.
-// The endpoint takes no budget of its own, so the deadline is applied here and
-// covers reading the body as well as waiting for headers.
+// SearchLogs runs one search until the caller's cancel or deadline, or the log
+// search budget, whichever comes first. The endpoint takes no budget of its own,
+// so it is applied here and covers reading the body as well as the headers.
 func SearchLogs(
 	ctx context.Context, client *http.Client, cfg models.Config, req LogSearchRequest,
 ) (map[string]any, error) {
@@ -152,11 +174,15 @@ func SearchLogs(
 	defer cancel()
 
 	result, err := searchLogs(searchCtx, client, cfg, req)
-	// A caller that cancelled or ran out its own deadline did not hit this budget.
-	if err != nil && ctx.Err() == nil && isTimeout(searchCtx, err) {
+	switch {
+	case err == nil:
+		return result, nil
+	case ctx.Err() != nil:
+		return nil, CallerStopped(ctx, req.Op)
+	case isTimeout(searchCtx, err):
 		return nil, &logSearchTimeoutError{op: req.Op, budget: budget}
 	}
-	return result, err
+	return nil, err
 }
 
 func searchLogs(

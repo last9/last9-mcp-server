@@ -49,6 +49,9 @@ func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Co
 		if err := SanitizeTraceJSONQuery(args.TracejsonQuery); err != nil {
 			return nil, nil, err
 		}
+		if err := utils.NormalizeWindowAggregateDays(args.TracejsonQuery); err != nil {
+			return nil, nil, err
+		}
 		if args.LookbackMinutes < 0 {
 			return nil, nil, fmt.Errorf("lookback_minutes must be at least 1")
 		}

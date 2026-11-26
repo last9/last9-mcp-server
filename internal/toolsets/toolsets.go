@@ -123,6 +123,7 @@ var named = map[string][]string{
 var core = []string{
 	"get_current_time",
 	"get_workspace_overview",
+	"search_docs",
 }
 
 // feedback tools join every named toolset so any agent can report a problem. The

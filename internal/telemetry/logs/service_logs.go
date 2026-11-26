@@ -603,7 +603,7 @@ func fetchServiceLogsViaSearchAPI(
 		Pipeline: logjsonQuery,
 		StartMs:  startTime.UnixMilli(),
 		EndMs:    endTime.UnixMilli(),
-		Limit:    limit + 1,
+		Limit:    limit,
 		Index:    index,
 	})
 	if err != nil {

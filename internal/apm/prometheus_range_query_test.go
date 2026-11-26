@@ -255,6 +255,150 @@ func TestPromqlRangeQueryRelays400AndDrains502(t *testing.T) {
 	}
 }
 
+func TestPromqlRangeQueryHandler_ExplicitStepSpacing(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
+
+	handler := NewPromqlRangeQueryHandler(http.DefaultClient, *cfg)
+	end := time.Now().UTC().Truncate(time.Minute)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, PromqlRangeQueryArgs{
+		Query:        "vector(1)",
+		StartTimeISO: end.Add(-10 * time.Minute).Format(time.RFC3339),
+		EndTimeISO:   end.Format(time.RFC3339),
+		Step:         120,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("handler returned error result: %s", utils.GetTextContent(t, result))
+	}
+
+	var series []struct {
+		Values [][]json.Number `json:"values"`
+	}
+	dec := json.NewDecoder(strings.NewReader(utils.GetTextContent(t, result)))
+	dec.UseNumber()
+	if err := dec.Decode(&series); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(series) != 1 || len(series[0].Values) < 2 {
+		t.Fatalf("want one series with at least two samples, got %+v", series)
+	}
+	values := series[0].Values
+	for i := 1; i < len(values); i++ {
+		prev, _ := values[i-1][0].Float64()
+		cur, _ := values[i][0].Float64()
+		if cur-prev != 120 {
+			t.Fatalf("samples %d and %d are %vs apart, want 120s: %v", i-1, i, cur-prev, values)
+		}
+	}
+}
+
+func newStepCaptureServer(t *testing.T) (*httptest.Server, *[]map[string]any) {
+	t.Helper()
+	var bodies []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request body: %v", err)
+		}
+		bodies = append(bodies, body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	t.Cleanup(server.Close)
+	return server, &bodies
+}
+
+func stepTestConfig(baseURL string) models.Config {
+	return models.Config{
+		APIBaseURL:   baseURL,
+		TokenManager: &auth.TokenManager{AccessToken: "t", ExpiresAt: time.Now().Add(time.Hour)},
+	}
+}
+
+func TestPromqlRangeHandler_ForwardsStep(t *testing.T) {
+	cases := []struct {
+		name     string
+		step     int64
+		wantStep any
+	}{
+		{name: "omitted or zero keeps backend default", step: 0, wantStep: nil},
+		{name: "explicit step in seconds", step: 120, wantStep: float64(120)},
+		{name: "step equal to the window", step: 600, wantStep: float64(600)},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			server, bodies := newStepCaptureServer(t)
+			handler := NewPromqlRangeQueryHandler(server.Client(), stepTestConfig(server.URL))
+
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, PromqlRangeQueryArgs{
+				Query:        "vector(1)",
+				StartTimeISO: "2025-06-23T16:00:00Z",
+				EndTimeISO:   "2025-06-23T16:10:00Z",
+				Step:         tt.step,
+			})
+			if err != nil {
+				t.Fatalf("handler returned error: %v", err)
+			}
+			if len(*bodies) != 1 {
+				t.Fatalf("upstream requests = %d, want 1", len(*bodies))
+			}
+			step, present := (*bodies)[0]["step"]
+			if tt.wantStep == nil && present {
+				t.Fatalf("step sent as %v; omitted or zero must leave it to the backend", step)
+			}
+			if tt.wantStep != nil && step != tt.wantStep {
+				t.Fatalf("step = %v, want %v", step, tt.wantStep)
+			}
+		})
+	}
+}
+
+func TestPromqlRangeHandler_RejectsOutOfRangeStepBeforeQuery(t *testing.T) {
+	cases := []struct {
+		name    string
+		end     string
+		step    int64
+		wantErr string
+	}{
+		{name: "negative", end: "2025-06-23T16:10:00Z", step: -60, wantErr: "step must be a positive number of seconds"},
+		{name: "larger than the window", end: "2025-06-23T16:10:00Z", step: 601, wantErr: "at most the 600s query window"},
+		{name: "more than 11000 points", end: "2025-06-23T19:03:21Z", step: 1, wantErr: "set step to at least 2 seconds"},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			server, bodies := newStepCaptureServer(t)
+			handler := NewPromqlRangeQueryHandler(server.Client(), stepTestConfig(server.URL))
+
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, PromqlRangeQueryArgs{
+				Query: "vector(1)", StartTimeISO: "2025-06-23T16:00:00Z", EndTimeISO: tt.end, Step: tt.step,
+			})
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error = %v, want it to contain %q", err, tt.wantErr)
+			}
+			if len(*bodies) != 0 {
+				t.Fatalf("upstream requests = %d, want 0", len(*bodies))
+			}
+		})
+	}
+}
+
+func TestPromqlRangeHandler_AcceptsStepAt11000Points(t *testing.T) {
+	server, bodies := newStepCaptureServer(t)
+	handler := NewPromqlRangeQueryHandler(server.Client(), stepTestConfig(server.URL))
+
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, PromqlRangeQueryArgs{
+		Query: "vector(1)", StartTimeISO: "2025-06-23T16:00:00Z", EndTimeISO: "2025-06-23T19:03:20Z", Step: 1,
+	})
+	if err != nil {
+		t.Fatalf("a window of exactly 11000 steps must be accepted: %v", err)
+	}
+	if len(*bodies) != 1 || (*bodies)[0]["step"] != float64(1) {
+		t.Fatalf("bodies = %v, want one request with step 1", *bodies)
+	}
+}
+
 func callPromRangeQuery(t *testing.T, body string) *mcp.CallToolResult {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

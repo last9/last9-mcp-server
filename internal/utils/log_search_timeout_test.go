@@ -105,6 +105,28 @@ func TestSearchLogs_CallerCancelIsNotReportedAsTimeout(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("err = %v, want it to wrap context.Canceled", err)
 	}
+	if msg := err.Error(); !strings.HasPrefix(msg, "logs query cancelled") {
+		t.Errorf("error %q does not say the caller cancelled the search", msg)
+	}
+}
+
+// A caller deadline shorter than the budget ends the search at that deadline,
+// and the error names it instead of the budget's timeout advice.
+func TestSearchLogs_CallerDeadlineBeforeBudgetIsReportedAsCallerDeadline(t *testing.T) {
+	srv, _ := stalledLogSearchServer(t, false)
+	elapsed, err := searchLogsWithBudget(t, DeadlineContext(t, 50*time.Millisecond), srv, time.Minute)
+	if elapsed > 5*time.Second {
+		t.Errorf("returned after %s, want at the 50ms caller deadline", elapsed)
+	}
+	if errors.Is(err, ErrLogSearchTimeout) {
+		t.Fatalf("err = %v, want the caller's deadline, not the time budget advice", err)
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("err = %v, want it to wrap context.DeadlineExceeded", err)
+	}
+	if msg := err.Error(); !strings.HasPrefix(msg, "logs query stopped at the caller's deadline") {
+		t.Errorf("error %q does not say the caller's deadline ended the search", msg)
+	}
 }
 
 func TestLogSearchBudget(t *testing.T) {

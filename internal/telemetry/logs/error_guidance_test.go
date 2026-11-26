@@ -85,6 +85,38 @@ func TestGetLogsHandler_EmptyGuidanceMatchesResultType(t *testing.T) {
 	}
 }
 
+func TestGetLogsHandler_GroupedCountWithMatchesHasNoEmptyGuidance(t *testing.T) {
+	for _, resultType := range []string{"matrix", "dataframe", "streams"} {
+		t.Run(resultType, func(t *testing.T) {
+			client := &http.Client{Transport: logsRoundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				if strings.Contains(r.URL.Path, "prom_query_instant") {
+					return jsonResponse(http.StatusOK, `[{"metric":{},"value":[1700000000,"1000"]}]`), nil
+				}
+				return jsonResponse(http.StatusOK, `{"query_result":{"status":"success","data":{"resultType":"`+resultType+`","result":[`+
+					`{"metric":{"severity":"error","c":4},"values":[]},`+
+					`{"metric":{"severity":"info","c":96},"values":[]}]}}}`), nil
+			})}
+			pipeline := countAggregatePipeline()
+			pipeline[1]["groupby"] = map[string]interface{}{"SeverityText": "severity"}
+
+			result, _, err := NewGetLogsHandler(client, apiModeCfg("https://last9.example"))(
+				context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{LogjsonQuery: pipeline, LookbackMinutes: 1440})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			payload := parseToolJSONResult(t, result)
+			sanity, _ := payload["l9_sanity"].(map[string]interface{})
+			if matched, _ := sanity["matched_count"].(float64); matched != 100 {
+				t.Fatalf("l9_sanity.matched_count = %v, want 100", sanity["matched_count"])
+			}
+			if guidance, ok := payload["l9_guidance"]; ok {
+				t.Fatalf("grouped count with matches must not carry l9_guidance, got %#v", guidance)
+			}
+		})
+	}
+}
+
 func TestGetServiceLogsHandler_EmptyResultIncludesRetryGuidance(t *testing.T) {
 	client := &http.Client{Transport: logsRoundTripperFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path != constants.EndpointLogsQueryRange {
@@ -287,43 +319,40 @@ func TestGetLogsHandler_LogSearchAggregateNullResultIncludesEmptyGuidance(t *tes
 }
 
 func TestAddGetLogsGuidance_EmptyGuidanceOnlyWhenNoRows(t *testing.T) {
+	rawPipeline := countAggregatePipeline()[:1]
 	aggregateRow := map[string]interface{}{
 		"metric": map[string]interface{}{"c": float64(42)},
 		"values": []interface{}{},
 	}
+	lineStream := map[string]interface{}{
+		"stream": map[string]interface{}{"ServiceName": "checkout"},
+		"values": []interface{}{[]interface{}{"1700000000000000000", "line"}},
+	}
+	emptyStream := map[string]interface{}{
+		"stream": map[string]interface{}{"ServiceName": "checkout"},
+		"values": []interface{}{},
+	}
 	tests := []struct {
 		name       string
+		pipeline   []map[string]interface{}
 		resultType string
 		rows       []interface{}
 		omitResult bool
 		wantEmpty  bool
 	}{
-		{name: "dataframe with rows", resultType: "dataframe", rows: []interface{}{aggregateRow}},
-		{name: "matrix with rows", resultType: "matrix", rows: []interface{}{aggregateRow}},
-		{name: "empty dataframe", resultType: "dataframe", rows: []interface{}{}, wantEmpty: true},
-		{name: "empty matrix", resultType: "matrix", rows: []interface{}{}, wantEmpty: true},
-		{name: "null dataframe", resultType: "dataframe", rows: nil, wantEmpty: true},
-		{name: "null matrix", resultType: "matrix", rows: nil, wantEmpty: true},
-		{name: "dataframe without result", resultType: "dataframe", omitResult: true, wantEmpty: true},
-		{name: "matrix without result", resultType: "matrix", omitResult: true, wantEmpty: true},
-		{
-			name:       "streams with lines",
-			resultType: "streams",
-			rows: []interface{}{map[string]interface{}{
-				"stream": map[string]interface{}{"ServiceName": "checkout"},
-				"values": []interface{}{[]interface{}{"1700000000000000000", "line"}},
-			}},
-		},
-		{
-			name:       "streams with no lines",
-			resultType: "streams",
-			rows: []interface{}{map[string]interface{}{
-				"stream": map[string]interface{}{"ServiceName": "checkout"},
-				"values": []interface{}{},
-			}},
-			wantEmpty: true,
-		},
-		{name: "empty streams", resultType: "streams", rows: []interface{}{}, wantEmpty: true},
+		{name: "raw search returns lines", pipeline: rawPipeline, resultType: "streams", rows: []interface{}{lineStream}},
+		{name: "aggregate returns rows", pipeline: countAggregatePipeline(), resultType: "matrix", rows: []interface{}{aggregateRow}},
+		{name: "raw search returns nothing", pipeline: rawPipeline, resultType: "streams", rows: []interface{}{}, wantEmpty: true},
+		{name: "aggregate returns nothing", pipeline: countAggregatePipeline(), resultType: "matrix", rows: []interface{}{}, wantEmpty: true},
+		{name: "raw search returns streams without lines", pipeline: rawPipeline, resultType: "streams", rows: []interface{}{emptyStream}, wantEmpty: true},
+		{name: "aggregate rows labelled streams", pipeline: countAggregatePipeline(), resultType: "streams", rows: []interface{}{aggregateRow}},
+		{name: "aggregate dataframe rows", pipeline: countAggregatePipeline(), resultType: "dataframe", rows: []interface{}{aggregateRow}},
+		{name: "empty dataframe", pipeline: countAggregatePipeline(), resultType: "dataframe", rows: []interface{}{}, wantEmpty: true},
+		{name: "empty aggregate labelled streams", pipeline: countAggregatePipeline(), resultType: "streams", rows: []interface{}{}, wantEmpty: true},
+		{name: "null dataframe", pipeline: countAggregatePipeline(), resultType: "dataframe", rows: nil, wantEmpty: true},
+		{name: "null matrix", pipeline: countAggregatePipeline(), resultType: "matrix", rows: nil, wantEmpty: true},
+		{name: "dataframe without result", pipeline: countAggregatePipeline(), resultType: "dataframe", omitResult: true, wantEmpty: true},
+		{name: "matrix without result", pipeline: countAggregatePipeline(), resultType: "matrix", omitResult: true, wantEmpty: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -333,7 +362,7 @@ func TestAddGetLogsGuidance_EmptyGuidanceOnlyWhenNoRows(t *testing.T) {
 			}
 			result := decodeJSONRoundTrip(t, map[string]interface{}{"status": "success", "data": data})
 
-			addGetLogsGuidance(result, GetLogsArgs{LogjsonQuery: countAggregatePipeline()}, getLogsGuidanceContext{
+			addGetLogsGuidance(result, GetLogsArgs{LogjsonQuery: tt.pipeline}, getLogsGuidanceContext{
 				startMs:        0,
 				endMs:          60 * 60 * 1000,
 				effectiveLimit: 100,

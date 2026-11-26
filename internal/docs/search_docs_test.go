@@ -1,0 +1,249 @@
+package docs
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+const fixtureIndex = `{"generated_at":"2026-11-16T00:00:00Z","pages":[
+{"url":"https://last9.io/docs/otel/kubernetes-operator/","title":"Kubernetes Operator","description":"Install telemetry","headings":["Resource attributes"],"sections":[{"heading":"Resource attributes","anchor":"resource-attributes","text":"The OpenTelemetry k8sattributes processor adds Kubernetes metadata to spans and metrics."}]},
+{"url":"https://last9.io/docs/logs/kubernetes/","title":"Kubernetes logs","description":"Collect pod logs","headings":["Kubernetes resource attributes"],"sections":[{"heading":"Kubernetes resource attributes","anchor":"attributes","text":"Add pod and namespace resource attributes to Kubernetes logs."}]},
+{"url":"https://last9.io/docs/metrics/kubernetes/","title":"Kubernetes metrics","description":"Collect cluster metrics","headings":["Kubernetes resource attributes"],"sections":[{"heading":"Kubernetes resource attributes","anchor":"resource-attributes","text":"Use pod resource attributes when querying Kubernetes metrics."}]},
+{"url":"https://last9.io/docs/prometheus/","title":"Prometheus queries","description":"Query metrics","headings":[],"sections":[{"heading":"PromQL","anchor":"promql","text":"Write Prometheus expressions."}]}]}`
+
+func TestSearchRanksKubernetesSynonyms(t *testing.T) {
+	f := fixtureFetcher(t, fixtureIndex)
+	hits, err := f.Search(context.Background(), "k8s attributes", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{
+		"https://last9.io/docs/otel/kubernetes-operator/#resource-attributes": true,
+		"https://last9.io/docs/logs/kubernetes/#attributes":                   true,
+		"https://last9.io/docs/metrics/kubernetes/#resource-attributes":       true,
+	}
+	if len(hits) != 3 {
+		t.Fatalf("got %d hits, want 3: %#v", len(hits), hits)
+	}
+	for _, hit := range hits {
+		if !want[hit.URL] {
+			t.Errorf("unexpected URL %q", hit.URL)
+		}
+	}
+}
+
+func TestSearchDocsHandlerOutputAndValidation(t *testing.T) {
+	f := fixtureFetcher(t, fixtureIndex)
+	handler := newSearchDocsHandler(f)
+	result, _, err := handler(context.Background(), nil, SearchDocsArgs{Query: "promql"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(text, `"url":"https://last9.io/docs/prometheus/#promql"`) {
+		t.Fatalf("result = %s", text)
+	}
+	result, _, err = handler(context.Background(), nil, SearchDocsArgs{Query: "missing"})
+	if err != nil || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "no matching Last9 documentation page") {
+		t.Fatalf("no-match result=%#v err=%v", result, err)
+	}
+	if _, _, err := handler(context.Background(), nil, SearchDocsArgs{Query: "  "}); err == nil {
+		t.Fatal("empty query accepted")
+	}
+}
+
+func TestFetcherConditionalRefreshAndStaleFallback(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch calls.Add(1) {
+		case 1:
+			w.Header().Set("ETag", `"v1"`)
+			fmt.Fprint(w, fixtureIndex)
+		case 2:
+			if got := r.Header.Get("If-None-Match"); got != `"v1"` {
+				t.Errorf("If-None-Match = %q", got)
+			}
+			w.WriteHeader(http.StatusNotModified)
+		default:
+			http.Error(w, "unavailable", http.StatusBadGateway)
+		}
+	}))
+	defer srv.Close()
+	f := NewFetcher(srv.Client(), srv.URL)
+	f.ttl = 0
+	for i := 0; i < 3; i++ {
+		hits, err := f.Search(context.Background(), "promql", 5)
+		if err != nil || len(hits) != 1 {
+			t.Fatalf("search %d: hits=%#v err=%v", i, hits, err)
+		}
+	}
+}
+
+type waitingContext struct {
+	context.Context
+	once    sync.Once
+	waiting chan struct{}
+}
+
+func (c *waitingContext) Done() <-chan struct{} {
+	c.once.Do(func() { close(c.waiting) })
+	return c.Context.Done()
+}
+
+func TestConcurrentRefreshSharesStaleResult(t *testing.T) {
+	for _, status := range []int{http.StatusNotModified, http.StatusBadGateway} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			var calls atomic.Int32
+			started := make(chan struct{})
+			release := make(chan struct{})
+			var releaseOnce sync.Once
+			unblock := func() { releaseOnce.Do(func() { close(release) }) }
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				n := calls.Add(1)
+				if n == 1 {
+					w.Header().Set("ETag", `"v1"`)
+					fmt.Fprint(w, fixtureIndex)
+					return
+				}
+				if n == 2 {
+					close(started)
+					<-release
+				}
+				w.WriteHeader(status)
+			}))
+			defer srv.Close()
+			defer unblock()
+
+			f := NewFetcher(srv.Client(), srv.URL)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if hits, err := f.Search(ctx, "promql", 5); err != nil || len(hits) != 1 {
+				t.Fatalf("initial search: hits=%v err=%v", hits, err)
+			}
+			f.mu.Lock()
+			f.fetchedAt = f.fetchedAt.Add(-2 * time.Hour)
+			f.mu.Unlock()
+
+			results := make(chan error, 2)
+			search := func(searchCtx context.Context) {
+				hits, err := f.Search(searchCtx, "promql", 5)
+				if err == nil && len(hits) != 1 {
+					err = fmt.Errorf("hits=%v", hits)
+				}
+				results <- err
+			}
+			go search(ctx)
+			select {
+			case <-started:
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+			waiter := &waitingContext{Context: ctx, waiting: make(chan struct{})}
+			go search(waiter)
+			select {
+			case <-waiter.waiting:
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+			unblock()
+			for range 2 {
+				select {
+				case err := <-results:
+					if err != nil {
+						t.Fatal(err)
+					}
+				case <-ctx.Done():
+					t.Fatal(ctx.Err())
+				}
+			}
+			if got := calls.Load(); got != 2 {
+				t.Fatalf("concurrent callers made %d requests; want initial load plus one shared refresh", got)
+			}
+		})
+	}
+}
+
+func TestFetcherRejectsInitialFailureAndOversizeBody(t *testing.T) {
+	tests := []struct {
+		name string
+		fn   http.HandlerFunc
+	}{
+		{"initial failure", func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "no", http.StatusBadGateway) }},
+		{"oversize", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Length", fmt.Sprint(maxIndexBytes+1))
+			w.WriteHeader(http.StatusOK)
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(tt.fn)
+			defer srv.Close()
+			if _, err := NewFetcher(srv.Client(), srv.URL).Search(context.Background(), "logs", 5); err == nil {
+				t.Fatal("expected error")
+			}
+		})
+	}
+}
+
+func TestSearchLimitNoMatchAndExcerptBoundary(t *testing.T) {
+	long := strings.Repeat("word ", 170) + "ending"
+	index := strings.Replace(fixtureIndex, "Write Prometheus expressions.", long, 1)
+	f := fixtureFetcher(t, index)
+	hits, err := f.Search(context.Background(), "word", 99)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 1 || len(hits[0].Excerpt) > 800 || !strings.HasSuffix(hits[0].Excerpt, "word") {
+		t.Fatalf("bad excerpt: len=%d %q", len(hits[0].Excerpt), hits[0].Excerpt)
+	}
+	if hits, err = f.Search(context.Background(), "kubernetes", -2); err != nil || len(hits) != 1 {
+		t.Fatalf("minimum limit: hits=%#v err=%v", hits, err)
+	}
+	if hits, err = f.Search(context.Background(), "kubernetes", 99); err != nil || len(hits) != 3 {
+		t.Fatalf("maximum limit: hits=%#v err=%v", hits, err)
+	}
+	if hits, err = f.Search(context.Background(), "doesnotexist", -2); err != nil || len(hits) != 0 {
+		t.Fatalf("no match: hits=%#v err=%v", hits, err)
+	}
+	if _, err := f.Search(context.Background(), "  ", 5); err == nil {
+		t.Fatal("empty query accepted")
+	}
+}
+
+func TestQuerySynonyms(t *testing.T) {
+	for query, want := range map[string]string{
+		"k8s": "kubernetes", "kubernetes": "k8s", "otel": "opentelemetry",
+		"otlp": "opentelemetry", "promql": "prometheus", "pods": "pod",
+	} {
+		if got := expand(tokenize(query)); !contains(got, want) {
+			t.Errorf("expand(%q) = %v, want %q", query, got, want)
+		}
+	}
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func fixtureFetcher(t *testing.T, body string) *Fetcher {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, body) }))
+	t.Cleanup(srv.Close)
+	f := NewFetcher(srv.Client(), srv.URL)
+	f.ttl = time.Hour
+	return f
+}

@@ -52,6 +52,9 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 		if err != nil {
 			return nil, nil, err
 		}
+		if err := utils.NormalizeWindowAggregateDays(sanitizedQuery); err != nil {
+			return nil, nil, err
+		}
 		args.LogjsonQuery = sanitizedQuery
 		if args.LookbackMinutes < 0 {
 			return nil, nil, fmt.Errorf("lookback_minutes must be at least 1")
@@ -158,11 +161,18 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 			cancelLink()
 			<-resolvedIndexCh
 		}
+		if rangeResult := rangeLimitResult(err, args.LogjsonQuery, utils.TimeChunk{StartMs: startTime, EndMs: endTime}); rangeResult != nil {
+			return rangeResult, nil
+		}
 		if scanResult := scanErrorResult(err, getLogsScanSteps); scanResult != nil {
 			return scanResult, nil
 		}
 		return nil, err
 	}
+	endParseCheck := utils.StartToolPhase(ctx, "get_logs", "parse_check")
+	scope := parseCheckScope{client: client, cfg: cfg, startMs: startTime, endMs: endTime, index: args.Index}
+	appendParseCheck(ctx, scope, args.LogjsonQuery, result)
+	endParseCheck(nil)
 	endProcess := utils.StartToolPhase(ctx, "get_logs", "post_process")
 	q.guardrailVerdict.AddHints(&env)
 	addGetLogsHints(cfg, args, result, &env)
@@ -505,7 +515,7 @@ func fetchViaLogSearchAPI(
 		aggregateLimit = effectiveGetLogsAggregateLimit(cfg, args.Limit)
 	} else {
 		rawLimit = effectiveGetLogsChunkLimit(cfg, args.Limit)
-		req.Limit = rawLimit + 1
+		req.Limit = rawLimit
 	}
 
 	result, err := searchLogsByWindow(ctx, client, cfg, req)

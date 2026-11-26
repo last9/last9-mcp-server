@@ -24,6 +24,7 @@ import (
 )
 
 type AlertRuleStateRequest struct {
+	RuleID         string       `json:"rule_id,omitempty" jsonschema:"Exact alert rule ID from get_alert_config or get_alerts. Omit to include all matching rules."`
 	AlertGroupID   string       `json:"alert_group_id,omitempty" jsonschema:"Optional filter by alert group ID"`
 	RuleName       string       `json:"rule_name,omitempty" jsonschema:"Optional regex filter by rule name"`
 	AlertGroupName string       `json:"alert_group_name,omitempty" jsonschema:"Optional regex filter by alert group name"`
@@ -145,6 +146,9 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 			return utils.ToolErrorResult(fmt.Sprintf("time range and step result in too many points. Maximum is %d samples; set step to at least %d seconds or narrow the range", alertRuleStateMaxPoints, minStep)), nil, nil
 		}
 		points := span/args.Step + 1
+		if msg := futureSampleError(startTime, startTime+(points-1)*args.Step, utils.Now().Unix()); msg != "" {
+			return utils.ToolErrorResult(msg), nil, nil
+		}
 
 		type Datapoint struct {
 			Timestamp int64 `json:"timestamp"`
@@ -173,7 +177,9 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 		// when the span arithmetic overflows.
 		for i := int64(0); i < points; i++ {
 			g.Go(func() error {
-				rules, err := fetchRuleStates(gctx, api, query, startTime+i*args.Step)
+				sample := query
+				sample.Timestamp = startTime + i*args.Step
+				rules, err := fetchRuleStates(gctx, api, sample, args.RuleID)
 				if err != nil {
 					return err
 				}
@@ -207,8 +213,8 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 			}
 		}
 
-		if len(results) == 0 && (args.AlertGroupID != "" || args.RuleName != "" || args.AlertGroupName != "") {
-			return utils.ToolErrorResult("No alert rules matched the supplied filters in the sampled time range. Check alert_group_id, rule_name and alert_group_name with get_alert_config; broaden the time range or remove other filters. An empty history does not establish whether the group or rule exists."), nil, nil
+		if len(results) == 0 && (args.RuleID != "" || args.AlertGroupID != "" || args.RuleName != "" || args.AlertGroupName != "") {
+			return utils.ToolErrorResult("No alert rules matched the supplied filters in the sampled time range. Check rule_id, alert_group_id, rule_name and alert_group_name with get_alert_config; broaden the time range or remove other filters. An empty history does not establish whether the group or rule exists."), nil, nil
 		}
 
 		// Construct final continuous timeseries for all seen rules. Gaps are zero-filled; see tool description for caveats.
@@ -241,6 +247,25 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 	}
 }
 
+// futureSampleError checks the last scheduled sample, not end_time: an end_time
+// past now is fine while no sample lands after it.
+func futureSampleError(start, lastSample, now int64) string {
+	if lastSample <= now {
+		return ""
+	}
+	remedy := fmt.Sprintf("set end_time to %d or earlier, or call get_current_time and use its value as end_time", now)
+	if start >= now {
+		// Moving end_time alone would put it at or before start_time.
+		remedy = fmt.Sprintf("set start_time before %d and end_time to %d or earlier, or call get_current_time and end the window at its value", now, now)
+	}
+	return fmt.Sprintf("sample at %d (%s) is in the future: the current time is %d (%s). The upstream only answers for past instants; %s.",
+		lastSample, formatUnixUTC(lastSample), now, formatUnixUTC(now), remedy)
+}
+
+func formatUnixUTC(sec int64) string {
+	return time.Unix(sec, 0).UTC().Format(time.RFC3339)
+}
+
 // ruleState is all a sample keeps of a rule, so completed samples do not hold
 // annotations and labels on the heap while the rest are fetched.
 type ruleState struct {
@@ -248,15 +273,16 @@ type ruleState struct {
 	firing bool
 }
 
-func fetchRuleStates(ctx context.Context, api *last9api.Client, in alerts.GetMonitorInput, t int64) ([]ruleState, error) {
-	in.Timestamp = t
+func fetchRuleStates(ctx context.Context, api *last9api.Client, in alerts.GetMonitorInput, ruleID string) ([]ruleState, error) {
 	resp, err := alerts.GetMonitor(ctx, api, in)
 	if err != nil {
-		return nil, fmt.Errorf("sample at timestamp %d: %w", t, err)
+		return nil, fmt.Errorf("sample at timestamp %d: %w", in.Timestamp, err)
 	}
-	states := make([]ruleState, len(resp.AlertRules))
-	for i, rule := range resp.AlertRules {
-		states[i] = ruleState{ruleID: rule.RuleID, firing: rule.State == "firing"}
+	var states []ruleState
+	for _, rule := range resp.AlertRules {
+		if ruleID == "" || rule.RuleID == ruleID {
+			states = append(states, ruleState{ruleID: rule.RuleID, firing: rule.State == "firing"})
+		}
 	}
 	return states, nil
 }
