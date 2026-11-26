@@ -234,6 +234,7 @@ func TestBuildExceptionsLink_Filters(t *testing.T) {
 		service     string
 		env         string
 		wantFilters []string
+		wantNoLink  bool
 	}{
 		{name: "service and env", service: "last9-api", env: "alpha", wantFilters: []string{`service_name="last9-api"`, `deployment_environment="alpha"`}},
 		{name: "dotted service stays literal", service: "checkout.v2", wantFilters: []string{`service_name="checkout.v2"`}},
@@ -241,18 +242,26 @@ func TestBuildExceptionsLink_Filters(t *testing.T) {
 		{name: "env only", env: "prod", wantFilters: []string{`deployment_environment="prod"`}},
 		{name: "regex character stays literal", service: "api|web", wantFilters: []string{`service_name="api|web"`}},
 		{name: "regex characters in env stay literal", env: "prod.*", wantFilters: []string{`deployment_environment="prod.*"`}},
-		{name: "quoted value is dropped", service: `api"web`, env: "prod", wantFilters: []string{`deployment_environment="prod"`}},
-		{name: "control character is dropped", service: "api\nweb", wantFilters: nil},
+		{name: "quoted service suppresses link", service: `api"web`, env: "prod", wantNoLink: true},
+		{name: "control character suppresses link", service: "api\nweb", wantNoLink: true},
+		{name: "quoted env suppresses link", service: "api", env: `prod"`, wantNoLink: true},
 		{name: "no filters", wantFilters: nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			u, err := url.Parse(b.BuildExceptionsLink(ExceptionsLinkOptions{
+			link := b.BuildExceptionsLink(ExceptionsLinkOptions{
 				FromMs:      1_000,
 				ToMs:        2_000,
 				ServiceName: tt.service,
 				Env:         tt.env,
-			}))
+			})
+			if tt.wantNoLink {
+				if link != "" {
+					t.Fatalf("want no link, got %q", link)
+				}
+				return
+			}
+			u, err := url.Parse(link)
 			if err != nil {
 				t.Fatalf("parse: %v", err)
 			}
