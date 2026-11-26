@@ -2,13 +2,16 @@ package logs
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"slices"
 	"strings"
-	"sync/atomic"
 	"testing"
 
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/telemetry/guardrail"
 	"last9-mcp/internal/telemetry/guardrail/guardrailtest"
@@ -106,71 +109,82 @@ func TestGetLogsGuardrailAllowedQueryRunsWithoutHints(t *testing.T) {
 	}
 }
 
-func TestGetLogsGuardrailCoversParseControlQuery(t *testing.T) {
-	var estimates, queries atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.Copy(io.Discard, r.Body)
-		if strings.HasSuffix(r.URL.Path, "/estimate") {
-			estimates.Add(1)
-			_, _ = w.Write([]byte(`{"data":{"bytes":10}}`))
-			return
-		}
-		queries.Add(1)
-		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"c":1},"values":[]}]}}`))
-	}))
-	defer srv.Close()
-
-	pipeline := []map[string]interface{}{
+func TestGetLogsGuardrailAccountsForActualCountRequestPlan(t *testing.T) {
+	countPipeline := []map[string]interface{}{
 		{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "api"}}},
-		{"type": "parse", "parser": "json"},
 		{"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{
 			"function": map[string]interface{}{"$count": []interface{}{}}, "as": "c",
 		}}},
 	}
-	result, _, err := NewGetLogsHandler(srv.Client(), guardrailConfig(srv.URL, guardrail.ModeEnforce))(
-		context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{LogjsonQuery: pipeline, LookbackMinutes: 60})
-	if err != nil || result.IsError {
-		t.Fatalf("handler failed: err=%v isError=%v", err, result.IsError)
-	}
-	if estimates.Load() != queries.Load() {
-		t.Fatalf("estimates=%d queries=%d; every generated query must be admitted", estimates.Load(), queries.Load())
-	}
-	if queries.Load() != 3 {
-		t.Fatalf("queries=%d, want primary, count-sanity, and parse-control queries", queries.Load())
-	}
-}
+	parseCountPipeline := slices.Insert(slices.Clone(countPipeline), 1, map[string]interface{}{"type": "parse", "parser": "json"})
 
-func TestGetLogsGuardrailRejectsAuxiliaryQueryBeforeAnyQueryRuns(t *testing.T) {
-	var estimates, queries atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.Copy(io.Discard, r.Body)
-		if strings.HasSuffix(r.URL.Path, "/estimate") {
-			if estimates.Add(1) == 1 {
-				_, _ = w.Write([]byte(`{"data":{"bytes":10}}`))
-			} else {
-				_, _ = w.Write([]byte(`{"data":{"bytes":5001}}`))
+	for _, tt := range []struct {
+		name          string
+		mode          string
+		pipeline      []map[string]interface{}
+		wantLogs      int
+		wantEstimates int
+		wantProm      int
+	}{
+		{"count off", guardrail.ModeOff, countPipeline, 1, 0, 1},
+		{"count shadow", guardrail.ModeShadow, countPipeline, 1, 1, 0},
+		{"count enforce", guardrail.ModeEnforce, countPipeline, 1, 1, 0},
+		{"parse count off", guardrail.ModeOff, parseCountPipeline, 2, 0, 1},
+		{"parse count shadow", guardrail.ModeShadow, parseCountPipeline, 2, 2, 0},
+		{"parse count enforce", guardrail.ModeEnforce, parseCountPipeline, 2, 2, 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			type request struct {
+				path     string
+				pipeline []map[string]interface{}
 			}
-			return
-		}
-		queries.Add(1)
-		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
-	}))
-	defer srv.Close()
+			var requests []request
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				var payload struct {
+					Pipeline []map[string]interface{} `json:"pipeline"`
+				}
+				_ = json.Unmarshal(body, &payload)
+				requests = append(requests, request{path: r.URL.Path, pipeline: payload.Pipeline})
+				switch {
+				case strings.HasSuffix(r.URL.Path, "/estimate"):
+					_, _ = w.Write([]byte(`{"data":{"bytes":10}}`))
+				case r.URL.Path == constants.EndpointPromQueryInstant:
+					_, _ = w.Write([]byte(`[]`))
+				default:
+					_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"c":1},"values":[]}]}}`))
+				}
+			}))
+			defer srv.Close()
 
-	pipeline := []map[string]interface{}{
-		{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "api"}}},
-		{"type": "parse", "parser": "json"},
-		{"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{
-			"function": map[string]interface{}{"$count": []interface{}{}}, "as": "c",
-		}}},
-	}
-	result, _, err := NewGetLogsHandler(srv.Client(), guardrailConfig(srv.URL, guardrail.ModeEnforce))(
-		context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{LogjsonQuery: pipeline, LookbackMinutes: 60})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if !result.IsError || queries.Load() != 0 {
-		t.Fatalf("isError=%v queries=%d; auxiliary rejection must precede every query", result.IsError, queries.Load())
+			result, _, err := NewGetLogsHandler(srv.Client(), guardrailConfig(srv.URL, tt.mode))(
+				context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{LogjsonQuery: tt.pipeline, LookbackMinutes: 60})
+			if err != nil || result.IsError {
+				t.Fatalf("handler failed: err=%v isError=%v", err, result.IsError)
+			}
+
+			var logs, estimates, prom []request
+			for _, got := range requests {
+				switch {
+				case strings.HasSuffix(got.path, "/estimate"):
+					estimates = append(estimates, got)
+				case got.path == constants.EndpointPromQueryInstant:
+					prom = append(prom, got)
+				case got.path == constants.EndpointLogsQueryRange:
+					logs = append(logs, got)
+				default:
+					t.Fatalf("unexpected request path %q", got.path)
+				}
+			}
+			if len(logs) != tt.wantLogs || len(estimates) != tt.wantEstimates || len(prom) != tt.wantProm {
+				t.Fatalf("paths: logs=%d estimates=%d prom=%d; want %d, %d, %d", len(logs), len(estimates), len(prom), tt.wantLogs, tt.wantEstimates, tt.wantProm)
+			}
+			for i := range estimates {
+				if !reflect.DeepEqual(estimates[i].pipeline, logs[i].pipeline) {
+					t.Errorf("estimate %d pipeline %#v != log request %#v", i, estimates[i].pipeline, logs[i].pipeline)
+				}
+			}
+		})
 	}
 }
 
