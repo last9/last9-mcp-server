@@ -36,6 +36,7 @@ type AlertRule struct {
 	RecurringMuteSchedule        *RecurringMuteSchedule            `json:"recurring_mute_schedule"`
 	Properties                   map[string]interface{}            `json:"properties"`
 	GroupTimeseriesNotifications bool                              `json:"group_timeseries_notifications"`
+	OnNoData                     *string                           `json:"on_no_data"`
 	// RecentEvaluations is sampled from the alert monitor by get_alert_config, not part of the API response.
 	RecentEvaluations []evaluationSample `json:"-"`
 }
