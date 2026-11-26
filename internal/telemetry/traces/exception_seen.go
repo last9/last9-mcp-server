@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"last9-mcp/internal/last9api"
-	apitraces "last9-mcp/internal/last9api/traces"
+	"last9-mcp/internal/last9api/prom"
 	"last9-mcp/internal/models"
 )
 
@@ -51,14 +51,16 @@ func fetchExceptionSeen(ctx context.Context, client *http.Client, cfg models.Con
 	stepSeconds := int64(step / time.Second)
 	query := buildExceptionsPromQL(q.BaseFilter, fmt.Sprintf("%dm", int64(step/time.Minute)))
 
-	series, err := apitraces.QueryPromRange(ctx, last9api.NewClient(client, cfg), apitraces.QueryPromRangeInput{
-		Query:    query,
-		Start:    q.Start.Unix(),
-		End:      q.End.Unix(),
-		Step:     stepSeconds,
-		ReadURL:  cfg.PrometheusReadURL,
-		Username: cfg.PrometheusUsername,
-		Password: cfg.PrometheusPassword,
+	series, err := prom.QuerySeries(ctx, last9api.NewClient(client, cfg), prom.QueryInput{
+		Datasource: prom.Datasource{
+			ReadURL:  cfg.PrometheusReadURL,
+			Username: cfg.PrometheusUsername,
+			Password: cfg.PrometheusPassword,
+		},
+		Query:     query,
+		Timestamp: q.End.Unix(),
+		Window:    q.End.Unix() - q.Start.Unix(),
+		Step:      stepSeconds,
 	})
 	if err != nil {
 		return nil, err
