@@ -19,6 +19,7 @@ import (
 // argumentChecks run before the SDK validates a tool's arguments against its schema,
 // which stops at the first violation; each check names every problem it finds.
 var argumentChecks = map[string]argumentCheck{
+	"get_metric_status":        checkMetricStatusArguments,
 	"get_service_environments": withoutToolContext(checkServiceEnvironmentArguments),
 	"get_traces":               withoutToolContext(checkGetTracesArguments),
 	"get_service_traces":       withoutToolContext(checkServiceTraceArguments),
@@ -58,6 +59,18 @@ func checkGetTracesArguments(raw json.RawMessage) (json.RawMessage, error) {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) == nil && fields["response_mode"] != nil {
 		return nil, errors.New("response_mode is not supported by get_traces. Do not infer which result was intended: to retrieve matching span rows, omit response_mode and preserve the existing tracejson_query stages and time bounds; to obtain a count or percentile, append an aggregate stage and preserve the existing filters and time bounds.")
+	}
+	return raw, nil
+}
+
+func checkMetricStatusArguments(raw json.RawMessage, served func(string) bool) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil && fields["metric_name_pattern"] != nil {
+		hint := `Unknown argument metric_name_pattern. To check status across matching series, put your regex in a PromQL selector in metric (for example {__name__=~"example_.+"}) and supply window_minutes. Use a narrower selector or smaller window if the query is too broad.`
+		if served("prometheus_label_values") {
+			hint += ` To list matching metric names, call prometheus_label_values with label "__name__" and the selector in match_query.`
+		}
+		return nil, errors.New(hint)
 	}
 	return raw, nil
 }
