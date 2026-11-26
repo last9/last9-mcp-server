@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -46,7 +47,7 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 				!strings.Contains(query, "trace_internal_count") {
 				t.Fatalf("instant query does not include expected trace_*_count metrics: %s", query)
 			}
-			if !strings.Contains(query, "service_name=~'checkout'") {
+			if !strings.Contains(query, `service_name=~'api\\|web'`) {
 				t.Fatalf("service_name filter missing from instant query: %s", query)
 			}
 			if !strings.Contains(query, "span_name=~'POST \\\\/orders'") {
@@ -101,7 +102,7 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 	args := GetExceptionsArgs{
 		StartTimeISO: new(startTime.Format(time.RFC3339)),
 		EndTimeISO:   endTime.Format(time.RFC3339),
-		ServiceName:  "checkout",
+		ServiceName:  "api|web",
 		SpanName:     new("POST /orders"),
 		Env:          "prod",
 		Limit:        10,
@@ -110,6 +111,17 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
+	}
+	referenceURL, ok := result.Meta["reference_url"].(string)
+	if !ok {
+		t.Fatalf("missing reference_url in meta: %v", result.Meta)
+	}
+	parsedReference, err := url.Parse(referenceURL)
+	if err != nil {
+		t.Fatalf("parse reference_url: %v", err)
+	}
+	if got, want := parsedReference.Query().Get("filter"), `["service_name=\"api|web\"","deployment_environment=\"prod\""]`; got != want {
+		t.Fatalf("reference_url filter = %q, want %q", got, want)
 	}
 
 	if instantCalls != 1 {
@@ -157,6 +169,43 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 				t.Fatalf("aggregate exception row must not include fabricated forensic field %q: %#v", field, exception)
 			}
 		}
+	}
+}
+
+func TestGetExceptionsHandler_OmitsUnsafeReferenceURL(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != constants.EndpointPromQueryInstant {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			http.Error(w, "unexpected path", http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, `[]`)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL:         server.URL,
+		PrometheusReadURL:  "https://prom.example.com",
+		PrometheusUsername: "prom-user",
+		PrometheusPassword: "prom-pass",
+		OrgSlug:            "acme",
+		ClusterID:          "cluster-1",
+		TokenManager: &auth.TokenManager{
+			AccessToken: "test-access-token",
+			ExpiresAt:   time.Now().Add(24 * time.Hour),
+		},
+	}
+
+	handler := NewGetExceptionsHandler(server.Client(), cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetExceptionsArgs{
+		ServiceName: `api"web`,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if _, found := result.Meta["reference_url"]; found {
+		t.Fatalf("unsafe filter published reference_url: %v", result.Meta)
 	}
 }
 
