@@ -89,25 +89,16 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 			return series, nil
 		}
 
-		unfilteredSelector := changeEventSelectors(GetChangeEventsArgs{})[0]
-		unfilteredEvents, err := queryEvents(unfilteredSelector)
-		if err != nil {
-			return nil, nil, err
-		}
-		availableEventNames := eventNames(unfilteredEvents)
-
 		selectors := changeEventSelectors(args)
-		changeEvents := unfilteredEvents
-		if len(selectors) != 1 || selectors[0] != unfilteredSelector {
-			changeEvents = []TimeSeries{}
-			for _, selector := range selectors {
-				series, err := queryEvents(selector)
-				if err != nil {
-					return nil, nil, err
-				}
-				changeEvents = append(changeEvents, series...)
+		changeEvents := []TimeSeries{}
+		for _, selector := range selectors {
+			series, err := queryEvents(selector)
+			if err != nil {
+				return nil, nil, err
 			}
+			changeEvents = append(changeEvents, series...)
 		}
+		availableEventNames := eventNames(changeEvents)
 
 		result := map[string]any{
 			"available_event_names": availableEventNames,
