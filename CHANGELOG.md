@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `get_service_logs` reports the interval checked when HTTP status field discovery finds no match and flags earlier logs outside its one-hour discovery limit (#672).
+- `get_exceptions` deep links preserve exact `service_name` and `env` filters, including names with regex metacharacters, so opening a result no longer broadens the Exceptions page; links are omitted when a requested value is unsafe for its quoted filter syntax (#676).
 - When `get_metric_status` rejects `metric_name_pattern`, its error shows how to check matching series with a selector and how to list metric names when discovery is available (#665).
 - `get_log_patterns` now explains how to replace unsupported `service` and `body` arguments with `service_name` and an array of substrings in `body_filters`, including both corrections when needed (#660).
 - When `did_you_mean` receives `service_name`, its error now shows how to look up a service by name and how to scope a log attribute lookup to a service (#656).
