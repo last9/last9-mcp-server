@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Metric label lookups and `get_log_services` reject non-finite or duration-overflowing `lookback_minutes` before querying; huge JSON numbers previously wrapped into unrelated query windows (#612).
+- When a caller supplies `entity_name`, `get_entity_kpis` now explains how to find the intended alert group and retry with its ID (#645).
 - `did_you_mean` accepts `value` for `query` and `kind` for `type` before argument validation. Conflicting spellings return an error before any lookup (#642).
 - `get_service_environments` now names `service_name` in its validation error when a caller sends `service`, so the caller can retry with the intended filter (#643).
 - `get_alert_config` accepts `alert_rule_id` as an alias for `rule_id` and explains how to find the triggering rule when passed an `alert_id` (#622).
