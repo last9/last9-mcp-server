@@ -768,6 +768,9 @@ func formatAlertConfigResponse(
 		formattedResponse += fmt.Sprintf("  Created: %s\n", createdTime)
 		formattedResponse += fmt.Sprintf("  Updated: %s\n", updatedTime)
 		formattedResponse += fmt.Sprintf("  Group Timeseries Notifications: %v\n", rule.GroupTimeseriesNotifications)
+		if rule.OnNoData != nil && *rule.OnNoData == "alert" {
+			formattedResponse += "  On No Data: alert\n"
+		}
 		formattedResponse += "\n"
 	}
 

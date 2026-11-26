@@ -6,6 +6,8 @@ Static rules use arithmetic over indicators; `condition`, `alert_condition`, and
 
 Store responder context in `properties` (`description`, runbook link, annotations, `query_mode`). Notification routing belongs to the group. Validate expressions before saving and promote with `patch_alert is_disabled=false` only after confirmation. For a custom dashboard panel, create one from the panel's PromQL with create_kpi; Discover charts may not.
 
+Set `on_no_data: "alert"` when missing samples should fire a distinct No data alert after 2x `eval_window` minutes, including when the metric has never reported since the rule was enabled. Omit it to leave this off. The disabled draft cannot alert; the timer starts when it is enabled. Do not use it for event-style metrics where silence is normal or queries containing `or vector(0)`, which never look absent. After data returns, resolution takes about 11 minutes.
+
 Read `last9://reference/alerting` for grammar, units, the complete field matrix, and templates; read `last9://reference/tool_recipes` for the authoring lifecycle.
 
 On success `_meta.reference_url` opens the saved rule; `_meta.links` labels it "Open alert" and adds "Open group" only when the API supplies a group name. On a timeout or connection error the create may or may not have been applied; check by name with get_alert_config (rule_name) before retrying.

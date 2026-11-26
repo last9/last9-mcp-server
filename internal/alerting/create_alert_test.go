@@ -41,6 +41,18 @@ func TestCreateAlertValidationReturnsToolError(t *testing.T) {
 	}
 }
 
+func TestCreateAlertSendsOnNoData(t *testing.T) {
+	server := newAlertRuleServer(t, http.MethodPost, "/entities/entity-1/alert-rules",
+		`{"primary_indicator":"latency","expression_args":{"latency":{"id":"kpi-1"}},"is_disabled":true,"properties":{"annotations":{"_l9_created_via_":"last9-mcp","_l9_created_via_client_":"unknown/unknown"}},"on_no_data":"alert"}`)
+	payload := validAlertRulePayload(nil)
+	payload.OnNoData = ptrString("alert")
+	_, _, err := NewCreateAlertHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil,
+		CreateAlertArgs{EntityID: "entity-1", AlertRuleMutation: AlertRuleMutation{AlertRule: payload}})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCreateAlertAPIError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "invalid alert rule", http.StatusUnprocessableEntity)

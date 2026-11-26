@@ -1004,6 +1004,16 @@ func sampleAlertConfigRules() AlertConfigResponse {
 	}
 }
 
+func TestFormatAlertConfigResponseShowsEnabledOnNoDataOnly(t *testing.T) {
+	got := formatAlertConfigResponse(AlertConfigResponse{
+		{ID: "enabled", OnNoData: ptrString("alert")},
+		{ID: "off"},
+	}, nil, nil, "", false)
+	if strings.Count(got, "On No Data: alert") != 1 {
+		t.Fatalf("output = %q", got)
+	}
+}
+
 func sampleAlertGroupEntities() []groupedAlertGroupEntitiesResponse {
 	return []groupedAlertGroupEntitiesResponse{
 		{
