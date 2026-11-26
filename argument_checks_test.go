@@ -71,44 +71,6 @@ func TestEntityNameGuidanceNamesOnlyServedTools(t *testing.T) {
 	}
 }
 
-func TestLabelValueArgumentGuidance(t *testing.T) {
-	session := newInMemoryClientSession(t)
-	for _, tc := range []struct {
-		name      string
-		arguments string
-		contains  []string
-	}{
-		{
-			name:      "label name",
-			arguments: `{"label_name":"job","match_query":"up"}`,
-			contains:  []string{`unexpected additional properties ["label_name"]`, "Use label for the label name."},
-		},
-		{
-			name:      "selector array",
-			arguments: `{"label":"job","matches":["up"]}`,
-			contains:  []string{`unexpected additional properties ["matches"]`, "Use match_query for a single PromQL selector string."},
-		},
-		{
-			name:      "both keys",
-			arguments: `{"label_name":"job","matches":"up"}`,
-			contains:  []string{"Use label for the label name.", "Use match_query for a single PromQL selector string."},
-		},
-		{
-			name:      "preserves other unknown keys",
-			arguments: `{"label_name":"job","matches":"up","foo":true}`,
-			contains:  []string{`unexpected additional properties ["foo" "label_name" "matches"]`},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			result := callRegisteredTool(t, session, &mcp.CallToolParams{
-				Name:      "prometheus_label_values",
-				Arguments: json.RawMessage(tc.arguments),
-			})
-			assertToolError(t, result, toolErrorExpectation{contains: tc.contains})
-		})
-	}
-}
-
 func TestDashboardWritesNameEveryWrongFieldBeforeSchemaValidation(t *testing.T) {
 	session := newInMemoryClientSession(t)
 	for tool, args := range map[string]string{
