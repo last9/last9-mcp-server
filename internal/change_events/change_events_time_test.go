@@ -156,6 +156,58 @@ func TestFractionalEndKeepsReturnedEventNameDiscoverable(t *testing.T) {
 	}
 }
 
+func TestFilteredChangeEventsDoesNotDependOnUnfilteredSampleVolume(t *testing.T) {
+	var queries []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Query string `json:"query"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		queries = append(queries, req.Query)
+		w.Header().Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
+		if !strings.Contains(req.Query, `service_name="checkout"`) && !strings.Contains(req.Query, `service="checkout"`) {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = io.WriteString(w, `{"error":"sample limit exceeded"}`)
+			return
+		}
+		_, _ = io.WriteString(w, `[{"metric":{"event_name":"deployment","service_name":"checkout"},"values":[[1770653045,"1"]]}]`)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL: server.URL,
+		TokenManager: &auth.TokenManager{
+			AccessToken: "test-token",
+			ExpiresAt:   time.Now().Add(24 * time.Hour),
+		},
+	}
+
+	result, _, err := NewGetChangeEventsHandler(server.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, GetChangeEventsArgs{
+		StartTimeISO: "2026-02-09T15:04:05Z",
+		EndTimeISO:   "2026-02-09T16:04:05Z",
+		ServiceName:  "checkout",
+	})
+	if err != nil {
+		t.Fatalf("filtered handler error: %v", err)
+	}
+
+	var response struct {
+		AvailableEventNames []string     `json:"available_event_names"`
+		ChangeEvents        []TimeSeries `json:"change_events"`
+	}
+	if err := json.Unmarshal([]byte(utils.GetTextContent(t, result)), &response); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if !reflect.DeepEqual(response.AvailableEventNames, []string{"deployment"}) || len(response.ChangeEvents) != 2 {
+		t.Fatalf("available=%v events=%d, want scoped discovery and both service selectors", response.AvailableEventNames, len(response.ChangeEvents))
+	}
+	for _, query := range queries {
+		if !strings.Contains(query, `service_name="checkout"`) && !strings.Contains(query, `service="checkout"`) {
+			t.Fatalf("unexpected unfiltered query %q", query)
+		}
+	}
+}
+
 // Filtering on the MCP spellings alone returns zero series even when matching
 // events exist.
 func TestGetChangeEventsHandler_FiltersUseStoredMetricLabels(t *testing.T) {
