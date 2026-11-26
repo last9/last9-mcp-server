@@ -1710,6 +1710,33 @@ func TestPrepareLogJSONQueryAcceptsDottedParseLabelKey(t *testing.T) {
 	}
 }
 
+func TestQuotedJSONParseSourceKeys(t *testing.T) {
+	for _, tc := range []struct{ parser, key, wantError string }{
+		{"json", "`@timestamp`", ""},
+		{"json", "`request-id`", ""},
+		{"json", "@timestamp", "`@timestamp`"},
+		{"json", "`@timestamp", "invalid"},
+		{"json", "`@time``stamp`", "invalid"},
+		{"json", "``", "invalid"},
+		{"json", "`$invalid`", "invalid"},
+		{"logfmt", "`@timestamp`", "invalid"},
+		{"regexp", "`@timestamp`", "invalid"},
+	} {
+		t.Run(tc.parser+"/"+tc.key, func(t *testing.T) {
+			_, err := prepareLogJSONQuery([]map[string]interface{}{{
+				"type": "parse", "parser": tc.parser, "labels": map[string]interface{}{tc.key: "parsed_field"},
+			}}, "logjson_query")
+			if tc.wantError == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tc.wantError) {
+				t.Fatalf("expected error containing %q, got %v", tc.wantError, err)
+			}
+		})
+	}
+}
+
 // TestPrepareLogJSONQueryRoundTripBodyDerivedHint verifies that the two-stage
 // pipeline shape emitted by bodyDerivedHint (parse json + filter on derived attr)
 // passes prepareLogJSONQuery without error when a dotted key is used.
