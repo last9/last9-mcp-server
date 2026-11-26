@@ -44,7 +44,7 @@ func GetValidateDashboardInputSchema() map[string]any {
 			},
 			"dashboard_definition": map[string]any{
 				"type":        "object",
-				"description": "Inline dashboard object (name, panels[].queries[], variables). Log queries use index_type (physical or rehydration) and bare index_name. Mutually exclusive with dashboard_id. Dry run — nothing is persisted.",
+				"description": "Inline dashboard object (name, panels[].queries[], variables). Query type is range or instant; query_type identifies the language. Log queries use index_type (physical or rehydration) and bare index_name. Mutually exclusive with dashboard_id. Dry run — nothing is persisted.",
 			},
 			"start_time_iso": map[string]any{
 				"type":        "string",
@@ -522,6 +522,12 @@ func validateTarget(
 		"execution":    nil,
 		"evidence":     nil,
 		"diagnosis":    nil,
+	}
+
+	if err := checkQueryMode(query); err != nil {
+		target["status"] = "invalid_query"
+		target["lint"] = []any{lintFinding("invalid_query_mode", severityError, err.Error())}
+		return target
 	}
 
 	// Checked before interpolation: an unknown type's pipeline operators ($and, $eq)
