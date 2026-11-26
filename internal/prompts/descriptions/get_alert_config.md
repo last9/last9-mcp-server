@@ -5,6 +5,7 @@ Filters: `rule_id` is a case-insensitive exact match that ignores surrounding sp
 Channel filters inspect per-entity bindings only. `only_without_notification_channel` is OR-combined with `notification_channel_types`. Names and severities (`breach` or `threat`) are AND constraints on the same binding row. Global org-wide channels do not satisfy these filters.
 
 Each rule includes id, name, primary indicator, entity id, group metadata, severity, algorithm, lifecycle state, channel summary and timestamps. Recent evaluations contain 5 one-minute samples, newest first; the newest ends 1-2 minutes before the call. States are firing; ok (normal, resolved, pending or empty state); or unknown (missing row, failed lookup or unrecognized state, e.g. no_data, silenced). Failures noted at top. Disabled rules show none; history is omitted when more than 25 enabled rules match.
+Rules with No data alerting enabled include `On No Data: alert`; absent means off. It fires after 2x `eval_window` minutes without samples and resolves about 11 minutes after data returns.
 
 ## When to use
 Find alert rules by name, severity, group, metadata or notification channel.

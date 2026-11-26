@@ -348,3 +348,13 @@ func TestGetEntityAlertRulesHandler_APIError(t *testing.T) {
 		t.Fatalf("expected 500 in error, got: %v", err)
 	}
 }
+
+func TestFormatEntityAlertRulesResponseShowsEnabledOnNoDataOnly(t *testing.T) {
+	got := formatEntityAlertRulesResponse(AlertConfigResponse{
+		{ID: "enabled", OnNoData: ptrString("alert")},
+		{ID: "off"},
+	})
+	if strings.Count(got, "On No Data: alert") != 1 {
+		t.Fatalf("output = %q", got)
+	}
+}
