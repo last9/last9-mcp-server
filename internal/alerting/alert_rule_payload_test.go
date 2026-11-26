@@ -85,3 +85,27 @@ func validAlertRulePayload(name *string) AlertRulePayload {
 		RuleName:         name,
 	}
 }
+
+func TestValidateAlertRulePayloadOnNoData(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		value   *string
+		wantErr bool
+	}{
+		{name: "omitted"},
+		{name: "enabled", value: ptrString("alert")},
+		{name: "cleared", value: ptrString("")},
+		{name: "invalid", value: ptrString("resolve"), wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			payload := validAlertRulePayload(nil)
+			payload.OnNoData = tt.value
+			err := validateAlertRulePayload(payload)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func ptrString(value string) *string { return &value }

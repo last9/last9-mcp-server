@@ -448,3 +448,73 @@ func TestGetAlertsHandler_ShowsReassignIdentity(t *testing.T) {
 		}
 	}
 }
+
+func TestGetAlertsStateFiltersInstancesBeforeGrouping(t *testing.T) {
+	for _, tc := range []struct {
+		name, state, wantRuleState string
+		wantInstances              int
+		invalid                    bool
+	}{
+		{"empty direct-handler state is omission", "", "firing", 2, false},
+		{"firing", "firing", "firing", 1, false},
+		{"normal", "normal", "normal", 1, false},
+		{"pending is invalid", "pending", "", 0, true},
+		{"resolved is invalid", "resolved", "", 0, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				q := r.URL.Query()
+				state := q.Get("state")
+				if q.Has("state") != (tc.state != "") || state != tc.state {
+					t.Errorf("unexpected query %v", q)
+				}
+				if q.Get("timestamp") != "1700000000" || q.Get("window") != "60" {
+					t.Errorf("changed window or evaluation time: %v", q)
+				}
+				rule := AlertRuleData{RuleID: "shared-rule", State: "normal"}
+				for _, inst := range []AlertInstance{{State: "normal", LabelHash: "first"}, {State: "firing", LabelHash: "second"}} {
+					if state != "" && inst.State != state {
+						continue
+					}
+					rule.Alerts = append(rule.Alerts, inst)
+					if inst.State == "firing" {
+						rule.State = "firing"
+					}
+				}
+				_ = json.NewEncoder(w).Encode(AlertsResponse{Timestamp: 1700000000, Window: 60, AlertRules: []AlertRuleData{rule}})
+			}))
+			defer srv.Close()
+			result, _, err := NewGetAlertsHandler(srv.Client(), alertsMonitorTestConfig(srv.URL))(context.Background(), nil, GetAlertsArgs{State: tc.state, Timestamp: 1700000000, Window: 60})
+			if tc.invalid {
+				if err == nil || !strings.Contains(err.Error(), "firing or normal") || calls.Load() != 0 {
+					t.Fatalf("err=%v upstream calls=%d", err, calls.Load())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			out := result.Content[0].(*mcp.TextContent).Text
+			if !strings.Contains(out, "Found 1 alert rule(s) with "+strconv.Itoa(tc.wantInstances)+" alert instance(s)") || !strings.Contains(out, "\n  State: "+tc.wantRuleState+"\n") {
+				t.Errorf("incorrect instance count or rule state: %s", out)
+			}
+			for _, state := range []string{"firing", "normal"} {
+				if strings.Contains(out, "\n      State: "+state+"\n") != (tc.state == "" || tc.state == state) {
+					t.Errorf("unexpected instances for state %q: %s", state, out)
+				}
+			}
+		})
+	}
+}
+func TestGetAlertsInputSchemaRequiresPositiveLimit(t *testing.T) {
+	schema := GetAlertsInputSchema()
+	limit := schema.Properties["limit"]
+	if limit == nil {
+		t.Fatal("limit property is missing")
+	}
+	if limit.Minimum == nil || *limit.Minimum != 1 {
+		t.Errorf("limit minimum = %v, want 1", limit.Minimum)
+	}
+}
