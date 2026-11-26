@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `prometheus_label_values` now explains how to retry unsupported `label_name` and `matches` arguments using `label` and a single `match_query` selector string (#646).
+- `get_log_patterns` now explains how to replace unsupported `service` and `body` arguments with `service_name` and an array of substrings in `body_filters`, including both corrections when needed (#660).
+- When `did_you_mean` receives `service_name`, its error now shows how to look up a service by name and how to scope a log attribute lookup to a service (#656).
 - Dashboard writes reject query execution modes outside `range` and `instant`. `validate_dashboard` flags an invalid mode on the affected target before executing its expression (#670).
 - `get_entity_alert_rules` now explains how to resolve an unsupported `entity_name` through `get_alert_groups` and retry with the selected group ID (#663).
 - When a caller passes `span_name`, `get_service_traces` shows how to retry with `get_traces` while keeping the original scope, time window, and limit (#659).
