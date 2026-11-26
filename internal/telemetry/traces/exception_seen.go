@@ -27,6 +27,14 @@ type exceptionSeenQuery struct {
 	Start, End time.Time
 }
 
+type exceptionSeenRangePlan struct {
+	Config     models.Config
+	BaseFilter string
+	End        time.Time
+	Window     time.Duration
+	Step       time.Duration
+}
+
 // exceptionSeriesKey identifies a series by the labels get_exceptions groups by, raw, so range
 // series match instant rows before any Unknown default is applied.
 func exceptionSeriesKey(metric map[string]string) string {
@@ -58,10 +66,21 @@ func fetchExceptionSeen(ctx context.Context, client *http.Client, cfg models.Con
 	fullWindow := window / step * step
 	requests := make([]prom.QueryInput, 0, 2)
 	if fullWindow > 0 {
-		requests = append(requests, exceptionSeenRangeRequest(cfg, q.BaseFilter, q.Start.Add(fullWindow), fullWindow, step))
+		requests = append(requests, exceptionSeenRangeRequest(exceptionSeenRangePlan{
+			Config:     cfg,
+			BaseFilter: q.BaseFilter,
+			End:        q.Start.Add(fullWindow),
+			Window:     fullWindow,
+			Step:       step,
+		}))
 	}
 	if tail := window - fullWindow; tail > 0 {
-		requests = append(requests, exceptionSeenRangeRequest(cfg, q.BaseFilter, q.End, 0, tail))
+		requests = append(requests, exceptionSeenRangeRequest(exceptionSeenRangePlan{
+			Config:     cfg,
+			BaseFilter: q.BaseFilter,
+			End:        q.End,
+			Step:       tail,
+		}))
 	}
 
 	apiClient := last9api.NewClient(client, cfg)
@@ -86,17 +105,17 @@ func normalizeExceptionSeenQuery(q exceptionSeenQuery) exceptionSeenQuery {
 	return q
 }
 
-func exceptionSeenRangeRequest(cfg models.Config, baseFilter string, end time.Time, window, step time.Duration) prom.QueryInput {
+func exceptionSeenRangeRequest(plan exceptionSeenRangePlan) prom.QueryInput {
 	return prom.QueryInput{
 		Datasource: prom.Datasource{
-			ReadURL:  cfg.PrometheusReadURL,
-			Username: cfg.PrometheusUsername,
-			Password: cfg.PrometheusPassword,
+			ReadURL:  plan.Config.PrometheusReadURL,
+			Username: plan.Config.PrometheusUsername,
+			Password: plan.Config.PrometheusPassword,
 		},
-		Query:     buildExceptionsPromQL(baseFilter, prometheusDuration(step)),
-		Timestamp: unixSeconds(end),
-		Window:    float64(window) / float64(time.Second),
-		Step:      int64(step / time.Second),
+		Query:     buildExceptionsPromQL(plan.BaseFilter, prometheusDuration(plan.Step)),
+		Timestamp: unixSeconds(plan.End),
+		Window:    float64(plan.Window) / float64(time.Second),
+		Step:      int64(plan.Step / time.Second),
 	}
 }
 
