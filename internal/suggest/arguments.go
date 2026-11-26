@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// PrepareArguments renames the name and entity_type aliases to query and type before the
+// PrepareArguments renames suggestion aliases to query and type before the
 // SDK rejects them as unknown keys. An alias sent beside its canonical key must carry the
 // same string, so a call never silently drops one of two different values.
 func PrepareArguments(raw json.RawMessage) (json.RawMessage, error) {
@@ -14,7 +14,7 @@ func PrepareArguments(raw json.RawMessage) (json.RawMessage, error) {
 		return raw, nil
 	}
 	changed := false
-	for _, pair := range [][2]string{{"name", "query"}, {"entity_type", "type"}} {
+	for _, pair := range [][2]string{{"name", "query"}, {"value", "query"}, {"entity_type", "type"}, {"kind", "type"}} {
 		alias, key := pair[0], pair[1]
 		value, ok := fields[alias]
 		if !ok {
