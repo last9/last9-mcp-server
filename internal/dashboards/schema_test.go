@@ -172,6 +172,14 @@ func TestCreateDashboardInputSchema_RestrictsQueryTypes(t *testing.T) {
 	}
 
 	query := args["dashboard"].(map[string]any)["panels"].([]any)[0].(map[string]any)["queries"].([]any)[0].(map[string]any)
+	for _, mode := range []any{"range", "instant", "metrics", "", nil, true} {
+		query["type"] = mode
+		err := validateInputSchema(t, GetCreateDashboardInputSchema(), args)
+		if valid := mode == "range" || mode == "instant"; valid != (err == nil) {
+			t.Errorf("query.type = %v: %v", mode, err)
+		}
+	}
+	query["type"] = "range"
 	query["query_type"] = "logs"
 	if err := validateInputSchema(t, GetCreateDashboardInputSchema(), args); err == nil {
 		t.Fatal("expected telemetry name used as query_type to fail validation")
