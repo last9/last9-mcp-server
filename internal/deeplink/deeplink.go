@@ -84,21 +84,28 @@ func (b *Builder) BuildTracesLink(fromMs, toMs int64, pipeline any, traceID, spa
 	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteTraces, params.Encode())
 }
 
-// BuildExceptionsLink creates an exceptions dashboard deep link. serviceName and
-// env are regex matchers; each becomes a page filter only when it is a literal
+type ExceptionsLinkOptions struct {
+	FromMs      int64
+	ToMs        int64
+	ServiceName string
+	Env         string
+}
+
+// BuildExceptionsLink creates an exceptions dashboard deep link. ServiceName and
+// Env are regex matchers; each becomes a page filter only when it is a literal
 // name, so a pattern never narrows the page to a value that does not exist.
-func (b *Builder) BuildExceptionsLink(fromMs, toMs int64, serviceName, env string) string {
+func (b *Builder) BuildExceptionsLink(options ExceptionsLinkOptions) string {
 	params := url.Values{}
-	params.Set("from", fmt.Sprintf("%d", fromMs/1000))
-	params.Set("to", fmt.Sprintf("%d", toMs/1000))
+	params.Set("from", fmt.Sprintf("%d", options.FromMs/1000))
+	params.Set("to", fmt.Sprintf("%d", options.ToMs/1000))
 	if b.clusterID != "" {
 		params.Set("cluster", b.clusterID)
 	}
 	var filters []string
-	if service := literalFilterValue(serviceName); service != "" {
+	if service := literalFilterValue(options.ServiceName); service != "" {
 		filters = append(filters, fmt.Sprintf(`service_name="%s"`, service))
 	}
-	if exceptionEnv := literalFilterValue(env); exceptionEnv != "" {
+	if exceptionEnv := literalFilterValue(options.Env); exceptionEnv != "" {
 		filters = append(filters, fmt.Sprintf(`deployment_environment="%s"`, exceptionEnv))
 	}
 	if len(filters) > 0 {

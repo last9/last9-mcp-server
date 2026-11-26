@@ -246,7 +246,12 @@ func TestBuildExceptionsLink_Filters(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			u, err := url.Parse(b.BuildExceptionsLink(1_000, 2_000, tt.service, tt.env))
+			u, err := url.Parse(b.BuildExceptionsLink(ExceptionsLinkOptions{
+				FromMs:      1_000,
+				ToMs:        2_000,
+				ServiceName: tt.service,
+				Env:         tt.env,
+			}))
 			if err != nil {
 				t.Fatalf("parse: %v", err)
 			}
