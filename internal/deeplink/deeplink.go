@@ -93,6 +93,10 @@ type ExceptionsLinkOptions struct {
 
 // BuildExceptionsLink creates an exceptions dashboard deep link.
 func (b *Builder) BuildExceptionsLink(options ExceptionsLinkOptions) string {
+	if options.ServiceName != "" && safeFilterValue(options.ServiceName) == "" ||
+		options.Env != "" && safeFilterValue(options.Env) == "" {
+		return ""
+	}
 	params := url.Values{}
 	params.Set("from", fmt.Sprintf("%d", options.FromMs/1000))
 	params.Set("to", fmt.Sprintf("%d", options.ToMs/1000))
