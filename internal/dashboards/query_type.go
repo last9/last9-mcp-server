@@ -15,8 +15,6 @@ var queryTypesByTelemetry = map[string][]string{
 
 var allQueryTypes = []string{"promql", "log_json", "log_ql", "log_raw", "trace_json", "trace_ql"}
 
-// checkDashboardQueryTypes leaves malformed panels and queries lists to the API;
-// it only rejects a query_type the API would refuse.
 func checkDashboardQueryTypes(dashboard map[string]any) error {
 	panels, _ := dashboard["panels"].([]any)
 	for i, raw := range panels {
@@ -35,8 +33,20 @@ func checkQueriesQueryTypes(queries any) error {
 		if !ok {
 			return fmt.Errorf("queries[%d] must be an object", i)
 		}
+		if err := checkQueryMode(query); err != nil {
+			return fmt.Errorf("queries[%d].%w", i, err)
+		}
 		if err := checkQueryType(query); err != nil {
 			return fmt.Errorf("queries[%d]: %w", i, err)
+		}
+	}
+	return nil
+}
+
+func checkQueryMode(query map[string]any) error {
+	if mode, present := query["type"]; present {
+		if problem := valueProblem(queryModeSchema(), mode); problem != "" {
+			return fmt.Errorf("type: %s", problem)
 		}
 	}
 	return nil

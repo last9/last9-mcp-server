@@ -683,6 +683,8 @@ func TestPatchDashboard_InvalidOpNamesIndexAndSkipsWrite(t *testing.T) {
 		wantErr string
 		wantGet bool
 	}{
+		{name: "add_panel invalid mode", ops: `[{"op":"add_panel","panel":{"queries":[{"type":"metrics"}]}}]`, wantErr: "queries[0].type: got"},
+		{name: "update_panel invalid mode", ops: `[{"op":"update_panel","panel_id":"p1","fields":{"queries":[{"type":"metrics"}]}}]`, wantErr: "queries[0].type: got"},
 		{name: "no ops", ops: `[]`, wantErr: "ops must contain at least one op"},
 		{name: "unknown op", ops: `[{"op":"set_title","title":"x"},{"op":"rename"}]`, wantErr: `ops[1]: unknown op "rename"`},
 		{name: "add_panel without panel", ops: `[{"op":"add_panel"}]`, wantErr: "ops[0] (add_panel): panel is required"},
