@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func TestReviewPrometheusDurationPreservesSubsecondTail(t *testing.T) {
+func TestPrometheusDurationPreservesSubsecondTail(t *testing.T) {
 	for _, tc := range []struct {
 		in   time.Duration
 		want string
