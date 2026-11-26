@@ -22,7 +22,7 @@ func TestDashboardLogQueryIndex(t *testing.T) {
 	}{
 		{"default", "", nil, false},
 		{"empty default", "", map[string]any{"index_name": "", "index_type": ""}, false},
-		{"legacy prefix", "physical_index:example", map[string]any{"index_name": "physical_index:example"}, false},
+		{"legacy qualified name with empty type", "physical_index:example", map[string]any{"index_name": "physical_index:example", "index_type": ""}, false},
 		{"null default", "", map[string]any{"index_name": nil, "index_type": nil}, false},
 		{"physical", "physical_index:example", map[string]any{"index_name": "example", "index_type": "physical"}, false},
 		{"rehydration", "rehydration_index:archive", map[string]any{"index_name": "archive", "index_type": "rehydration"}, false},
