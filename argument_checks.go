@@ -18,12 +18,36 @@ import (
 var argumentChecks = map[string]argumentCheck{
 	"get_metric_status":        checkMetricStatusArguments,
 	"get_service_environments": withoutToolContext(checkServiceEnvironmentArguments),
+	"get_service_traces":       withoutToolContext(checkServiceTraceArguments),
 	"get_alert_config":         withoutToolContext(alerting.PrepareAlertConfigArguments),
 	"did_you_mean":             withoutToolContext(suggest.PrepareArguments),
 	"get_dashboard":            withoutToolContext(dashboards.PrepareGetDashboardArguments),
 	"create_dashboard":         withoutToolContext(dashboards.PrepareDashboardArguments),
 	"update_dashboard":         withoutToolContext(dashboards.PrepareDashboardArguments),
 	"get_entity_kpis":          checkEntityKPIArguments,
+	"describe_alert_chart":     checkDescribeAlertChartArguments,
+}
+
+func checkDescribeAlertChartArguments(raw json.RawMessage, served func(string) bool) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil && fields["rule_id"] != nil {
+		hint := "Unknown argument rule_id. To inspect a chart, omit rule_id and supply surface, chart_key, and service_name."
+		if served("get_alert_config") {
+			hint += " To inspect an existing rule, call get_alert_config with the same rule_id."
+		}
+		return nil, errors.New(hint)
+	}
+	return raw, nil
+}
+
+func checkServiceTraceArguments(raw json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil && fields["span_name"] != nil {
+		return nil, errors.New(`unexpected additional properties ["span_name"]. Call get_traces with tracejson_query=[{"type":"filter","query":{"$and":[{"$eq":["ServiceName","<service_name>"]},{"$eq":["SpanName","<span_name>"]}]}}]. ` +
+			`For trace_id, replace the ServiceName condition with {"$eq":["TraceId","<trace_id>"]}. If env was set, add {"$eq":["resources['deployment.environment']","<env>"]} to $and. ` +
+			`Preserve the time window and limit. For omitted values, set lookback_minutes to 60 for service_name or 4320 for trace_id, and limit to 10.`)
+	}
+	return raw, nil
 }
 
 func checkMetricStatusArguments(raw json.RawMessage, served func(string) bool) (json.RawMessage, error) {
