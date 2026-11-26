@@ -545,7 +545,7 @@ func fetchViaLogSearchAPI(
 			})
 		}
 	}
-	if hasStages && !partial {
+	if hasStages && !partial && countSanityEnabled(cfg) {
 		endSanity := utils.StartToolPhase(ctx, "get_logs", "count_sanity")
 		result = utils.AppendCountSanity(ctx, client, cfg, stages, startTime, endTime, result)
 		endSanity(nil)

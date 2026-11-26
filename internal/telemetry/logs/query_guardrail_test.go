@@ -122,16 +122,23 @@ func TestGetLogsGuardrailAccountsForActualCountRequestPlan(t *testing.T) {
 		name          string
 		mode          string
 		pipeline      []map[string]interface{}
+		searchAPI     bool
 		wantLogs      int
 		wantEstimates int
 		wantProm      int
 	}{
-		{"count off", guardrail.ModeOff, countPipeline, 1, 0, 1},
-		{"count shadow", guardrail.ModeShadow, countPipeline, 1, 1, 0},
-		{"count enforce", guardrail.ModeEnforce, countPipeline, 1, 1, 0},
-		{"parse count off", guardrail.ModeOff, parseCountPipeline, 2, 0, 1},
-		{"parse count shadow", guardrail.ModeShadow, parseCountPipeline, 2, 2, 0},
-		{"parse count enforce", guardrail.ModeEnforce, parseCountPipeline, 2, 2, 0},
+		{"count off", guardrail.ModeOff, countPipeline, false, 1, 0, 1},
+		{"count shadow", guardrail.ModeShadow, countPipeline, false, 1, 1, 0},
+		{"count enforce", guardrail.ModeEnforce, countPipeline, false, 1, 1, 0},
+		{"parse count off", guardrail.ModeOff, parseCountPipeline, false, 2, 0, 1},
+		{"parse count shadow", guardrail.ModeShadow, parseCountPipeline, false, 2, 2, 0},
+		{"parse count enforce", guardrail.ModeEnforce, parseCountPipeline, false, 2, 2, 0},
+		{"search count off", guardrail.ModeOff, countPipeline, true, 1, 0, 1},
+		{"search count shadow", guardrail.ModeShadow, countPipeline, true, 1, 1, 0},
+		{"search count enforce", guardrail.ModeEnforce, countPipeline, true, 1, 1, 0},
+		{"search parse count off", guardrail.ModeOff, parseCountPipeline, true, 2, 0, 1},
+		{"search parse count shadow", guardrail.ModeShadow, parseCountPipeline, true, 2, 2, 0},
+		{"search parse count enforce", guardrail.ModeEnforce, parseCountPipeline, true, 2, 2, 0},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			type request struct {
@@ -151,13 +158,17 @@ func TestGetLogsGuardrailAccountsForActualCountRequestPlan(t *testing.T) {
 					_, _ = w.Write([]byte(`{"data":{"bytes":10}}`))
 				case r.URL.Path == constants.EndpointPromQueryInstant:
 					_, _ = w.Write([]byte(`[]`))
+				case r.URL.Path == constants.EndpointLogSearch:
+					_, _ = w.Write([]byte(`{"query_result":{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"c":1},"values":[]}]}},"search_stats":{}}`))
 				default:
 					_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"c":1},"values":[]}]}}`))
 				}
 			}))
 			defer srv.Close()
 
-			result, _, err := NewGetLogsHandler(srv.Client(), guardrailConfig(srv.URL, tt.mode))(
+			cfg := guardrailConfig(srv.URL, tt.mode)
+			cfg.UseLogSearchAPI = tt.searchAPI
+			result, _, err := NewGetLogsHandler(srv.Client(), cfg)(
 				context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{LogjsonQuery: tt.pipeline, LookbackMinutes: 60})
 			if err != nil || result.IsError {
 				t.Fatalf("handler failed: err=%v isError=%v", err, result.IsError)
@@ -170,7 +181,7 @@ func TestGetLogsGuardrailAccountsForActualCountRequestPlan(t *testing.T) {
 					estimates = append(estimates, got)
 				case got.path == constants.EndpointPromQueryInstant:
 					prom = append(prom, got)
-				case got.path == constants.EndpointLogsQueryRange:
+				case got.path == constants.EndpointLogsQueryRange || got.path == constants.EndpointLogSearch:
 					logs = append(logs, got)
 				default:
 					t.Fatalf("unexpected request path %q", got.path)
