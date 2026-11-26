@@ -51,6 +51,8 @@ func GetAlertsInputSchema() *jsonschema.Schema {
 		panic(fmt.Sprintf("get_alerts input schema: %v", err))
 	}
 	schema.Properties["state"].Enum = []any{"firing", "normal"}
+	schema.Properties["limit"].Type = "integer"
+	schema.Properties["limit"].Types = nil
 	schema.Properties["limit"].Minimum = jsonschema.Ptr(1.0)
 	return schema
 }
