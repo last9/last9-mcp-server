@@ -71,12 +71,6 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 			Tool: "get_logs", Signal: guardrail.Logs, Pipeline: sanitizedQuery,
 			StartMs: startTime, EndMs: endTime, Index: args.Index,
 		}}
-		if utils.HasCountAggregateStage(sanitizedQuery) {
-			queries = append(queries, guardrail.Query{
-				Tool: "get_logs", Signal: guardrail.Logs, Pipeline: sanitizedQuery,
-				StartMs: startTime, EndMs: endTime, Index: args.Index,
-			})
-		}
 		if control, _, _, ok := parseCheckPlan(sanitizedQuery); ok {
 			queries = append(queries, guardrail.Query{
 				Tool: "get_logs", Signal: guardrail.Logs, Pipeline: control,
@@ -300,7 +294,7 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 				})
 			}
 		}
-		if stages, ok := logjsonQuery.([]map[string]interface{}); ok && !truncated {
+		if stages, ok := logjsonQuery.([]map[string]interface{}); ok && !truncated && countSanityEnabled(cfg) {
 			endSanity := utils.StartToolPhase(ctx, "get_logs", "count_sanity")
 			result = utils.AppendCountSanity(ctx, client, cfg, stages, startTime, endTime, result)
 			endSanity(nil)
@@ -500,6 +494,10 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 	}
 
 	return baseResponse, env, nil
+}
+
+func countSanityEnabled(cfg models.Config) bool {
+	return cfg.QueryGuardrail.Mode == "" || cfg.QueryGuardrail.Mode == guardrail.ModeOff
 }
 
 // fetchViaLogSearchAPI answers the whole search in one call, letting the API
