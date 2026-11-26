@@ -19,6 +19,7 @@ import (
 // argumentChecks run before the SDK validates a tool's arguments against its schema,
 // which stops at the first violation; each check names every problem it finds.
 var argumentChecks = map[string]argumentCheck{
+	"get_metric_status":        checkMetricStatusArguments,
 	"get_service_environments": withoutToolContext(checkServiceEnvironmentArguments),
 	"get_service_traces":       withoutToolContext(checkServiceTraceArguments),
 	"get_alerts":               checkAlertsRangeArguments,
@@ -60,6 +61,18 @@ func checkAlertsRangeArguments(raw json.RawMessage, served func(string) bool) (j
 		hint := "get_alerts takes a snapshot. For alert instances, set time_iso to end_time in RFC3339 and window to the interval length in seconds (1-3600). Explain the one-hour limit for longer intervals instead of shortening them."
 		if served("get_alert_rule_state") {
 			hint += " For sampled firing history, call get_alert_rule_state with the original start_time, end_time and any rule_name, plus a step in seconds."
+		}
+		return nil, errors.New(hint)
+	}
+	return raw, nil
+}
+
+func checkMetricStatusArguments(raw json.RawMessage, served func(string) bool) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil && fields["metric_name_pattern"] != nil {
+		hint := `Unknown argument metric_name_pattern. To check status across matching series, put your regex in a PromQL selector in metric (for example {__name__=~"example_.+"}) and supply window_minutes. Use a narrower selector or smaller window if the query is too broad.`
+		if served("prometheus_label_values") {
+			hint += ` To list matching metric names, call prometheus_label_values with label "__name__" and the selector in match_query.`
 		}
 		return nil, errors.New(hint)
 	}

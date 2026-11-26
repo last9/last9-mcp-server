@@ -38,6 +38,25 @@ func TestGetAlertsRangeGuidance(t *testing.T) {
 	}
 }
 
+func TestMetricStatusPatternGuidance(t *testing.T) {
+	for _, discovery := range []bool{true, false} {
+		cfg := testToolRegistrationConfig()
+		cfg.ToolFilter.Tools = toolsets.Set{"get_metric_status": {}}
+		want := toolErrorExpectation{contains: []string{"metric_name_pattern", "metric", `{__name__=~"example_.+"}`, "window_minutes", "narrower selector", "smaller window"}, absent: []string{"private-pattern"}}
+		if discovery {
+			cfg.ToolFilter.Tools["prometheus_label_values"] = struct{}{}
+			want.contains = append(want.contains, "prometheus_label_values", "__name__", "match_query")
+		} else {
+			want.absent = append(want.absent, "prometheus_label_values")
+		}
+		session := connectTestSession(t, cfg, http.DefaultClient)
+		result := callRegisteredTool(t, session, &mcp.CallToolParams{
+			Name: "get_metric_status", Arguments: json.RawMessage(`{"metric_name_pattern":"private-pattern","window_minutes":15}`),
+		})
+		assertToolError(t, result, want)
+	}
+}
+
 func TestDescribeAlertChartRuleIDGuidance(t *testing.T) {
 	session := newInMemoryClientSession(t)
 	for _, args := range []string{
