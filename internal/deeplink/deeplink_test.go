@@ -57,6 +57,26 @@ func TestBuildExceptionLink(t *testing.T) {
 	}
 }
 
+func TestBuildExceptionLinkRejectsUnsafeEnvironment(t *testing.T) {
+	b := NewBuilder("acme", "cluster-1")
+	for _, tc := range []struct {
+		name string
+		env  string
+		want bool
+	}{
+		{name: "normal", env: "prod", want: true},
+		{name: "quoted", env: `prod" or "staging`, want: false},
+		{name: "control character", env: "prod\nstaging", want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := b.BuildExceptionLink(1_700_000_000_000, 1_700_003_600_000, ExceptionRow{ID: "1b589f62-web-View", Env: tc.env})
+			if (got != "") != tc.want {
+				t.Fatalf("BuildExceptionLink() = %q, want link present = %t", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestBuildRemappingLink(t *testing.T) {
 	b := NewBuilder("acme", "cluster-1")
 	got := b.BuildRemappingLink()
