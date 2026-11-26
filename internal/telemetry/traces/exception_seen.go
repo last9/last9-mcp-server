@@ -124,7 +124,7 @@ func unixSeconds(at time.Time) float64 {
 }
 
 func timeFromUnixSeconds(seconds float64) time.Time {
-	return time.Unix(0, int64(math.Round(seconds*float64(time.Second)))).UTC()
+	return time.UnixMilli(int64(math.Round(seconds * float64(time.Second/time.Millisecond)))).UTC()
 }
 
 func prometheusDuration(d time.Duration) string {
