@@ -112,6 +112,41 @@ func TestEntityNameGuidanceNamesOnlyServedTools(t *testing.T) {
 	}
 }
 
+func TestGetTracesResponseModeExplainsNeutralRecoveryBeforeSchemaValidation(t *testing.T) {
+	var upstreamCalls atomic.Int32
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		upstreamCalls.Add(1)
+		http.Error(w, "unexpected request", http.StatusInternalServerError)
+	}))
+	t.Cleanup(api.Close)
+
+	cfg := testToolRegistrationConfig()
+	cfg.APIBaseURL = api.URL
+	session := connectTestSession(t, cfg, api.Client())
+	result := callRegisteredTool(t, session, &mcp.CallToolParams{
+		Name: "get_traces",
+		Arguments: json.RawMessage(`{
+			"tracejson_query":[{"type":"filter","query":{"$eq":["ServiceName","synthetic-service"]}}],
+			"lookback_minutes":15,
+			"response_mode":"do-not-echo-this"
+		}`),
+	})
+
+	assertToolError(t, result, toolErrorExpectation{
+		contains: []string{
+			"omit response_mode",
+			"preserve the existing tracejson_query stages and time bounds",
+			"matching span rows",
+			"append an aggregate stage",
+			"count or percentile",
+		},
+		absent: []string{"do-not-echo-this"},
+	})
+	if got := upstreamCalls.Load(); got != 0 {
+		t.Errorf("upstream calls = %d, want 0", got)
+	}
+}
+
 func TestDashboardWritesNameEveryWrongFieldBeforeSchemaValidation(t *testing.T) {
 	session := newInMemoryClientSession(t)
 	for tool, args := range map[string]string{

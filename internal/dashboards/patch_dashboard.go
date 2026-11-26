@@ -39,8 +39,8 @@ type PatchDashboardArgs struct {
 type PatchDashboardOp struct {
 	Op       string         `json:"op" jsonschema:"(Required) add_panel, update_panel, remove_panel, move_panel, set_title or set_variable"`
 	PanelID  string         `json:"panel_id,omitempty" jsonschema:"Panel id (update_panel, remove_panel, move_panel)"`
-	Panel    map[string]any `json:"panel,omitempty" jsonschema:"Full panel object, same shape as dashboard.panels (add_panel)"`
-	Fields   map[string]any `json:"fields,omitempty" jsonschema:"Top-level panel fields to replace; null removes a field (update_panel)"`
+	Panel    map[string]any `json:"panel,omitempty" jsonschema:"Full panel object (add_panel); log queries use index_type (physical or rehydration) and bare index_name"`
+	Fields   map[string]any `json:"fields,omitempty" jsonschema:"Top-level panel fields to replace (update_panel); null removes a field. Log queries use index_type and index_name"`
 	Index    *int           `json:"index,omitempty" jsonschema:"0-based position in panels: insert position for add_panel (default: append), target position for move_panel (required)"`
 	Title    string         `json:"title,omitempty" jsonschema:"New dashboard name (set_title)"`
 	Variable map[string]any `json:"variable,omitempty" jsonschema:"Variable object; replaces the variable with the same target, else is appended (set_variable)"`

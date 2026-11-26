@@ -21,6 +21,7 @@ import (
 var argumentChecks = map[string]argumentCheck{
 	"get_metric_status":        checkMetricStatusArguments,
 	"get_service_environments": withoutToolContext(checkServiceEnvironmentArguments),
+	"get_traces":               withoutToolContext(checkGetTracesArguments),
 	"get_service_traces":       withoutToolContext(checkServiceTraceArguments),
 	"get_alerts":               checkAlertsRangeArguments,
 	"get_alert_config":         withoutToolContext(alerting.PrepareAlertConfigArguments),
@@ -63,6 +64,14 @@ func checkAlertsRangeArguments(raw json.RawMessage, served func(string) bool) (j
 			hint += " For sampled firing history, call get_alert_rule_state with the original start_time, end_time and any rule_name, plus a step in seconds."
 		}
 		return nil, errors.New(hint)
+	}
+	return raw, nil
+}
+
+func checkGetTracesArguments(raw json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil && fields["response_mode"] != nil {
+		return nil, errors.New("response_mode is not supported by get_traces. Do not infer which result was intended: to retrieve matching span rows, omit response_mode and preserve the existing tracejson_query stages and time bounds; to obtain a count or percentile, append an aggregate stage and preserve the existing filters and time bounds.")
 	}
 	return raw, nil
 }
