@@ -24,11 +24,7 @@ func TestReviewExceptionSeenDoesNotReadBeforeRequestedWindow(t *testing.T) {
 			values: fmt.Sprintf(`[[%d,"1"],[%d,"NaN"],[%d,"2"]]`, start.Unix(), start.Add(time.Minute).Unix(), start.Add(60*time.Minute).Unix()),
 			want:   exceptionSeen{First: start.Add(60 * time.Minute), Last: start.Add(60 * time.Minute)},
 		},
-		{
-			name:   "non-divisible window does not round request before start",
-			window: 61 * time.Minute,
-			values: `[]`,
-		},
+		{name: "non-divisible window excludes samples before start", window: 61 * time.Minute, values: `[]`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -39,9 +35,6 @@ func TestReviewExceptionSeenDoesNotReadBeforeRequestedWindow(t *testing.T) {
 					t.Errorf("decode request: %v", err)
 				}
 				body := fmt.Sprintf(`[{"metric":{"exception_type":"TypeError","service_name":"web","span_name":"View","span_kind":"SPAN_KIND_SERVER","env":"prod"},"values":%s}]`, tc.values)
-				if request.Window > int64(tc.window/time.Second) {
-					body = `[{"metric":{"exception_type":"TypeError","service_name":"web","span_name":"View","span_kind":"SPAN_KIND_SERVER","env":"prod"},"values":[[1768903260,"1"]]}]`
-				}
 				_, _ = io.WriteString(w, body)
 			}))
 			defer srv.Close()
@@ -50,8 +43,10 @@ func TestReviewExceptionSeenDoesNotReadBeforeRequestedWindow(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if request.Window != int64(tc.window/time.Second) {
-				t.Errorf("window = %d, want %d", request.Window, int64(tc.window/time.Second))
+			step := time.Duration(request.Step) * time.Second
+			wantWindow := (tc.window + step - 1) / step * step
+			if request.Window != int64(wantWindow/time.Second) {
+				t.Errorf("window = %d, want %d", request.Window, int64(wantWindow/time.Second))
 			}
 			got, found := seen[exceptionSeriesKey(map[string]string{"exception_type": "TypeError", "service_name": "web", "span_name": "View", "span_kind": "SPAN_KIND_SERVER", "env": "prod"})]
 			if got != tc.want || found != !tc.want.First.IsZero() {
@@ -70,9 +65,16 @@ func TestReviewExceptionSeenCoversFinalPartialStep(t *testing.T) {
 				request := decodeRangeRequest(t, r)
 				requestStart := time.Unix(request.Timestamp-request.Window, 0).UTC()
 				values := make([][2]any, 0)
+				firstInWindow := true
 				for at := requestStart; !at.After(end); at = at.Add(time.Duration(request.Step) * time.Second) {
 					value := "0"
-					if !at.Before(end) {
+					switch {
+					case !at.After(start):
+						value = "1"
+					case firstInWindow:
+						value = "+Inf"
+						firstInWindow = false
+					case !at.Before(end):
 						value = "1"
 					}
 					values = append(values, [2]any{at.Unix(), value})

@@ -49,6 +49,8 @@ func exceptionSeenStep(window time.Duration) time.Duration {
 func fetchExceptionSeen(ctx context.Context, client *http.Client, cfg models.Config, q exceptionSeenQuery) (map[string]exceptionSeen, error) {
 	step := exceptionSeenStep(q.End.Sub(q.Start))
 	stepSeconds := int64(step / time.Second)
+	windowSeconds := q.End.Unix() - q.Start.Unix()
+	windowSeconds = (windowSeconds + stepSeconds - 1) / stepSeconds * stepSeconds
 	query := buildExceptionsPromQL(q.BaseFilter, fmt.Sprintf("%dm", int64(step/time.Minute)))
 
 	series, err := prom.QuerySeries(ctx, last9api.NewClient(client, cfg), prom.QueryInput{
@@ -59,7 +61,7 @@ func fetchExceptionSeen(ctx context.Context, client *http.Client, cfg models.Con
 		},
 		Query:     query,
 		Timestamp: q.End.Unix(),
-		Window:    q.End.Unix() - q.Start.Unix(),
+		Window:    windowSeconds,
 		Step:      stepSeconds,
 	})
 	if err != nil {
