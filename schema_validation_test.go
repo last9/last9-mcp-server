@@ -83,6 +83,12 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 			wantText:  `unexpected additional properties ["foo" "label_name" "matches"]`,
 		},
 		{
+			name:      "service trace span name correction",
+			tool:      "get_service_traces",
+			arguments: map[string]any{"service_name": "example", "span_name": "example-operation"},
+			wantText:  `get_traces with tracejson_query=[{"type":"filter","query":{"$and":[{"$eq":["ServiceName","<service_name>"]},{"$eq":["SpanName","<span_name>"]}]}}]`,
+		},
+		{
 			name:      "service environment filter correction",
 			tool:      "get_service_environments",
 			arguments: map[string]any{"service": "example"},
