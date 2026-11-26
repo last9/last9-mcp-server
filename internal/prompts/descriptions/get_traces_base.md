@@ -15,7 +15,7 @@
 
 **Aggregate:** use `aggregates`+`groupby`. Average/mean→`{"function":{"$avg":["Duration"]}}`, not `$quantile`. `$quantile` is the general/default percentile operator. Compute from raw spans; never average percentile samples. `Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first.
 
-**Transform:** `as` is an array: `{"type":"transform","transforms":[{"function":{"$split":["SpanName","/",1]},"as":["endpoint"]}]}` (read it as `attributes['endpoint']`).
+**Transform:** `"transforms":[{"function":{"$replace_regex":["SpanName","^HTTP","RPC"]},"as":["endpoint"]}]` → `"groupby":{"attributes['endpoint']":"endpoint"}`.
 
 **Percentile over the whole lookback (p95 latency, last hour) → ONE `aggregate` stage:** `{"type":"aggregate","aggregates":[{"function":{"$quantile":[0.95,"Duration"]},"as":"p95"}]}` (+`groupby` per dimension).
 
@@ -25,7 +25,7 @@ For calendar buckets, use explicit ISO bounds and time zone. P99 `Duration` outp
 
 **Order:** filter first (match-all TraceId/SpanId before aggregate). Show/find → filter only; analysis → aggregate.
 
-**Aggregate example:** `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`.
+**Count:** `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`.
 
 Manual: `last9://reference/tracejson`
 
