@@ -34,14 +34,23 @@ func TestExceptionSeenKeepsBucketsInsideRequestedWindow(t *testing.T) {
 		{name: "fractional window includes last full bucket", start: wholeSecondStart.Add(900 * time.Millisecond), window: 60 * time.Minute, occurrence: wholeSecondStart.Add(59*time.Minute + 30*time.Second + 900*time.Millisecond), value: "1", wantSeen: true},
 		{name: "fractional window includes end fraction", start: wholeSecondStart.Add(900 * time.Millisecond), window: 60 * time.Minute, occurrence: wholeSecondStart.Add(60*time.Minute + 700*time.Millisecond), value: "1", wantSeen: true},
 		{name: "subsecond tail includes first fraction", start: wholeSecondStart, window: 60*time.Minute + 500*time.Millisecond, occurrence: wholeSecondStart.Add(60*time.Minute + 100*time.Millisecond), value: "1", wantSeen: true, wantTail: 500 * time.Millisecond},
+		{name: "submillisecond tail is below occurrence precision", start: wholeSecondStart, window: 60*time.Minute + 500*time.Microsecond, occurrence: wholeSecondStart.Add(60*time.Minute + 100*time.Microsecond)},
+		{name: "millisecond tail is at occurrence precision", start: wholeSecondStart, window: 60*time.Minute + time.Millisecond, occurrence: wholeSecondStart.Add(60*time.Minute + 500*time.Microsecond), value: "1", wantSeen: true, wantTail: time.Millisecond},
+		{name: "fractional millisecond tail uses supported precision", start: wholeSecondStart, window: 60*time.Minute + 1500*time.Microsecond, occurrence: wholeSecondStart.Add(60*time.Minute + 500*time.Microsecond), value: "1", wantSeen: true, wantTail: time.Millisecond},
 		{name: "minute tail includes first fraction", start: wholeSecondStart, window: 61*time.Minute + 500*time.Millisecond, occurrence: wholeSecondStart.Add(60*time.Minute + 100*time.Millisecond), value: "1", wantSeen: true, wantTail: 60*time.Second + 500*time.Millisecond},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			start := tc.start
 			end := start.Add(tc.window)
+			normalizedStart := start.Truncate(time.Millisecond)
+			if normalizedStart.Before(start) {
+				normalizedStart = normalizedStart.Add(time.Millisecond)
+			}
+			normalizedEnd := end.Truncate(time.Millisecond)
+			normalizedWindow := normalizedEnd.Sub(normalizedStart)
 			tail := tc.wantTail
 			if tail == 0 {
-				tail = tc.window % exceptionSeenStep(tc.window)
+				tail = normalizedWindow % exceptionSeenStep(normalizedWindow)
 			}
 			requests := 0
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -84,7 +93,7 @@ func TestExceptionSeenKeepsBucketsInsideRequestedWindow(t *testing.T) {
 				t.Fatal(err)
 			}
 			wantRequests := 1
-			if tc.window%exceptionSeenStep(tc.window) != 0 {
+			if normalizedWindow%exceptionSeenStep(normalizedWindow) != 0 {
 				wantRequests = 2
 			}
 			if requests != wantRequests {
