@@ -83,13 +83,27 @@ func (b *Builder) BuildTracesLink(fromMs, toMs int64, pipeline any, traceID, spa
 	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteTraces, params.Encode())
 }
 
-// BuildExceptionsLink creates an exceptions dashboard deep link
-func (b *Builder) BuildExceptionsLink(fromMs, toMs int64) string {
+// BuildExceptionsLink creates an exceptions dashboard deep link. serviceName and
+// env are regex matchers; each becomes a page filter only when it is a literal
+// name, so a pattern never narrows the page to a value that does not exist.
+func (b *Builder) BuildExceptionsLink(fromMs, toMs int64, serviceName, env string) string {
 	params := url.Values{}
 	params.Set("from", fmt.Sprintf("%d", fromMs/1000))
 	params.Set("to", fmt.Sprintf("%d", toMs/1000))
 	if b.clusterID != "" {
 		params.Set("cluster", b.clusterID)
+	}
+	var filters []string
+	if service := literalFilterValue(serviceName); service != "" {
+		filters = append(filters, fmt.Sprintf(`service_name="%s"`, service))
+	}
+	if exceptionEnv := literalFilterValue(env); exceptionEnv != "" {
+		filters = append(filters, fmt.Sprintf(`deployment_environment="%s"`, exceptionEnv))
+	}
+	if len(filters) > 0 {
+		if filterValue, err := json.Marshal(filters); err == nil {
+			params.Set("filter", string(filterValue))
+		}
 	}
 	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteExceptions, params.Encode())
 }
@@ -151,6 +165,21 @@ func (b *Builder) BuildDropRulesLink() string {
 // apmCatalogEnvRegexMeta are characters that make an env argument a pattern,
 // not a single catalog filter value.
 const apmCatalogEnvRegexMeta = `.*+?()[]{}|\^$`
+
+// filterPatternChars mark a regex matcher argument as a pattern. "." is left
+// out so dotted names (checkout.v2, k8s.prod) still become filters; '"' would
+// break the page's quoted filter syntax.
+const filterPatternChars = `*+?()[]{}|\^$"`
+
+// literalFilterValue returns value when it reads as a single name, and "" for
+// empty values or patterns.
+func literalFilterValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.ContainsAny(value, filterPatternChars) {
+		return ""
+	}
+	return value
+}
 
 // APMCatalogEnvExact returns a catalog filter for callers that pass an exact
 // environment name (not a PromQL regex). Only empty and ".*" are screened out;
