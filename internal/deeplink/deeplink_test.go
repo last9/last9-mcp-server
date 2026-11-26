@@ -241,6 +241,7 @@ func TestBuildExceptionsLink_Filters(t *testing.T) {
 		{name: "env only", env: "prod", wantFilters: []string{`deployment_environment="prod"`}},
 		{name: "regex service is dropped", service: "api|web", env: "prod", wantFilters: []string{`deployment_environment="prod"`}},
 		{name: "wildcard env is dropped", service: "api", env: ".*", wantFilters: []string{`service_name="api"`}},
+		{name: "control character is dropped", service: "api\nweb", wantFilters: nil},
 		{name: "no filters", wantFilters: nil},
 	}
 	for _, tt := range tests {
