@@ -52,23 +52,31 @@ func TestDescribeAlertChartRuleIDGuidance(t *testing.T) {
 	}
 }
 
-func TestEntityKPIArgumentGuidanceNamesOnlyServedTools(t *testing.T) {
+func TestEntityNameGuidanceNamesOnlyServedTools(t *testing.T) {
 	for _, tc := range []struct {
 		toolsets string
+		tool     string
 		contains []string
 		absent   []string
 	}{
 		{
 			toolsets: "alerts",
+			tool:     "get_entity_kpis",
 			contains: []string{"Call get_alert_groups with alert_group_name", "pass its id as entity_id to get_entity_kpis"},
 		},
 		{
+			toolsets: "alerts",
+			tool:     "get_entity_alert_rules",
+			contains: []string{"Call get_alert_groups with alert_group_name", "select the intended group", "pass its id as entity_id to get_entity_alert_rules"},
+		},
+		{
 			toolsets: "investigate",
+			tool:     "get_entity_kpis",
 			contains: []string{"Ask for the alert group ID", "pass it as entity_id to get_entity_kpis"},
 			absent:   []string{"get_alert_groups"},
 		},
 	} {
-		t.Run(tc.toolsets, func(t *testing.T) {
+		t.Run(tc.toolsets+"/"+tc.tool, func(t *testing.T) {
 			filter, err := toolsets.NewFilter(tc.toolsets, false, "")
 			if err != nil {
 				t.Fatalf("NewFilter: %v", err)
@@ -77,7 +85,7 @@ func TestEntityKPIArgumentGuidanceNamesOnlyServedTools(t *testing.T) {
 			cfg.ToolFilter = filter
 			session := connectTestSession(t, cfg, http.DefaultClient)
 			result := callRegisteredTool(t, session, &mcp.CallToolParams{
-				Name:      "get_entity_kpis",
+				Name:      tc.tool,
 				Arguments: json.RawMessage(`{"entity_name":"example"}`),
 			})
 			assertToolError(t, result, toolErrorExpectation{contains: tc.contains, absent: tc.absent})
