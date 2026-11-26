@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - When `get_metric_status` rejects `metric_name_pattern`, its error shows how to check matching series with a selector and how to list metric names when discovery is available (#665).
+- When `did_you_mean` receives `service_name`, its error now shows how to look up a service by name and how to scope a log attribute lookup to a service (#656).
 - Dashboard writes reject query execution modes outside `range` and `instant`. `validate_dashboard` flags an invalid mode on the affected target before executing its expression (#670).
 - `get_entity_alert_rules` now explains how to resolve an unsupported `entity_name` through `get_alert_groups` and retry with the selected group ID (#663).
 - When a caller passes `span_name`, `get_service_traces` shows how to retry with `get_traces` while keeping the original scope, time window, and limit (#659).
