@@ -6,9 +6,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"last9-mcp/internal/constants"
 
@@ -152,6 +154,55 @@ func TestGetServiceLogs_HTTP5xxUsesDiscoveredField(t *testing.T) {
 	}
 	if payload["http_status_field"] != "attributes['status_code']" {
 		t.Fatalf("expected discovered http_status_field in response, got %#v", payload["http_status_field"])
+	}
+}
+
+func TestHTTPStatusDiscoveryWindow(t *testing.T) {
+	end := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	earlier := end.Add(-12 * time.Hour)
+	for _, tc := range []struct {
+		name                string
+		duration, discovery time.Duration
+	}{
+		{"clipped", 24 * time.Hour, time.Hour},
+		{"short", 15 * time.Minute, 15 * time.Minute},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			start := end.Add(-tc.discovery)
+			var seriesCalls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				q := r.URL.Query()
+				from, err := strconv.ParseInt(q.Get("start"), 10, 64)
+				to, endErr := strconv.ParseInt(q.Get("end"), 10, 64)
+				if err != nil || endErr != nil || from != start.Unix() || to != end.Unix() {
+					t.Errorf("discovery bounds = %s to %s, want %s to %s", q.Get("start"), q.Get("end"), start, end)
+				}
+				if strings.Contains(r.URL.Path, constants.EndpointLogsSeries) {
+					seriesCalls.Add(1)
+					if from <= earlier.Unix() && earlier.Unix() <= to {
+						io.WriteString(w, `{"status":"success","data":[{"status_code":"404"}]}`)
+					} else {
+						io.WriteString(w, `{"status":"success","data":[]}`)
+					}
+					return
+				}
+				io.WriteString(w, `{"status":"success","data":{"resultType":"streams","result":[]}}`)
+			}))
+			defer server.Close()
+			_, _, err := resolveHTTPStatusField(context.Background(), server.Client(), testLogsConfig(server.URL), GetServiceLogsArgs{ServiceName: "example"}, end.Add(-tc.duration), end, "")
+			if err == nil || seriesCalls.Load() == 0 {
+				t.Fatalf("expected unsuccessful discovery after checking series, got %v", err)
+			}
+			for _, want := range []string{start.Format(time.RFC3339), end.Format(time.RFC3339), "http_status_field", "raw sample", "parse"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("missing %q in %q", want, err)
+				}
+			}
+			if strings.Contains(err.Error(), "Earlier logs in the requested window were not checked") != (tc.duration > tc.discovery) {
+				t.Errorf("unexpected coverage message: %s", err)
+			}
+		})
 	}
 }
 

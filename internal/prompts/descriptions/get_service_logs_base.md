@@ -4,7 +4,7 @@ Fetch log lines for one service (`service_name`, optional `severity_filters`, `b
 
 **Use this tool when:** filtering one known service by severity, HTTP status, named attributes, or plain-text `body_filters`—no pipeline needed.
 
-**HTTP status:** Pass `http_status_class` (`5xx`) or `http_status_code` (`500`). This tool discovers the status field for the service/env/window. If discovery finds none or more than one, pass `http_status_field` (e.g. `attributes['http.status_code']`). Severity is not an HTTP-error proxy (5xx often INFO)—do not use `severity_filters` for status.
+**HTTP status:** Pass `http_status_class` (`5xx`) or `http_status_code` (`500`). Discovery checks at most the final hour. If the field is known, pass `http_status_field`; otherwise inspect a scoped raw sample. Severity is not an HTTP-error proxy (5xx often INFO)—do not use `severity_filters` for status.
 
 **Named attributes:** `attribute_filters` is `[{field, value}]` equality. For comparisons (`>`, `<`, ranges), grouping, or aggregation, use `get_logs` instead. `field` uses logjson syntax (`attributes['user_id']`). Invalid syntax is rejected; unknown org fields are allowed. Discover names with `get_log_attributes` / `get_log_attributes_for_pipeline` if unsure.
 
