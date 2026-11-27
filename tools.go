@@ -878,7 +878,6 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 	}, "get_dashboard_snapshot for id; it reports not found if the delete landed",
 		dashboards.NewDeleteDashboardSnapshotHandler(client, cfg)))
 
-	// Register Loops read tools (create/lifecycle land in follow-up PRs).
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
 		Name:        "get_loops_status",
 		Annotations: readOnlyTool("Get Loops Status"),
