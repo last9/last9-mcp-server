@@ -32,7 +32,9 @@ func TestAggregateCountMatchesReportedWindow(t *testing.T) {
 						Query string `json:"query"`
 					}
 					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-						t.Fatalf("decode instant request: %v", err)
+						t.Errorf("decode instant request: %v", err)
+						http.Error(w, "invalid request", http.StatusBadRequest)
+						return
 					}
 					if count := strings.Count(body.Query, tc.wantSelector); count != 3 {
 						t.Errorf("aggregate query contains %q %d times, want 3: %s", tc.wantSelector, count, body.Query)
