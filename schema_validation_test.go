@@ -65,6 +65,30 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 		{name: "pattern redundant body alias", tool: "get_log_patterns", arguments: map[string]any{"service_name": "example", "body": "timeout", "body_filters": []string{"timeout"}}, wantText: `Unknown argument "body". body_filters is already set; remove body.`},
 		{name: "all pattern corrections", tool: "get_log_patterns", arguments: map[string]any{"service": "example", "body": "timeout", "other": 1}, wantText: `Use body_filters with an array of message substrings, for example ["timeout"]. Unknown argument "other". Unknown argument "service". Use service_name`},
 		{
+			name:      "label values label name",
+			tool:      "prometheus_label_values",
+			arguments: map[string]any{"label_name": "job", "match_query": "up"},
+			wantText:  "unexpected additional properties [\"label_name\"]. Use label for the label name.",
+		},
+		{
+			name:      "label values selector",
+			tool:      "prometheus_label_values",
+			arguments: map[string]any{"label": "job", "matches": []string{"up"}},
+			wantText:  "unexpected additional properties [\"matches\"]. Use match_query for a single PromQL selector string.",
+		},
+		{
+			name:      "label values both keys",
+			tool:      "prometheus_label_values",
+			arguments: map[string]any{"label_name": "job", "matches": "up"},
+			wantText:  "Use label for the label name. Use match_query for a single PromQL selector string.",
+		},
+		{
+			name:      "label values hints preserve other unknown keys",
+			tool:      "prometheus_label_values",
+			arguments: map[string]any{"label_name": "job", "matches": "up", "foo": true},
+			wantText:  `unexpected additional properties ["foo" "label_name" "matches"]`,
+		},
+		{
 			name:      "service trace span name correction",
 			tool:      "get_service_traces",
 			arguments: map[string]any{"service_name": "example", "span_name": "example-operation"},

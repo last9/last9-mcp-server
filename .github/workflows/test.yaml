@@ -29,6 +29,12 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
+      - name: Check changelog order
+        if: github.event_name == 'pull_request'
+        run: |
+          scripts/prioritize-changelog.sh ${{ github.event.pull_request.number }}
+          git diff --exit-code -- CHANGELOG.md
+
       - name: Lint test goroutine assertions
         run: go vet -testinggoroutine ./...
 
