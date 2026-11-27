@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `get_alert_config` accepts `alert_group_id` to return rules belonging to one exact group, including when several groups share a name (#661).
 - `get_alerts` accepts a positive `limit` across alert instances after state filtering, preserving rule and instance order and reporting how many matches were shown (#641).
 - `get_alerts` accepts an optional `state` of `firing` or `normal` to return only matching instances within the requested window, grouped by rule (#635).
 - Alert rule tools now expose the per-rule `on_no_data` setting: create and chart-create can enable it, full updates preserve it when omitted or clear it explicitly, and both alert read tools show when it is enabled. `patch_alert` points callers to `update_alert` until the partial-update API supports the field (#577).
