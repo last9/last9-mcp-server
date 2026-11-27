@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"last9-mcp/internal/constants"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -920,9 +921,8 @@ func assertAggregateLimitCase(t *testing.T, requested, configuredMax int, wantPr
 	if len(rows) != wantRows {
 		t.Fatalf("returned rows=%d, want %d", len(rows), wantRows)
 	}
-	meta, partial := body["l9_result"].(map[string]interface{})
-	if partial != wantPartial || (partial && (meta["partial"] != true || meta["reason"] != "row_limit_reached")) {
-		t.Fatalf("partial metadata=%#v, wantPartial=%v", meta, wantPartial)
+	if env := utils.GetResultEnvelope(t, result); env.Truncated != wantPartial || (wantPartial && env.Limit != wantRows) {
+		t.Fatalf("envelope=%+v, want truncated=%v at limit %d", env, wantPartial, wantRows)
 	}
 }
 
@@ -1107,9 +1107,8 @@ func TestGetLogsHandlerPartialGroupedCountSkipsCountSanity(t *testing.T) {
 	if _, exists := body["l9_sanity"]; exists {
 		t.Fatalf("partial aggregate must not contain l9_sanity: %#v", body["l9_sanity"])
 	}
-	meta := body["l9_result"].(map[string]interface{})
-	if meta["partial"] != true {
-		t.Fatalf("expected truthful partial metadata, got %#v", meta)
+	if env := utils.GetResultEnvelope(t, result); !env.Truncated {
+		t.Fatalf("expected truthful truncation in the envelope, got %+v", env)
 	}
 }
 

@@ -83,7 +83,7 @@ func TestGetLogsChunkBudgetExemptsSingleRequestPaths(t *testing.T) {
 			if !searchAPI {
 				pipeline = append(pipeline, map[string]interface{}{"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{"function": map[string]interface{}{"$count": []interface{}{}}, "as": "count"}}})
 			}
-			_, err := fetchLogJSONQuery(context.Background(), server.Client(), cfg, pipeline, 0, int64(168*time.Hour/time.Millisecond), GetLogsArgs{LogjsonQuery: pipeline})
+			_, _, err := fetchLogJSONQuery(context.Background(), server.Client(), cfg, pipeline, 0, int64(168*time.Hour/time.Millisecond), GetLogsArgs{LogjsonQuery: pipeline})
 			if err != nil {
 				t.Fatal(err)
 			}

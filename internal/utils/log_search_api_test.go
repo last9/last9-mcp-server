@@ -482,3 +482,32 @@ func TestDecodeLogSearchResponse_DropsNonFiniteVolume(t *testing.T) {
 		t.Errorf("buckets_with_data = %v, want 1 (only the finite series)", summary["buckets_with_data"])
 	}
 }
+
+func TestSkipFailedSearchChunks(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		stats       map[string]any
+		wantSkipped string
+	}{
+		{name: "no stats", stats: nil},
+		{name: "no failures field", stats: map[string]any{"chunks_planned": 6.0}},
+		{name: "zero failures", stats: map[string]any{"chunks_planned": 6.0, "chunks_failed": 0.0}},
+		{name: "failures of planned", stats: map[string]any{"chunks_planned": 6.0, "chunks_failed": 2.0}, wantSkipped: "2 of 6 server-side search chunks failed"},
+		{name: "failures without planned", stats: map[string]any{"chunks_failed": 1.0}, wantSkipped: "1 server-side search chunks failed"},
+		{name: "non-numeric failures", stats: map[string]any{"chunks_failed": "2"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var env ResultEnvelope
+			SkipFailedSearchChunks(tc.stats, &env)
+			if tc.wantSkipped == "" {
+				if !env.IsEmpty() {
+					t.Fatalf("envelope = %+v, want empty", env)
+				}
+				return
+			}
+			if !env.Partial || len(env.Skipped) != 1 || !strings.HasPrefix(env.Skipped[0], tc.wantSkipped) {
+				t.Fatalf("envelope = %+v, want partial with skipped %q", env, tc.wantSkipped)
+			}
+		})
+	}
+}

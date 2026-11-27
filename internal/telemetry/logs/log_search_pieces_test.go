@@ -79,7 +79,7 @@ func TestFetchLogJSONQuery_APIMode_AtWindowLimitIsOneRead(t *testing.T) {
 	srv := newLogSearchPieceServer(t, 0)
 	end := time.Unix(1_800_000_000, 0).UTC()
 
-	result, err := fetchLogJSONQuery(context.Background(), srv.Client(), apiModeCfg(srv.URL),
+	result, _, err := fetchLogJSONQuery(context.Background(), srv.Client(), apiModeCfg(srv.URL),
 		[]map[string]interface{}{{"type": "filter"}}, end.Add(-logSearchWindowLimit).UnixMilli(), end.UnixMilli(), GetLogsArgs{Limit: 10})
 	if err != nil {
 		t.Fatalf("fetchLogJSONQuery: %v", err)
@@ -97,7 +97,7 @@ func TestFetchLogJSONQuery_APIMode_OneSecondOverLimitReadsTwoPieces(t *testing.T
 	end := time.Unix(1_800_000_000, 0).UTC()
 	start := end.Add(-logSearchWindowLimit - time.Second)
 
-	result, err := fetchLogJSONQuery(context.Background(), srv.Client(), apiModeCfg(srv.URL),
+	result, _, err := fetchLogJSONQuery(context.Background(), srv.Client(), apiModeCfg(srv.URL),
 		[]map[string]interface{}{{"type": "filter"}}, start.UnixMilli(), end.UnixMilli(), GetLogsArgs{Limit: 10})
 	if err != nil {
 		t.Fatalf("fetchLogJSONQuery: %v", err)
@@ -116,7 +116,7 @@ func TestFetchLogJSONQuery_APIMode_ThirtyDaysReadsThreeContiguousPieces(t *testi
 	end := time.Unix(1_800_000_000, 0).UTC()
 	start := end.Add(-30 * 24 * time.Hour)
 
-	result, err := fetchLogJSONQuery(context.Background(), srv.Client(), apiModeCfg(srv.URL),
+	result, _, err := fetchLogJSONQuery(context.Background(), srv.Client(), apiModeCfg(srv.URL),
 		[]map[string]interface{}{{"type": "filter"}}, start.UnixMilli(), end.UnixMilli(), GetLogsArgs{Limit: 2})
 	if err != nil {
 		t.Fatalf("fetchLogJSONQuery: %v", err)
@@ -228,7 +228,7 @@ func TestFetchLogJSONQuery_APIMode_AggregateOverWindowLimitIsRefused(t *testing.
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := newLogSearchPieceServer(t, 0)
-			_, err := fetchLogJSONQuery(context.Background(), srv.Client(), apiModeCfg(srv.URL), aggregate,
+			_, _, err := fetchLogJSONQuery(context.Background(), srv.Client(), apiModeCfg(srv.URL), aggregate,
 				end.Add(-tc.window).UnixMilli(), end.UnixMilli(), GetLogsArgs{Limit: 10})
 			if got := srv.requests(); got != tc.wantCalls {
 				t.Errorf("requests = %d, want %d", got, tc.wantCalls)

@@ -38,7 +38,7 @@ func TestNewUpstreamHTTPErrorTruncatesAndHints(t *testing.T) {
 		StatusCode: http.StatusBadRequest,
 		Body:       io.NopCloser(strings.NewReader(`{"error":"` + strings.Repeat("x", 800) + `"}`)),
 	}
-	err := NewUpstreamHTTPError(resp, "logs query", LogsPipelineSchemaHint)
+	err := NewUpstreamHTTPErrorWithAdvice(resp, "logs query", UpstreamAdvice{SchemaHint: LogsPipelineSchemaHint})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -103,6 +103,70 @@ func TestNewUpstreamHTTPErrorDrains502Body(t *testing.T) {
 	}
 	if !strings.Contains(got, "HTTP 502") {
 		t.Fatalf("status missing from error: %s", got)
+	}
+}
+
+func TestUnknownFieldNextActionMatchesEachMarker(t *testing.T) {
+	for _, body := range []string{
+		`unknown field "bad_op"`,
+		`{"error":"Unknown attribute attributes['user']"}`,
+		`code: 47. DB::Exception: Unknown identifier: foo`,
+		`Missing columns: 'foo' while processing query`,
+		`unknown column foo`,
+		`no such column: foo`,
+	} {
+		got := UnknownFieldNextAction(body, "get_log_attributes_for_pipeline")
+		if !strings.Contains(got, "get_log_attributes_for_pipeline") {
+			t.Errorf("body %q: next action = %q, want it to name the discovery tool", body, got)
+		}
+	}
+}
+
+func TestUnknownFieldNextActionIgnoresOtherErrors(t *testing.T) {
+	for _, body := range []string{`parse error: unexpected identifier`, `invalid stage type`, ``} {
+		if got := UnknownFieldNextAction(body, "get_log_attributes_for_pipeline"); got != "" {
+			t.Errorf("body %q: next action = %q, want none", body, got)
+		}
+	}
+	if got := UnknownFieldNextAction(`unknown field "x"`, ""); got != "" {
+		t.Errorf("no discovery tool: next action = %q, want none", got)
+	}
+}
+
+func TestNewUpstreamHTTPErrorWithAdviceLeadsWithDiscoveryTool(t *testing.T) {
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Body:       io.NopCloser(strings.NewReader(`{"error":"unknown field attributes['usr']"}`)),
+	}
+	got := NewUpstreamHTTPErrorWithAdvice(resp, "logs query", UpstreamAdvice{
+		SchemaHint:    "SCHEMA",
+		DiscoveryTool: "get_log_attributes_for_pipeline",
+	}).Error()
+	next := strings.Index(got, "Next action: call get_log_attributes_for_pipeline")
+	body := strings.Index(got, "Upstream response:")
+	if next < 0 || body < 0 || next > body {
+		t.Fatalf("want the next action before the upstream body, got %s", got)
+	}
+	if strings.Contains(got, "Review the tool arguments") {
+		t.Fatalf("generic advice should give way to the next action: %s", got)
+	}
+	if !strings.HasSuffix(got, "SCHEMA") {
+		t.Fatalf("schema hint missing: %s", got)
+	}
+}
+
+func TestNewUpstreamHTTPErrorAuthNamesScopeAndRole(t *testing.T) {
+	for status, want := range map[int][]string{
+		http.StatusUnauthorized: {"HTTP 401", "rejected", "regenerate the refresh token", "API Access"},
+		http.StatusForbidden:    {"HTTP 403", "scope", "role", "admin"},
+	} {
+		resp := &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(`denied`))}
+		got := NewUpstreamHTTPError(resp, "logs query").Error()
+		for _, fragment := range append(want, "Do not retry unchanged") {
+			if !strings.Contains(got, fragment) {
+				t.Errorf("HTTP %d error %q missing %q", status, got, fragment)
+			}
+		}
 	}
 }
 

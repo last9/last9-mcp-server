@@ -11,7 +11,7 @@
 
 **Time:** `lookback_minutes` default **60**, ≥1; TraceId requires explicit `lookback_minutes` or `start_time_iso`. RFC3339 uses `start_time_iso`+`end_time_iso`, not Timestamp filters.
 
-**Fields:** OTel enums: `SPAN_KIND_SERVER`, `STATUS_CODE_ERROR`; Duration is ns. Use `attributes['key']`/`resources['key']`, not `SpanAttributes.foo`.
+**Fields:** OTel enums like `SPAN_KIND_SERVER`; Duration is ns. Use `attributes['key']`/`resources['key']`, not `SpanAttributes.foo`.
 
 **Aggregate:** use `aggregates`+`groupby`. Average/mean→`{"function":{"$avg":["Duration"]}}`, not `$quantile`. `$quantile` is the general/default percentile operator. Compute from raw spans; never average percentile samples. `Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first.
 
@@ -25,7 +25,11 @@ For calendar buckets, use explicit ISO bounds and time zone. P99 `Duration` outp
 
 **Order:** filter first (match-all TraceId/SpanId before aggregate). Show/find → filter only; analysis → aggregate.
 
-**Aggregate example:** `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`.
+**Count:** `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`.
+
+**Envelope:** `truncated`, `trimmed_items`, `partial`: disclose; follow `hints`.
+
+**Guardrail (server-configured):** `off` (default) skips checks; `shadow` adds hints without blocking; `enforce` rejects over-limit queries before execution. Follow reason-coded `hints`: narrow the window or add a service filter; do not retry unchanged. `estimate_unavailable` alone never rejects; only the unscoped range cap still applies.
 
 Manual: `last9://reference/tracejson`
 
@@ -43,7 +47,7 @@ Span filters, counts, averages or percentiles across services with a tracejson p
 - `get_current_time` (absolute bounds)
 
 ## Output shape
-Span rows for filter-only pipelines; aggregate rows when the pipeline aggregates.
+Span or aggregate rows per pipeline.
 
 ## Known traps
 Filter values are strings (`STATUS_CODE_ERROR`). For trace-level questions, filter-only results contain one row per span: deduplicate by `TraceId`; fetch the complete trace with `get_service_traces`.

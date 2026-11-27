@@ -396,6 +396,30 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 	}
 }
 
+func TestQueryToolGuidanceNamesEnvelopeFields(t *testing.T) {
+	// Tail shared by the short form (size-budgeted tools) and prometheus's longer one.
+	const envelope = "`trimmed_items`, `partial`"
+	for name, desc := range map[string]string{
+		"get_logs":               prompts.LogjsonReference,
+		"get_traces":             prompts.GetTracesDescription,
+		"get_service_logs":       prompts.GetServiceLogsDescription,
+		"get_service_traces":     prompts.GetServiceTracesDescription,
+		"prometheus_range_query": prompts.PromqlRangeQueryDetails,
+	} {
+		if !strings.Contains(desc, envelope) || !strings.Contains(desc, "disclose; follow `hints`") {
+			t.Errorf("%s description must name the result envelope fields", name)
+		}
+	}
+}
+
+func TestLogjsonReferenceDocumentsQueryGuardrail(t *testing.T) {
+	for _, want := range []string{"server-configured guardrail", "`off` (default)", "`shadow`", "`enforce`", "reason-coded `hints`", "narrowing the window", "estimate_unavailable"} {
+		if !strings.Contains(prompts.LogjsonReference, want) {
+			t.Errorf("logjson reference missing %q", want)
+		}
+	}
+}
+
 func TestTraceQueryGuidanceDistinguishesSpansFromTraces(t *testing.T) {
 	checks := map[string]string{
 		"description": prompts.GetTracesDescription,
@@ -452,7 +476,7 @@ func TestPercentileReferenceManualsMatchToolDescriptions(t *testing.T) {
 				"Discover and use a normalized route field before aggregation",
 				"group or aggregate exact raw URI values individually",
 				"never normalize or merge URI variants afterward",
-				"When `l9_result.partial=true`, preserve returned rows and explicitly disclose partial coverage",
+				"When the result envelope reports `truncated`, preserve returned rows and explicitly disclose that the row limit cut the result",
 				"never infer or convert units",
 				`"function": {"$quantile": [0.99, "attributes['latency_ms']"]}`,
 				`"window": ["24", "hours"]`,

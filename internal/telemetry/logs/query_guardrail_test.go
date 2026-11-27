@@ -1,0 +1,292 @@
+package logs
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"slices"
+	"strings"
+	"testing"
+
+	"last9-mcp/internal/constants"
+	"last9-mcp/internal/models"
+	"last9-mcp/internal/telemetry/guardrail"
+	"last9-mcp/internal/telemetry/guardrail/guardrailtest"
+	"last9-mcp/internal/utils"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+// newGuardrailServer answers every query with one matching log line.
+func newGuardrailServer(t *testing.T, estimateStatus int, estimate string) *guardrailtest.Server {
+	return guardrailtest.NewServer(t, estimateStatus, estimate,
+		strings.Replace(streamsAPIResponse(nLogValues(1, "boom")), "{", `{"status":"success",`, 1))
+}
+
+func guardrailConfig(url, mode string) models.Config {
+	cfg := testLogsConfig(url)
+	cfg.QueryGuardrail = guardrailtest.Limits(mode)
+	return cfg
+}
+
+var serviceErrorFilter = []map[string]interface{}{
+	{"type": "filter", "query": map[string]interface{}{"$and": []interface{}{
+		map[string]interface{}{"$eq": []interface{}{"ServiceName", "api"}},
+		map[string]interface{}{"$contains": []interface{}{"Body", "error"}},
+	}}},
+}
+
+const twoDaysMinutes = 48 * 60
+
+func callGuardedGetLogs(t *testing.T, s *guardrailtest.Server, mode string, args GetLogsArgs) *mcp.CallToolResult {
+	t.Helper()
+	result, _, err := NewGetLogsHandler(s.Client(), guardrailConfig(s.URL, mode))(context.Background(), &mcp.CallToolRequest{}, args)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	return result
+}
+
+func TestGetLogsGuardrailEnforceRejectNeverQueries(t *testing.T) {
+	tests := []struct {
+		name     string
+		estimate string
+		args     GetLogsArgs
+		reason   string
+	}{
+		{"unscoped window over the cap", `{"data":{"bytes":10}}`,
+			GetLogsArgs{LogjsonQuery: rawErrorFilter, LookbackMinutes: twoDaysMinutes}, guardrail.ReasonRangeTooWide},
+		{"unscoped scan over the scope threshold", `{"data":{"bytes":1001}}`,
+			GetLogsArgs{LogjsonQuery: rawErrorFilter, LookbackMinutes: 60}, guardrail.ReasonUnscopedQuery},
+		{"scoped scan over the budget", `{"data":{"bytes":5001}}`,
+			GetLogsArgs{LogjsonQuery: serviceErrorFilter, LookbackMinutes: 60}, guardrail.ReasonScanBudgetExceeded},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newGuardrailServer(t, http.StatusOK, tt.estimate)
+			result := callGuardedGetLogs(t, s, guardrail.ModeEnforce, tt.args)
+
+			if n := s.QueryCalls.Load(); n != 0 {
+				t.Fatalf("upstream query called %d times on an enforce reject", n)
+			}
+			if !result.IsError {
+				t.Fatal("an enforce reject must be a tool error")
+			}
+			if !strings.Contains(utils.GetTextContent(t, result), tt.reason) {
+				t.Errorf("text %q lacks %s", utils.GetTextContent(t, result), tt.reason)
+			}
+			if guardrailtest.EnvelopeHint(t, result, "query_guardrail["+tt.reason+"] rejected") == "" {
+				t.Errorf("envelope lacks the %s hint", tt.reason)
+			}
+		})
+	}
+}
+
+func TestGetLogsGuardrailShadowRunsAndHints(t *testing.T) {
+	s := newGuardrailServer(t, http.StatusOK, `{"data":{"bytes":10}}`)
+	result := callGuardedGetLogs(t, s, guardrail.ModeShadow, GetLogsArgs{LogjsonQuery: aggregatePipeline(rawErrorFilter), LookbackMinutes: twoDaysMinutes})
+
+	if result.IsError || s.QueryCalls.Load() == 0 {
+		t.Fatalf("shadow blocked the query: isError=%v queries=%d", result.IsError, s.QueryCalls.Load())
+	}
+	if guardrailtest.EnvelopeHint(t, result, "query_guardrail["+guardrail.ReasonRangeTooWide+"] would be rejected") == "" {
+		t.Fatalf("hints = %v", utils.GetResultEnvelope(t, result).Hints)
+	}
+}
+
+func TestGetLogsGuardrailAllowedQueryRunsWithoutHints(t *testing.T) {
+	s := newGuardrailServer(t, http.StatusOK, `{"data":{"bytes":10}}`)
+	result := callGuardedGetLogs(t, s, guardrail.ModeEnforce, GetLogsArgs{LogjsonQuery: serviceErrorFilter, LookbackMinutes: 60})
+
+	if result.IsError || s.QueryCalls.Load() == 0 || s.EstimateCalls.Load() != 1 {
+		t.Fatalf("isError=%v queries=%d estimates=%d", result.IsError, s.QueryCalls.Load(), s.EstimateCalls.Load())
+	}
+	if h := guardrailtest.EnvelopeHint(t, result, "query_guardrail"); h != "" {
+		t.Fatalf("allowed query carries a guardrail hint: %q", h)
+	}
+}
+
+func TestGetLogsGuardrailAccountsForActualCountRequestPlan(t *testing.T) {
+	countPipeline := []map[string]interface{}{
+		{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "api"}}},
+		{"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{
+			"function": map[string]interface{}{"$count": []interface{}{}}, "as": "c",
+		}}},
+	}
+	parseCountPipeline := slices.Insert(slices.Clone(countPipeline), 1, map[string]interface{}{"type": "parse", "parser": "json"})
+
+	for _, tt := range []struct {
+		name          string
+		mode          string
+		pipeline      []map[string]interface{}
+		searchAPI     bool
+		wantLogs      int
+		wantEstimates int
+		wantProm      int
+	}{
+		{"count off", guardrail.ModeOff, countPipeline, false, 1, 0, 1},
+		{"count shadow", guardrail.ModeShadow, countPipeline, false, 1, 1, 0},
+		{"count enforce", guardrail.ModeEnforce, countPipeline, false, 1, 1, 0},
+		{"parse count off", guardrail.ModeOff, parseCountPipeline, false, 2, 0, 1},
+		{"parse count shadow", guardrail.ModeShadow, parseCountPipeline, false, 2, 2, 0},
+		{"parse count enforce", guardrail.ModeEnforce, parseCountPipeline, false, 2, 2, 0},
+		{"search count off", guardrail.ModeOff, countPipeline, true, 1, 0, 1},
+		{"search count shadow", guardrail.ModeShadow, countPipeline, true, 1, 1, 0},
+		{"search count enforce", guardrail.ModeEnforce, countPipeline, true, 1, 1, 0},
+		{"search parse count off", guardrail.ModeOff, parseCountPipeline, true, 2, 0, 1},
+		{"search parse count shadow", guardrail.ModeShadow, parseCountPipeline, true, 2, 2, 0},
+		{"search parse count enforce", guardrail.ModeEnforce, parseCountPipeline, true, 2, 2, 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			type request struct {
+				path     string
+				pipeline []map[string]interface{}
+			}
+			var requests []request
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				var payload struct {
+					Pipeline []map[string]interface{} `json:"pipeline"`
+				}
+				_ = json.Unmarshal(body, &payload)
+				requests = append(requests, request{path: r.URL.Path, pipeline: payload.Pipeline})
+				switch {
+				case strings.HasSuffix(r.URL.Path, "/estimate"):
+					_, _ = w.Write([]byte(`{"data":{"bytes":10}}`))
+				case r.URL.Path == constants.EndpointPromQueryInstant:
+					_, _ = w.Write([]byte(`[]`))
+				case r.URL.Path == constants.EndpointLogSearch:
+					_, _ = w.Write([]byte(`{"query_result":{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"c":1},"values":[]}]}},"search_stats":{}}`))
+				default:
+					_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"c":1},"values":[]}]}}`))
+				}
+			}))
+			defer srv.Close()
+
+			cfg := guardrailConfig(srv.URL, tt.mode)
+			cfg.UseLogSearchAPI = tt.searchAPI
+			result, _, err := NewGetLogsHandler(srv.Client(), cfg)(
+				context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{LogjsonQuery: tt.pipeline, LookbackMinutes: 60})
+			if err != nil || result.IsError {
+				t.Fatalf("handler failed: err=%v isError=%v", err, result.IsError)
+			}
+
+			var logs, estimates, prom []request
+			for _, got := range requests {
+				switch {
+				case strings.HasSuffix(got.path, "/estimate"):
+					estimates = append(estimates, got)
+				case got.path == constants.EndpointPromQueryInstant:
+					prom = append(prom, got)
+				case got.path == constants.EndpointLogsQueryRange || got.path == constants.EndpointLogSearch:
+					logs = append(logs, got)
+				default:
+					t.Fatalf("unexpected request path %q", got.path)
+				}
+			}
+			if len(logs) != tt.wantLogs || len(estimates) != tt.wantEstimates || len(prom) != tt.wantProm {
+				t.Fatalf("paths: logs=%d estimates=%d prom=%d; want %d, %d, %d", len(logs), len(estimates), len(prom), tt.wantLogs, tt.wantEstimates, tt.wantProm)
+			}
+			for i := range estimates {
+				if !reflect.DeepEqual(estimates[i].pipeline, logs[i].pipeline) {
+					t.Errorf("estimate %d pipeline %#v != log request %#v", i, estimates[i].pipeline, logs[i].pipeline)
+				}
+			}
+		})
+	}
+}
+
+func TestGetLogsGuardrailOffSkipsEstimate(t *testing.T) {
+	s := newGuardrailServer(t, http.StatusOK, `{"data":{"bytes":10}}`)
+	result := callGuardedGetLogs(t, s, guardrail.ModeOff, GetLogsArgs{LogjsonQuery: aggregatePipeline(rawErrorFilter), LookbackMinutes: twoDaysMinutes})
+
+	if result.IsError || s.EstimateCalls.Load() != 0 || s.QueryCalls.Load() == 0 {
+		t.Fatalf("isError=%v estimates=%d queries=%d", result.IsError, s.EstimateCalls.Load(), s.QueryCalls.Load())
+	}
+}
+
+func TestGetLogsGuardrailDefaultModeSkipsEstimate(t *testing.T) {
+	s := newGuardrailServer(t, http.StatusNotFound, `404 page not found`)
+	result := callGuardedGetLogs(t, s, guardrail.DefaultMode, GetLogsArgs{LogjsonQuery: rawErrorFilter, LookbackMinutes: 60})
+
+	if result.IsError || s.EstimateCalls.Load() != 0 || s.QueryCalls.Load() == 0 {
+		t.Fatalf("isError=%v estimates=%d queries=%d", result.IsError, s.EstimateCalls.Load(), s.QueryCalls.Load())
+	}
+	if h := guardrailtest.EnvelopeHint(t, result, "query_guardrail"); h != "" {
+		t.Fatalf("default mode added a guardrail hint: %q", h)
+	}
+}
+
+func callGuardedGetServiceLogs(t *testing.T, s *guardrailtest.Server, mode string, args GetServiceLogsArgs) *mcp.CallToolResult {
+	t.Helper()
+	result, _, err := NewGetServiceLogsHandler(s.Client(), guardrailConfig(s.URL, mode))(context.Background(), &mcp.CallToolRequest{}, args)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	return result
+}
+
+func TestGetServiceLogsGuardrailEnforceRejectNeverQueries(t *testing.T) {
+	s := newGuardrailServer(t, http.StatusOK, `{"data":{"bytes":5001}}`)
+	result := callGuardedGetServiceLogs(t, s, guardrail.ModeEnforce, GetServiceLogsArgs{ServiceName: "api", LookbackMinutes: 60})
+
+	if n := s.QueryCalls.Load(); n != 0 {
+		t.Fatalf("upstream query called %d times on an enforce reject", n)
+	}
+	if !result.IsError || guardrailtest.EnvelopeHint(t, result, "query_guardrail["+guardrail.ReasonScanBudgetExceeded+"] rejected") == "" {
+		t.Fatalf("isError=%v hints=%v", result.IsError, utils.GetResultEnvelope(t, result).Hints)
+	}
+}
+
+func TestGetServiceLogsGuardrailShadowRunsAndHints(t *testing.T) {
+	s := newGuardrailServer(t, http.StatusOK, `{"data":{"bytes":5001}}`)
+	result := callGuardedGetServiceLogs(t, s, guardrail.ModeShadow, GetServiceLogsArgs{ServiceName: "api", LookbackMinutes: twoDaysMinutes})
+
+	if result.IsError || s.QueryCalls.Load() == 0 {
+		t.Fatalf("shadow blocked the query: isError=%v queries=%d", result.IsError, s.QueryCalls.Load())
+	}
+	if guardrailtest.EnvelopeHint(t, result, "query_guardrail["+guardrail.ReasonScanBudgetExceeded+"] would be rejected") == "" {
+		t.Fatalf("hints = %v", utils.GetResultEnvelope(t, result).Hints)
+	}
+	if guardrailtest.EnvelopeHint(t, result, "query_guardrail["+guardrail.ReasonRangeTooWide+"]") != "" {
+		t.Error("a service-scoped query was held to the unscoped range cap")
+	}
+}
+
+func TestGetLogsGuardrailScopedFilterSkipsRangeCapWhenEstimateUnavailable(t *testing.T) {
+	s := newGuardrailServer(t, http.StatusNotFound, `404 page not found`)
+	result := callGuardedGetLogs(t, s, guardrail.ModeEnforce, GetLogsArgs{LogjsonQuery: aggregatePipeline(serviceErrorFilter), LookbackMinutes: twoDaysMinutes})
+
+	if result.IsError || s.QueryCalls.Load() == 0 {
+		t.Fatalf("scoped query blocked without an estimate: isError=%v queries=%d", result.IsError, s.QueryCalls.Load())
+	}
+	if guardrailtest.EnvelopeHint(t, result, "query_guardrail["+guardrail.ReasonRangeTooWide+"]") != "" {
+		t.Fatalf("range cap applied to a scoped query: %v", utils.GetResultEnvelope(t, result).Hints)
+	}
+}
+
+func aggregatePipeline(filters []map[string]interface{}) []map[string]interface{} {
+	pipeline := append([]map[string]interface{}{}, filters...)
+	return append(pipeline, map[string]interface{}{
+		"type": "aggregate",
+		"aggregates": []interface{}{map[string]interface{}{
+			"function": map[string]interface{}{"$count": []interface{}{}},
+			"as":       "count",
+		}},
+	})
+}
+
+func TestGetLogsGuardrailEstimateUnavailableStillRuns(t *testing.T) {
+	s := newGuardrailServer(t, http.StatusNotFound, `404 page not found`)
+	result := callGuardedGetLogs(t, s, guardrail.ModeEnforce, GetLogsArgs{LogjsonQuery: rawErrorFilter, LookbackMinutes: 60})
+
+	if result.IsError || s.QueryCalls.Load() == 0 {
+		t.Fatalf("estimate failure blocked the query: isError=%v queries=%d", result.IsError, s.QueryCalls.Load())
+	}
+	if guardrailtest.EnvelopeHint(t, result, "query_guardrail["+guardrail.ReasonEstimateUnavailable+"]") == "" {
+		t.Fatalf("hints = %v", utils.GetResultEnvelope(t, result).Hints)
+	}
+}

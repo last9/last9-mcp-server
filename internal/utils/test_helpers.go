@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math/rand/v2"
 	"net/http"
@@ -219,6 +220,36 @@ func GetTextContent(t *testing.T, result *mcp.CallToolResult) string {
 		t.Fatalf("expected TextContent type")
 	}
 	return textContent.Text
+}
+
+// GetResultEnvelope decodes the envelope EnvelopeToolResult put in the result's
+// text: the payload's EnvelopeKey member or a trailing "envelope: " block. A
+// result with neither has the zero envelope.
+func GetResultEnvelope(t *testing.T, result *mcp.CallToolResult) ResultEnvelope {
+	t.Helper()
+	var env ResultEnvelope
+	for i, content := range result.Content {
+		text, ok := content.(*mcp.TextContent)
+		if !ok {
+			continue
+		}
+		var encoded string
+		if block, ok := strings.CutPrefix(text.Text, "envelope: "); ok && i > 0 {
+			encoded = block
+		} else if i == 0 {
+			var payload map[string]json.RawMessage
+			if json.Unmarshal([]byte(text.Text), &payload) != nil || payload[EnvelopeKey] == nil {
+				continue
+			}
+			encoded = string(payload[EnvelopeKey])
+		} else {
+			continue
+		}
+		if err := json.Unmarshal([]byte(encoded), &env); err != nil {
+			t.Fatalf("decode envelope %s: %v", encoded, err)
+		}
+	}
+	return env
 }
 
 // RecordedSpanContext stands in for the tool span the MCP SDK puts on a

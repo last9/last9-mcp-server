@@ -2,8 +2,6 @@ Fetch log lines for one service (`service_name`, optional `severity_filters`, `b
 
 **Profile first:** Call `get_service_profile`. Route using `signal_shape` and `telemetry`; see `last9://reference/investigation`. If results contradict the profile, use discovery tools (profile TTL: 15min).
 
-**Use this tool when:** filtering one known service by severity, HTTP status, named attributes, or plain-text `body_filters`—no pipeline needed.
-
 **HTTP status:** Pass `http_status_class` (`5xx`) or `http_status_code` (`500`). This tool discovers the status field for the service/env/window. If discovery finds none or more than one, pass `http_status_field` (e.g. `attributes['http.status_code']`). Severity is not an HTTP-error proxy (5xx often INFO)—do not use `severity_filters` for status.
 
 **Named attributes:** `attribute_filters` is `[{field, value}]` equality. For comparisons (`>`, `<`, ranges), grouping, or aggregation, use `get_logs` instead. `field` uses logjson syntax (`attributes['user_id']`). Invalid syntax is rejected; unknown org fields are allowed. Discover names with `get_log_attributes` / `get_log_attributes_for_pipeline` if unsure.
@@ -15,6 +13,10 @@ Fetch log lines for one service (`service_name`, optional `severity_filters`, `b
 **Lines:** omit `response_mode`; >20→summary; `raw` only for exact text, max 32000 bytes (truncates/errors).
 
 **Time/index:** `lookback_minutes` default 60, min 1; `body_filters` requires explicit `lookback_minutes` or `start_time_iso`. Use `start_time_iso`+`end_time_iso` (RFC3339) for absolute windows. Use a named `index` (`physical_index:<name>` / `rehydration_index:<block>`) or one from `get_service_profile`. Match env via `log_index_envs`; query matching indexes separately. Omit `index` for `default` or unknown.
+
+**Envelope:** `truncated`, `trimmed_items`, `partial`: disclose; follow `hints`.
+
+**Guardrail (server-configured):** `off` (default) skips checks; `shadow` adds hints without blocking; `enforce` rejects over-limit queries before execution. Follow reason-coded `hints`: narrow the window; do not retry unchanged. `estimate_unavailable` alone never rejects; only the unscoped range cap still applies.
 
 Full service-logs reference: `last9://reference/service_logs`. Logjson: `last9://reference/logjson`
 

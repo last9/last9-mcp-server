@@ -33,6 +33,11 @@ var errAggregateOverLogSearchWindow = fmt.Errorf(
 func searchLogsByWindow(
 	ctx context.Context, client *http.Client, cfg models.Config, req utils.LogSearchRequest,
 ) (map[string]any, error) {
+	// Fetch one probe row per raw window, but compute piece coverage at the caller's limit.
+	limit := min(req.Limit, utils.LogSearchMaxSampleSize)
+	if req.Limit > 0 && req.Limit < utils.LogSearchMaxSampleSize {
+		req.Limit++
+	}
 	pipeline, _ := req.Pipeline.([]map[string]interface{})
 	if req.EndMs-req.StartMs <= maxLogSearchWindowMs {
 		return utils.SearchLogs(ctx, client, cfg, req)
@@ -53,7 +58,6 @@ func searchLogsByWindow(
 	if ctx.Err() != nil {
 		return nil, utils.CallerStopped(ctx, req.Op)
 	}
-	limit := min(req.Limit, utils.LogSearchMaxSampleSize)
 	return mergeLogSearchWindows(results, limit)
 }
 
