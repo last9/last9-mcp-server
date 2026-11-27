@@ -558,6 +558,8 @@ Returns `feedback_id` only after a complete acknowledgement. A failed call may s
 - `span_name` (string, optional): Filter by span name.
 - `env` (string, optional): Filter by environment.
 
+Each row carries `fingerprint` (8 hex chars hashing `exception_type:service_name:span_name`, identical to Discover Exceptions and stable across deploys), `exception_id` (`<fingerprint>-<service_name>-<span_name>`, plus `-<env>` only when `env` is not given), `url` (opens the row in Discover Exceptions for the window), `count` (summed trace-derived exception counters), and optionally `first_seen` / `last_seen` (first and last one-minute-or-coarser step inside the window with occurrences; the queried and reported window is normalized inward to whole seconds so the link covers the same evidence; omitted when unavailable).
+
 ### get_service_summary
 
 - `start_time_iso` / `end_time_iso` (string, optional)

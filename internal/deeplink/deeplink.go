@@ -84,6 +84,28 @@ func (b *Builder) BuildTracesLink(fromMs, toMs int64, pipeline any, traceID, spa
 	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteTraces, params.Encode())
 }
 
+// ExceptionRow names one row of the exceptions page. The link narrows the page to Env (empty is
+// the dashboard's Not Set), so ID is the row's id without the env suffix the All view adds.
+type ExceptionRow struct {
+	ID  string
+	Env string
+}
+
+// BuildExceptionLink creates an exceptions deep link that opens one row's detail panel. The page
+// opens it only if the row is among those it loads for the window. The env filter is always set:
+// without one the page applies the environment the reader last picked, which can hide the row.
+func (b *Builder) BuildExceptionLink(fromMs, toMs int64, row ExceptionRow) string {
+	if row.Env != "" && safeFilterValue(row.Env) == "" {
+		return ""
+	}
+	params := b.exceptionsParams(fromMs, toMs)
+	params.Set("exception_id", row.ID)
+	if filterValue, err := json.Marshal([]string{fmt.Sprintf(`deployment_environment="%s"`, row.Env)}); err == nil {
+		params.Set("filter", string(filterValue))
+	}
+	return b.exceptionsLink(params)
+}
+
 type ExceptionsLinkOptions struct {
 	FromMs      int64
 	ToMs        int64
@@ -97,12 +119,7 @@ func (b *Builder) BuildExceptionsLink(options ExceptionsLinkOptions) string {
 		options.Env != "" && safeFilterValue(options.Env) == "" {
 		return ""
 	}
-	params := url.Values{}
-	params.Set("from", fmt.Sprintf("%d", options.FromMs/1000))
-	params.Set("to", fmt.Sprintf("%d", options.ToMs/1000))
-	if b.clusterID != "" {
-		params.Set("cluster", b.clusterID)
-	}
+	params := b.exceptionsParams(options.FromMs, options.ToMs)
 	var filters []string
 	if service := safeFilterValue(options.ServiceName); service != "" {
 		filters = append(filters, fmt.Sprintf(`service_name="%s"`, service))
@@ -115,6 +132,20 @@ func (b *Builder) BuildExceptionsLink(options ExceptionsLinkOptions) string {
 			params.Set("filter", string(filterValue))
 		}
 	}
+	return b.exceptionsLink(params)
+}
+
+func (b *Builder) exceptionsParams(fromMs, toMs int64) url.Values {
+	params := url.Values{}
+	params.Set("from", fmt.Sprintf("%d", fromMs/1000))
+	params.Set("to", fmt.Sprintf("%d", toMs/1000))
+	if b.clusterID != "" {
+		params.Set("cluster", b.clusterID)
+	}
+	return params
+}
+
+func (b *Builder) exceptionsLink(params url.Values) string {
 	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteExceptions, params.Encode())
 }
 

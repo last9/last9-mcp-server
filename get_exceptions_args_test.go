@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"last9-mcp/internal/constants"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -23,7 +25,9 @@ func TestGetExceptionsOptionalNulls(t *testing.T) {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
-		requests <- got
+		if r.URL.Path == constants.EndpointPromQueryInstant {
+			requests <- got
+		}
 		_, _ = w.Write([]byte("[]"))
 	}))
 	defer server.Close()
@@ -33,12 +37,12 @@ func TestGetExceptionsOptionalNulls(t *testing.T) {
 		extra          map[string]any
 		window, filter string
 	}{
-		{"omitted", nil, "[15m]", ""},
-		{"empty strings", map[string]any{"span_name": "", "start_time_iso": ""}, "[15m]", ""},
-		{"null span", map[string]any{"span_name": nil}, "[15m]", ""},
-		{"null start", map[string]any{"start_time_iso": nil}, "[15m]", ""},
-		{"both null", map[string]any{"span_name": nil, "start_time_iso": nil}, "[15m]", ""},
-		{"concrete values", map[string]any{"span_name": "example", "start_time_iso": "2026-01-01T00:05:00Z"}, "[25m]", "span_name=~'example'"},
+		{"omitted", nil, "[900s]", ""},
+		{"empty strings", map[string]any{"span_name": "", "start_time_iso": ""}, "[900s]", ""},
+		{"null span", map[string]any{"span_name": nil}, "[900s]", ""},
+		{"null start", map[string]any{"start_time_iso": nil}, "[900s]", ""},
+		{"both null", map[string]any{"span_name": nil, "start_time_iso": nil}, "[900s]", ""},
+		{"concrete values", map[string]any{"span_name": "example", "start_time_iso": "2026-01-01T00:05:00Z"}, "[1500s]", "span_name=~'example'"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			args := map[string]any{"lookback_minutes": 15, "end_time_iso": "2026-01-01T00:30:00Z"}

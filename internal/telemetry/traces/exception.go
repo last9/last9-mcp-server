@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"sort"
@@ -32,6 +33,7 @@ type exceptionAggregate struct {
 	SpanKind              string
 	DeploymentEnvironment string
 	Count                 float64
+	SeriesKey             string
 }
 
 // GetExceptionsArgs defines the input structure for getting exceptions
@@ -75,21 +77,32 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 		if err != nil {
 			return nil, nil, err
 		}
+		if err := validateExceptionSeenWindow(startTime, endTime); err != nil {
+			return nil, nil, err
+		}
+		startTime, endTime, err = normalizeExceptionWindow(startTime, endTime)
+		if err != nil {
+			return nil, nil, err
+		}
 
 		// Convert start/end times to milliseconds
 		startMs := startTime.UnixMilli()
 		endMs := endTime.UnixMilli()
 
-		durationMinutes := int(endTime.Sub(startTime).Minutes())
-		if endTime.Sub(startTime)%time.Minute != 0 {
-			durationMinutes++
-		}
-		if durationMinutes <= 0 {
-			durationMinutes = 1
-		}
-
 		baseFilter := buildExceptionBaseFilter(args)
-		exceptionsQuery := buildExceptionsPromQL(baseFilter, fmt.Sprintf("%dm", durationMinutes))
+		durationSeconds := int64(endTime.Sub(startTime) / time.Second)
+		exceptionsQuery := buildExceptionsPromQL(baseFilter, fmt.Sprintf("%ds", durationSeconds))
+
+		seenCtx, cancelSeen := context.WithCancel(ctx)
+		defer cancelSeen()
+		seenResult := make(chan map[string]exceptionSeen, 1)
+		go func() {
+			seen, err := fetchExceptionSeen(seenCtx, client, cfg, exceptionSeenQuery{BaseFilter: baseFilter, Start: startTime, End: endTime})
+			if err != nil {
+				slog.Warn("get_exceptions: first_seen/last_seen omitted", "error", err)
+			}
+			seenResult <- seen
+		}()
 
 		// Frontend parity: exceptions list is fetched from prom_query_instant over trace_*_count.
 		resp, err := utils.MakePromInstantAPIQuery(ctx, client, exceptionsQuery, endTime.Unix(), cfg)
@@ -109,9 +122,9 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 
 		aggregates := make([]exceptionAggregate, 0, len(instantSeries))
 		for _, point := range instantSeries {
-			exceptionType := orDefault(point.Metric["exception_type"], "Unknown")
-			serviceName := orDefault(point.Metric["service_name"], "Unknown")
-			spanName := orDefault(point.Metric["span_name"], "Unknown")
+			exceptionType := orDefault(point.Metric["exception_type"], exceptionUnknownLabel)
+			serviceName := orDefault(point.Metric["service_name"], exceptionUnknownLabel)
+			spanName := orDefault(point.Metric["span_name"], exceptionUnknownLabel)
 			spanKind := orDefault(point.Metric["span_kind"], "UNKNOWN")
 
 			var count float64
@@ -131,6 +144,7 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 				SpanKind:              spanKind,
 				DeploymentEnvironment: deploymentEnvironment,
 				Count:                 count,
+				SeriesKey:             exceptionSeriesKey(point.Metric),
 			})
 		}
 
@@ -146,16 +160,29 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 			aggregates = aggregates[:limit]
 		}
 
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
+		isAllEnvs := args.Env == ""
+		seenByKey := <-seenResult
+
 		exceptions := make([]map[string]interface{}, 0, len(aggregates))
 		for _, exceptionData := range aggregates {
-			exceptions = append(exceptions, map[string]interface{}{
+			identity := identifyException(exceptionData, isAllEnvs)
+			row := map[string]interface{}{
+				"fingerprint":            identity.Fingerprint,
+				"exception_id":           identity.ID,
+				"url":                    dlBuilder.BuildExceptionLink(startMs, endMs, exceptionLinkRow(exceptionData)),
 				"service_name":           exceptionData.ServiceName,
 				"span_name":              exceptionData.SpanName,
 				"exception_type":         exceptionData.ExceptionType,
 				"deployment_environment": exceptionData.DeploymentEnvironment,
 				"span_kind":              exceptionData.SpanKind,
 				"count":                  exceptionData.Count,
-			})
+			}
+			if seen, ok := seenByKey[exceptionData.SeriesKey]; ok {
+				row["first_seen"] = seen.First.Truncate(time.Second).Format(time.RFC3339)
+				row["last_seen"] = seen.Last.Truncate(time.Second).Format(time.RFC3339)
+			}
+			exceptions = append(exceptions, row)
 		}
 
 		// Format response
@@ -163,8 +190,8 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 			"exceptions":    exceptions,
 			"count":         len(exceptions),
 			"matched_count": matchedCount,
-			"start_time":    startTime.Format("2006-01-02T15:04:05Z"),
-			"end_time":      endTime.Format("2006-01-02T15:04:05Z"),
+			"start_time":    startTime.Format(time.RFC3339Nano),
+			"end_time":      endTime.Format(time.RFC3339Nano),
 		}
 		if len(exceptions) == 0 {
 			responseData["hint"] = exceptionEmptyAdvice(args, startTime, endTime)
@@ -182,7 +209,6 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 		}
 
 		// Build deep link URL
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 		dashboardURL := dlBuilder.BuildExceptionsLink(deeplink.ExceptionsLinkOptions{
 			FromMs:      startMs,
 			ToMs:        endMs,
@@ -203,6 +229,18 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 			},
 		}, nil, nil
 	}
+}
+
+func normalizeExceptionWindow(start, end time.Time) (time.Time, time.Time, error) {
+	normalizedStart := start.Truncate(time.Second)
+	if normalizedStart.Before(start) {
+		normalizedStart = normalizedStart.Add(time.Second)
+	}
+	end = end.Truncate(time.Second)
+	if !end.After(normalizedStart) {
+		return time.Time{}, time.Time{}, fmt.Errorf("exception query window must contain at least one whole second")
+	}
+	return normalizedStart, end, nil
 }
 
 func buildExceptionBaseFilter(args GetExceptionsArgs) string {

@@ -62,8 +62,8 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 			if !strings.Contains(query, "sum by (exception_type, service_name, span_name, span_kind, env)") {
 				t.Fatalf("instant query is missing expected grouping labels: %s", query)
 			}
-			if !strings.Contains(query, "[30m]") {
-				t.Fatalf("expected 30m range selector in instant query: %s", query)
+			if !strings.Contains(query, "[1800s]") {
+				t.Fatalf("expected 1800s range selector in instant query: %s", query)
 			}
 
 			if got := int64(reqBody["timestamp"].(float64)); got != endTime.Unix() {
@@ -77,7 +77,7 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 			]`, endTime.Unix(), endTime.Unix()))
 
 		case constants.EndpointPromQuery:
-			t.Fatalf("did not expect range query")
+			w.WriteHeader(http.StatusInternalServerError)
 
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
@@ -159,6 +159,7 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 		t.Fatalf("unexpected deployment_environment: got %v, want prod", first["deployment_environment"])
 	}
 
+	// first_seen/last_seen come only from range data; this server fails the range query.
 	for _, exception := range []map[string]any{first, second} {
 		for _, field := range []string{
 			"trace_id", "span_id", "timestamp", "exception_message", "exception_stacktrace",
@@ -174,13 +175,14 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 
 func TestGetExceptionsHandler_OmitsUnsafeReferenceURL(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != constants.EndpointPromQueryInstant {
+		switch r.URL.Path {
+		case constants.EndpointPromQueryInstant, constants.EndpointPromQuery:
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `[]`)
+		default:
 			t.Errorf("unexpected path: %s", r.URL.Path)
 			http.Error(w, "unexpected path", http.StatusNotFound)
-			return
 		}
-		w.WriteHeader(http.StatusOK)
-		io.WriteString(w, `[]`)
 	}))
 	defer server.Close()
 
@@ -225,13 +227,13 @@ func TestGetExceptionsHandler_UsesDashboardShapeForEnvOnlyFilters(t *testing.T) 
 			if !strings.Contains(query, "sum by (exception_type, service_name, span_name, span_kind, env)") {
 				t.Fatalf("expected frontend grouping labels, got: %s", query)
 			}
-			if !strings.Contains(query, "trace_endpoint_count{env=~'alpha', exception_type!=''}[60m]") {
+			if !strings.Contains(query, "trace_endpoint_count{env=~'alpha', exception_type!=''}[3600s]") {
 				t.Fatalf("expected env-only selector for endpoint count, got: %s", query)
 			}
-			if !strings.Contains(query, "trace_client_count{env=~'alpha', exception_type!=''}[60m]") {
+			if !strings.Contains(query, "trace_client_count{env=~'alpha', exception_type!=''}[3600s]") {
 				t.Fatalf("expected env-only selector for client count, got: %s", query)
 			}
-			if !strings.Contains(query, "trace_internal_count{env=~'alpha', exception_type!=''}[60m]") {
+			if !strings.Contains(query, "trace_internal_count{env=~'alpha', exception_type!=''}[3600s]") {
 				t.Fatalf("expected env-only selector for internal count, got: %s", query)
 			}
 
@@ -239,7 +241,7 @@ func TestGetExceptionsHandler_UsesDashboardShapeForEnvOnlyFilters(t *testing.T) 
 			io.WriteString(w, `[{"metric":{"exception_type":"IOException","service_name":"api","span_name":"GET /health","span_kind":"SPAN_KIND_SERVER"},"value":[1737374400,"5"]}]`)
 
 		case constants.EndpointPromQuery:
-			t.Fatalf("did not expect range query")
+			w.WriteHeader(http.StatusInternalServerError)
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
@@ -308,7 +310,7 @@ func TestGetExceptionsHandler_EscapesHyphenatedServiceNamesLikeFrontend(t *testi
 			io.WriteString(w, `[{"metric":{"exception_type":"IOException","service_name":"last9-api","span_name":"GET /health","span_kind":"SPAN_KIND_SERVER"},"value":[1737374400,"5"]}]`)
 
 		case constants.EndpointPromQuery:
-			t.Fatalf("did not expect range query")
+			w.WriteHeader(http.StatusInternalServerError)
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
@@ -338,7 +340,7 @@ func TestGetExceptionsHandler_EscapesHyphenatedServiceNamesLikeFrontend(t *testi
 	}
 }
 
-func TestGetExceptionsHandler_DoesNotCallRangeQuery(t *testing.T) {
+func TestGetExceptionsHandler_BuildsUnfilteredSelector(t *testing.T) {
 	endTime := time.Date(2026, 1, 20, 12, 0, 0, 0, time.UTC)
 	startTime := endTime.Add(-4 * time.Minute)
 
@@ -361,15 +363,15 @@ func TestGetExceptionsHandler_DoesNotCallRangeQuery(t *testing.T) {
 			if strings.Contains(query, ", exception_type!=''}") {
 				t.Fatalf("query includes malformed selector prefix: %s", query)
 			}
-			if !strings.Contains(query, "trace_endpoint_count{exception_type!=''}[4m]") {
-				t.Fatalf("expected unfiltered selector with 4m window, got: %s", query)
+			if !strings.Contains(query, "trace_endpoint_count{exception_type!=''}[240s]") {
+				t.Fatalf("expected unfiltered selector with 240s window, got: %s", query)
 			}
 
 			w.WriteHeader(http.StatusOK)
 			io.WriteString(w, `[{"metric":{"exception_type":"IOException","service_name":"api","span_name":"GET /health","span_kind":"SPAN_KIND_SERVER"},"value":[1737374400,"5"]}]`)
 
 		case constants.EndpointPromQuery:
-			t.Fatalf("did not expect range query")
+			w.WriteHeader(http.StatusInternalServerError)
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
@@ -418,6 +420,7 @@ func TestGetExceptionsHandler_DoesNotExposeInstantTimestampAsLastSeen(t *testing
 	endTime := startTime.Add(10 * time.Minute)
 	clientLastSeen := endTime.Add(-3 * time.Minute).Unix()
 	serverLastSeen := endTime.Unix()
+	clientOccurrence := startTime.Add(5 * time.Minute)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -428,7 +431,10 @@ func TestGetExceptionsHandler_DoesNotExposeInstantTimestampAsLastSeen(t *testing
 				{"metric":{"exception_type":"TimeoutException","service_name":"checkout","span_name":"POST /orders","span_kind":"SPAN_KIND_SERVER"},"value":[%d,"2"]}
 			]`, clientLastSeen, serverLastSeen))
 		case constants.EndpointPromQuery:
-			t.Fatalf("did not expect range query")
+			// Only the client series has occurrences in range data; the server series has none.
+			io.WriteString(w, fmt.Sprintf(`[
+				{"metric":{"exception_type":"TimeoutException","service_name":"checkout","span_name":"POST /orders","span_kind":"SPAN_KIND_CLIENT"},"values":[[%d,"1"],[%d,"0"]]}
+			]`, clientOccurrence.Unix(), endTime.Unix()))
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
@@ -476,8 +482,18 @@ func TestGetExceptionsHandler_DoesNotExposeInstantTimestampAsLastSeen(t *testing
 		if !ok {
 			t.Fatalf("unexpected exception entry type: %T", entry)
 		}
-		if _, found := exceptionMap["last_seen"]; found {
-			t.Fatalf("aggregate exception row must not expose the instant query timestamp as last_seen: %#v", exceptionMap)
+		lastSeen, found := exceptionMap["last_seen"]
+		switch exceptionMap["span_kind"] {
+		case "SPAN_KIND_CLIENT":
+			if lastSeen != clientOccurrence.Format(time.RFC3339) {
+				t.Fatalf("last_seen = %v, want the range data's last occurrence %s, not the instant query timestamp", lastSeen, clientOccurrence.Format(time.RFC3339))
+			}
+		case "SPAN_KIND_SERVER":
+			if found {
+				t.Fatalf("a row without range occurrences must not expose the instant query timestamp as last_seen: %#v", exceptionMap)
+			}
+		default:
+			t.Fatalf("unexpected row: %#v", exceptionMap)
 		}
 	}
 }
@@ -501,7 +517,7 @@ func TestGetExceptionsHandler_DoesNotCapLargeLimit(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			io.WriteString(w, "["+strings.Join(points, ",")+"]")
 		case constants.EndpointPromQuery:
-			t.Fatalf("did not expect range query")
+			w.WriteHeader(http.StatusInternalServerError)
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
@@ -636,7 +652,7 @@ func TestGetExceptionsHandler_EscapesSingleQuoteInFilters(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			io.WriteString(w, `[]`)
 		case constants.EndpointPromQuery:
-			t.Fatalf("did not expect range query")
+			w.WriteHeader(http.StatusInternalServerError)
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}

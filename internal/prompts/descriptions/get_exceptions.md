@@ -1,8 +1,15 @@
 Return ranked rows that aggregate server-side exception heat by exception type, service, span name/kind, deployment environment, and count. Data comes from metrics, not raw spans: rows are not verified samples and have no trace/span ids, timestamps, messages, stacks, durations, or status. Never present contextual traces as matches.
 
+Each row also carries:
+- `fingerprint`: 8 lowercase hex chars hashing `exception_type:service_name:span_name`, identical to the fingerprint Discover Exceptions shows. It ignores message, stack and environment, so it stays stable across deploys. Use it to deduplicate.
+- `exception_id`: the Discover Exceptions row id, `<fingerprint>-<service_name>-<span_name>`, plus `-<env>` only when `env` is not given (one row per environment).
+- `url`: relative link to this row for the queried window.
+- `count`: occurrences summed from trace-derived exception counters over the window, not counted spans.
+- `first_seen` / `last_seen` (optional): RFC3339 times of the first and last query step inside the window with occurrences, using at most 60 steps. The query and reported window are normalized inward to whole seconds so row links cover the same evidence. These are not lifetime bounds; omitted when unavailable.
+
 For a known `service_name`, call `get_service_profile` first to decide whether span exceptions are likely the answer or a symptom. Use `did_you_mean` if service or environment spelling is uncertain.
 
-`limit` defaults to 20. `lookback_minutes` defaults to 60 and is preferred for relative windows. For an absolute window set RFC3339 `start_time_iso` and `end_time_iso`; legacy `YYYY-MM-DD HH:MM:SS` is compatibility-only. Optional filters: `service_name`, `span_name`, and `env`.
+`limit` defaults to 20. `lookback_minutes` defaults to 60 and is preferred for relative windows. For an absolute window set RFC3339 `start_time_iso` and `end_time_iso`; its maximum span is 2562047h47m16.854775807s (about 292 years). Legacy `YYYY-MM-DD HH:MM:SS` is compatibility-only. Optional filters: `service_name`, `span_name`, and `env`.
 
 ## When to use
 Find the hottest service, span, and exception type in a window.
@@ -18,7 +25,7 @@ Find the hottest service, span, and exception type in a window.
 - `get_logs`
 
 ## Output shape
-Ranked aggregate rows with exception type, service, span name/kind, environment and count.
+Ranked aggregate rows with the fields above.
 
 ## Known traps
 Read `last9://reference/tool_recipes` before following an exception into traces or logs; rows are aggregates, never exact samples.
