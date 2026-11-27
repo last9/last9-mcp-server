@@ -26,7 +26,7 @@ const (
 )
 
 type PreviewDashboardArgs struct {
-	Dashboard    map[string]any     `json:"dashboard,omitempty" jsonschema:"Unsaved dashboard object (name, panels, variables, time); mutually exclusive with id"`
+	Dashboard    map[string]any     `json:"dashboard,omitempty" jsonschema:"Unsaved dashboard object (name, panels, variables, time); panel log queries use index_type (physical or rehydration) and bare index_name; mutually exclusive with id"`
 	ID           string             `json:"id,omitempty" jsonschema:"Saved dashboard ID for patch preview; requires ops and excludes dashboard"`
 	Ops          []PatchDashboardOp `json:"ops,omitempty" jsonschema:"Ordered patch operations; required with id, at most 100"`
 	StartTimeISO string             `json:"start_time_iso" jsonschema:"(Required) Window start in RFC3339, maximum window 24 hours"`

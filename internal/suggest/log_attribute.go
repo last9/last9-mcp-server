@@ -76,10 +76,9 @@ func noResemblingAttributeText(query, service string) string {
 }
 
 func rankLogAttributes(query string, attrs []logs.LogAttribute) []attributeSuggestion {
-	queryWords := words(query)
 	var ranked []attributeSuggestion
 	for _, a := range attrs {
-		if p := int(math.Round(100 * wordSimilarity(queryWords, words(a.Name)))); p > 0 {
+		if p := NameSimilarity(query, a.Name); p > 0 {
 			ranked = append(ranked, attributeSuggestion{attr: a, percent: p})
 		}
 	}
@@ -87,6 +86,12 @@ func rankLogAttributes(query string, attrs []logs.LogAttribute) []attributeSugge
 		return cmp.Or(cmp.Compare(b.percent, a.percent), strings.Compare(a.attr.Name, b.attr.Name))
 	})
 	return ranked
+}
+
+// NameSimilarity is the percent did_you_mean ranks name by for query, ignoring
+// word order, so a reordered name scores 100.
+func NameSimilarity(query, name string) int {
+	return int(math.Round(100 * wordSimilarity(words(query), words(name))))
 }
 
 // wordSimilarity credits each query word by its best match among the name's

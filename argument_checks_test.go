@@ -9,10 +9,121 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"last9-mcp/internal/toolsets"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const grafanaPanel = `{"title":"p","type":"timeseries","gridPos":{"x":0,"y":0,"w":24,"h":8},"queries":[{"legend":"l","query":"up","type":"prometheus"}]}`
+
+func TestMetricStatusPatternGuidance(t *testing.T) {
+	for _, discovery := range []bool{true, false} {
+		cfg := testToolRegistrationConfig()
+		cfg.ToolFilter.Tools = toolsets.Set{"get_metric_status": {}}
+		want := toolErrorExpectation{contains: []string{"metric_name_pattern", "metric", `{__name__=~"example_.+"}`, "window_minutes", "narrower selector", "smaller window"}, absent: []string{"private-pattern"}}
+		if discovery {
+			cfg.ToolFilter.Tools["prometheus_label_values"] = struct{}{}
+			want.contains = append(want.contains, "prometheus_label_values", "__name__", "match_query")
+		} else {
+			want.absent = append(want.absent, "prometheus_label_values")
+		}
+		session := connectTestSession(t, cfg, http.DefaultClient)
+		result := callRegisteredTool(t, session, &mcp.CallToolParams{
+			Name: "get_metric_status", Arguments: json.RawMessage(`{"metric_name_pattern":"private-pattern","window_minutes":15}`),
+		})
+		assertToolError(t, result, want)
+	}
+}
+
+func TestDescribeAlertChartRuleIDGuidance(t *testing.T) {
+	session := newInMemoryClientSession(t)
+	for _, args := range []string{
+		`{"rule_id":"example-rule"}`,
+		`{"rule_id":"example-rule","surface":"discover-service","chart_key":"apdex","service_name":"example"}`,
+	} {
+		result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: "describe_alert_chart", Arguments: json.RawMessage(args)})
+		assertToolError(t, result, toolErrorExpectation{
+			contains: []string{"get_alert_config", "same rule_id", "surface", "chart_key", "service_name"},
+			absent:   []string{"example-rule"},
+		})
+	}
+}
+
+func TestEntityNameGuidanceNamesOnlyServedTools(t *testing.T) {
+	for _, tc := range []struct {
+		toolsets string
+		tool     string
+		contains []string
+		absent   []string
+	}{
+		{
+			toolsets: "alerts",
+			tool:     "get_entity_kpis",
+			contains: []string{"Call get_alert_groups with alert_group_name", "pass its id as entity_id to get_entity_kpis"},
+		},
+		{
+			toolsets: "alerts",
+			tool:     "get_entity_alert_rules",
+			contains: []string{"Call get_alert_groups with alert_group_name", "select the intended group", "pass its id as entity_id to get_entity_alert_rules"},
+		},
+		{
+			toolsets: "investigate",
+			tool:     "get_entity_kpis",
+			contains: []string{"Ask for the alert group ID", "pass it as entity_id to get_entity_kpis"},
+			absent:   []string{"get_alert_groups"},
+		},
+	} {
+		t.Run(tc.toolsets+"/"+tc.tool, func(t *testing.T) {
+			filter, err := toolsets.NewFilter(tc.toolsets, false, "")
+			if err != nil {
+				t.Fatalf("NewFilter: %v", err)
+			}
+			cfg := testToolRegistrationConfig()
+			cfg.ToolFilter = filter
+			session := connectTestSession(t, cfg, http.DefaultClient)
+			result := callRegisteredTool(t, session, &mcp.CallToolParams{
+				Name:      tc.tool,
+				Arguments: json.RawMessage(`{"entity_name":"example"}`),
+			})
+			assertToolError(t, result, toolErrorExpectation{contains: tc.contains, absent: tc.absent})
+		})
+	}
+}
+
+func TestGetTracesResponseModeExplainsNeutralRecoveryBeforeSchemaValidation(t *testing.T) {
+	var upstreamCalls atomic.Int32
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		upstreamCalls.Add(1)
+		http.Error(w, "unexpected request", http.StatusInternalServerError)
+	}))
+	t.Cleanup(api.Close)
+
+	cfg := testToolRegistrationConfig()
+	cfg.APIBaseURL = api.URL
+	session := connectTestSession(t, cfg, api.Client())
+	result := callRegisteredTool(t, session, &mcp.CallToolParams{
+		Name: "get_traces",
+		Arguments: json.RawMessage(`{
+			"tracejson_query":[{"type":"filter","query":{"$eq":["ServiceName","synthetic-service"]}}],
+			"lookback_minutes":15,
+			"response_mode":"do-not-echo-this"
+		}`),
+	})
+
+	assertToolError(t, result, toolErrorExpectation{
+		contains: []string{
+			"omit response_mode",
+			"preserve the existing tracejson_query stages and time bounds",
+			"matching span rows",
+			"append an aggregate stage",
+			"count or percentile",
+		},
+		absent: []string{"do-not-echo-this"},
+	})
+	if got := upstreamCalls.Load(); got != 0 {
+		t.Errorf("upstream calls = %d, want 0", got)
+	}
+}
 
 func TestDashboardWritesNameEveryWrongFieldBeforeSchemaValidation(t *testing.T) {
 	session := newInMemoryClientSession(t)

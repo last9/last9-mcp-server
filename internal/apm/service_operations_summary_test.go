@@ -6,7 +6,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -74,6 +77,81 @@ func TestServiceOperationsSummary_EnvRegexQuoting(t *testing.T) {
 			}
 			for _, q := range captured {
 				assertEnvMatcherBehavior(t, q, tt.wantMatch, tt.wantReject)
+			}
+		})
+	}
+}
+
+func TestServiceOperationsLimit(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		var body struct{ Query string }
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+			http.Error(w, "bad request", 400)
+			return
+		}
+		rows := "[]"
+		if strings.HasPrefix(body.Query, "sum by") && !strings.Contains(body.Query, "duration") {
+			switch {
+			case strings.Contains(body.Query, "trace_endpoint_count"):
+				rows = `[{"metric":{"span_name":"quiet"},"value":[1,"1"]}]`
+			case strings.Contains(body.Query, "messaging_system!=''"):
+				rows = `[{"metric":{"span_name":"z"},"value":[1,"9"]},{"metric":{"span_name":"a"},"value":[1,"9"]}]`
+			}
+		}
+		io.WriteString(w, rows)
+	}))
+	defer server.Close()
+	handler := NewServiceOperationsSummaryHandler(server.Client(), apmTestConfig(server.URL))
+	for _, tc := range []struct {
+		limit *int
+		names []string
+	}{
+		{nil, []string{"quiet", "z", "a"}}, {new(1), []string{"a"}}, {new(2), []string{"a", "z"}}, {new(8), []string{"a", "z", "quiet"}},
+	} {
+		result, _, err := handler(context.Background(), nil, ServiceOperationsSummaryArgs{ServiceName: "example", Limit: tc.limit})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got ServiceOperationsSummaryResponse
+		if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &got); err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for _, op := range got.Operations {
+			names = append(names, op.Name)
+		}
+		if !slices.Equal(names, tc.names) || (tc.limit == nil) != (got.TotalOperations == nil) || got.TotalOperations != nil && *got.TotalOperations != 3 {
+			t.Fatalf("unexpected response: %+v", got)
+		}
+	}
+	before := calls.Load()
+	for _, limit := range []int{0, -1} {
+		_, _, err := handler(context.Background(), nil, ServiceOperationsSummaryArgs{ServiceName: "example", Limit: &limit})
+		if err == nil || calls.Load() != before {
+			t.Fatal("invalid limit should fail before querying")
+		}
+	}
+}
+
+func TestServiceOperationsErrorPercentIndependentOfThroughput(t *testing.T) {
+	for _, category := range []string{"server", "db", "http", "messaging"} {
+		t.Run(category, func(t *testing.T) {
+			low := map[string]string{"span_name": "low-volume"}
+			high := map[string]string{"span_name": "high-volume"}
+			resp := callOpsSummaryHandler(t, map[string]string{
+				category + "_throughput": opsSumRows(opsSumRow(low, "2"), opsSumRow(high, "200")),
+				category + "_errorRate":  opsSumRows(opsSumRow(low, "25"), opsSumRow(high, "25")),
+			}, "")
+			if len(resp.Operations) != 2 {
+				t.Fatalf("got %d operations, want 2", len(resp.Operations))
+			}
+			for _, op := range resp.Operations {
+				if op.ErrorPercent != 25 || op.ErrorRate != 25 {
+					t.Errorf("%s at %g rpm: error_percent=%g, error_rate=%g, want 25 for both", op.Name, op.Throughput, op.ErrorPercent, op.ErrorRate)
+				}
 			}
 		})
 	}

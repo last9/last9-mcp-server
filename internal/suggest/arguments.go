@@ -2,10 +2,11 @@ package suggest
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 )
 
-// PrepareArguments renames the name and entity_type aliases to query and type before the
+// PrepareArguments renames suggestion aliases to query and type before the
 // SDK rejects them as unknown keys. An alias sent beside its canonical key must carry the
 // same string, so a call never silently drops one of two different values.
 func PrepareArguments(raw json.RawMessage) (json.RawMessage, error) {
@@ -13,8 +14,11 @@ func PrepareArguments(raw json.RawMessage) (json.RawMessage, error) {
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		return raw, nil
 	}
+	if _, ok := fields["service_name"]; ok {
+		return nil, errors.New(`unexpected additional properties ["service_name"]. To look up a service name, pass it as query with type "service". To find a log attribute within a service, pass the attribute as query with type "log_attribute" and the service name as service.`)
+	}
 	changed := false
-	for _, pair := range [][2]string{{"name", "query"}, {"entity_type", "type"}} {
+	for _, pair := range [][2]string{{"name", "query"}, {"value", "query"}, {"entity_type", "type"}, {"kind", "type"}} {
 		alias, key := pair[0], pair[1]
 		value, ok := fields[alias]
 		if !ok {

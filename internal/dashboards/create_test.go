@@ -238,3 +238,20 @@ func TestCreateDashboardHandler_RejectsQueryTypeForOtherTelemetry(t *testing.T) 
 		t.Fatalf("err = %v, want %q", err, want)
 	}
 }
+
+func TestDashboardWritesRejectInvalidQueryMode(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected %s for invalid query mode", r.Method)
+		http.Error(w, "unexpected request", http.StatusBadRequest)
+	}))
+	defer srv.Close()
+	cfg := testDashboardConfig(srv.URL)
+	req := DashboardRequest{Dashboard: json.RawMessage(`{"name":"Example","panels":[{"queries":[{"type":"metrics","query_type":"promql","telemetry":"metrics","expr":"up"}]}]}`)}
+	_, _, createErr := NewCreateDashboardHandler(srv.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, CreateDashboardArgs{DashboardRequest: req})
+	_, _, updateErr := NewUpdateDashboardHandler(srv.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, UpdateDashboardArgs{ID: "dash-1", DashboardRequest: req})
+	for name, err := range map[string]error{"create": createErr, "update": updateErr} {
+		if err == nil || err.Error() != `panels[0].queries[0].type: got "metrics", want one of range, instant` {
+			t.Errorf("%s error = %v", name, err)
+		}
+	}
+}

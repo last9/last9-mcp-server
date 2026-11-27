@@ -85,6 +85,13 @@ func panelVisualizationTypeSchema(kind string) map[string]interface{} {
 	}
 }
 
+func queryModeSchema() map[string]any {
+	return map[string]any{
+		"type": "string", "enum": []string{"range", "instant"},
+		"description": "Execution mode. Set telemetry to metrics, logs, or traces.",
+	}
+}
+
 func queriesArraySchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "array",
@@ -92,13 +99,15 @@ func queriesArraySchema() map[string]interface{} {
 			"type":     "object",
 			"required": []string{"name", "type", "query_type", "telemetry", "expr", "legend"},
 			"properties": map[string]interface{}{
-				"name": map[string]interface{}{"type": "string"}, "type": map[string]interface{}{"type": "string"},
+				"name": map[string]interface{}{"type": "string"}, "type": queryModeSchema(),
 				"query_type": map[string]interface{}{
 					"type":        "string",
 					"enum":        []string{"promql", "log_json", "log_ql", "log_raw", "trace_json", "trace_ql"},
 					"description": "Use promql for metrics, log_json or log_ql for logs, log_raw or log_ql for raw log panels, and trace_json or trace_ql for traces.",
 				},
-				"telemetry": map[string]interface{}{"type": "string"},
+				"telemetry":  map[string]interface{}{"type": "string"},
+				"index_type": map[string]any{"type": []string{"string", "null"}, "description": "Log index kind: physical or rehydration. Omit both index fields for the default."},
+				"index_name": map[string]any{"type": []string{"string", "null"}, "description": "Bare physical index name or rehydration block name, paired with index_type."},
 				"expr": map[string]interface{}{
 					"type":        "string",
 					"description": `Every log_json expression must be a JSON pipeline with an aggregate stage; use log_ql for a raw logs panel. For log_json line, timeseries, or bar panels, include exactly one time-windowed aggregate (window_aggregate or aggregate with window); grouping by service or environment does not replace the window. Example: [{"type":"filter","query":{"$and":[{"$eq":["ServiceName","checkout"]},{"$eq":["resources['deployment.environment']","prod"]}]}},{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["1","minutes"]}].`,

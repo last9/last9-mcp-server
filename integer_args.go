@@ -20,6 +20,10 @@ import (
 // that accepts strings too is passed as a string, keeping 19-digit values exact.
 var integerString = regexp.MustCompile(`^-?\d+$`)
 
+var integerCoercionExclusions = map[string]map[string]bool{
+	"get_alerts": {"limit": true},
+}
+
 // inputSchemaFor returns the schema the SDK validates a tool's arguments against: the
 // tool's own, else the one it infers from In.
 func inputSchemaFor[In any](tool *mcp.Tool) (*jsonschema.Schema, error) {
@@ -53,7 +57,7 @@ func integerArgsMiddleware(tool string, schema *jsonschema.Schema) mcp.Middlewar
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 			if call, ok := req.(*mcp.CallToolRequest); ok && call.Params != nil && call.Params.Name == tool {
-				call.Params.Arguments = coerceIntegerArguments(schema, call.Params.Arguments)
+				call.Params.Arguments = coerceIntegerArgumentsExcept(schema, call.Params.Arguments, integerCoercionExclusions[tool])
 			}
 			return next(ctx, method, req)
 		}
@@ -65,13 +69,17 @@ func integerArgsMiddleware(tool string, schema *jsonschema.Schema) mcp.Middlewar
 // replaced by its digits. Anything it cannot read passes through unchanged for
 // the SDK to reject.
 func coerceIntegerArguments(schema *jsonschema.Schema, args json.RawMessage) json.RawMessage {
+	return coerceIntegerArgumentsExcept(schema, args, nil)
+}
+
+func coerceIntegerArgumentsExcept(schema *jsonschema.Schema, args json.RawMessage, excluded map[string]bool) json.RawMessage {
 	dec := json.NewDecoder(bytes.NewReader(args))
 	dec.UseNumber()
 	var value any
 	if err := dec.Decode(&value); err != nil {
 		return args
 	}
-	coerced, changed := coerceIntegerStrings(schema, value)
+	coerced, changed := coerceIntegerStringsExcept(schema, value, excluded)
 	if !changed {
 		return args
 	}
@@ -83,6 +91,10 @@ func coerceIntegerArguments(schema *jsonschema.Schema, args json.RawMessage) jso
 }
 
 func coerceIntegerStrings(schema *jsonschema.Schema, value any) (any, bool) {
+	return coerceIntegerStringsExcept(schema, value, nil)
+}
+
+func coerceIntegerStringsExcept(schema *jsonschema.Schema, value any, excluded map[string]bool) (any, bool) {
 	if schema == nil {
 		return value, false
 	}
@@ -104,7 +116,10 @@ func coerceIntegerStrings(schema *jsonschema.Schema, value any) (any, bool) {
 	case map[string]any:
 		changed := false
 		for key, item := range v {
-			if coerced, ok := coerceIntegerStrings(schema.Properties[key], item); ok {
+			if excluded[key] {
+				continue
+			}
+			if coerced, ok := coerceIntegerStringsExcept(schema.Properties[key], item, nil); ok {
 				v[key], changed = coerced, true
 			}
 		}
@@ -112,7 +127,7 @@ func coerceIntegerStrings(schema *jsonschema.Schema, value any) (any, bool) {
 	case []any:
 		changed := false
 		for i, item := range v {
-			if coerced, ok := coerceIntegerStrings(schema.Items, item); ok {
+			if coerced, ok := coerceIntegerStringsExcept(schema.Items, item, nil); ok {
 				v[i], changed = coerced, true
 			}
 		}

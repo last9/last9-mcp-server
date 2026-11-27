@@ -44,7 +44,7 @@ func GetValidateDashboardInputSchema() map[string]any {
 			},
 			"dashboard_definition": map[string]any{
 				"type":        "object",
-				"description": "Inline dashboard object (name, panels[].queries[], variables). Mutually exclusive with dashboard_id. Dry run — nothing is persisted.",
+				"description": "Inline dashboard object (name, panels[].queries[], variables). Query type is range or instant; query_type identifies the language. Log queries use index_type (physical or rehydration) and bare index_name. Mutually exclusive with dashboard_id. Dry run — nothing is persisted.",
 			},
 			"start_time_iso": map[string]any{
 				"type":        "string",
@@ -198,13 +198,14 @@ func unwrapDashboardEnvelope(definition map[string]any) (map[string]any, bool, s
 	return dashboard, true, ""
 }
 
-func jsonToolResult(v any) (*mcp.CallToolResult, any, error) {
-	body, err := json.Marshal(v)
+func jsonToolResult(report map[string]any) (*mcp.CallToolResult, any, error) {
+	body, err := json.Marshal(report)
 	if err != nil {
 		return nil, nil, fmt.Errorf("marshal report: %w", err)
 	}
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: string(body)}},
+		IsError: report["error"] == "dashboard_fetch_failed",
 	}, nil, nil
 }
 
@@ -524,12 +525,25 @@ func validateTarget(
 		"diagnosis":    nil,
 	}
 
+	if err := checkQueryMode(query); err != nil {
+		target["status"] = "invalid_query"
+		target["lint"] = []any{lintFinding("invalid_query_mode", severityError, err.Error())}
+		return target
+	}
+
 	// Checked before interpolation: an unknown type's pipeline operators ($and, $eq)
 	// would otherwise be reported as unresolved dashboard variables.
 	if err := checkQueryType(query); err != nil {
 		target["status"] = "invalid_query"
 		target["query_type"] = "unknown"
 		target["lint"] = []any{lintFinding("unknown_query_type", severityError, err.Error())}
+		return target
+	}
+
+	logIndex, indexErr := dashboardLogIndex(query)
+	if indexErr != nil {
+		target["status"] = "invalid_query"
+		target["lint"] = []any{lintFinding("invalid_log_index", severityError, indexErr.Error())}
 		return target
 	}
 
@@ -587,8 +601,7 @@ func validateTarget(
 		exprStr, _ := resolved.(string)
 		outcome = exec.runPromQL(ctx, exprStr, window, vizType)
 	case "log_json":
-		indexName, _ := query["index_name"].(string)
-		outcome = exec.runLogJSON(ctx, resolved, window, indexName)
+		outcome = exec.runLogJSON(ctx, resolved, window, logIndex)
 	default:
 		target["status"] = "unsupported_execution"
 		target["note"] = queryType + " execution is not supported; lint-only"

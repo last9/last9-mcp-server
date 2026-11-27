@@ -65,6 +65,9 @@ var ListDatasourcesDescription string
 //go:embed descriptions/get_metric_status.md
 var GetMetricStatusDescription string
 
+//go:embed descriptions/describe_metric.md
+var DescribeMetricDescription string
+
 //go:embed descriptions/prometheus_instant_query.md
 var PromqlInstantQueryDetails string
 
@@ -166,6 +169,9 @@ var CreateAlertFromChartDescription string
 
 //go:embed descriptions/get_log_attributes.md
 var GetLogAttributesDescription string
+
+//go:embed descriptions/get_log_services.md
+var GetLogServicesDescription string
 
 //go:embed descriptions/get_log_attributes_for_pipeline.md
 var GetLogAttributesForPipelineDescription string

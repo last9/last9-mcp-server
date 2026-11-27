@@ -149,17 +149,19 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, gate *toolG
 
 // withCallDeadline bounds one tool call as a whole: per-chunk timeouts alone let a chunk loop
 // run for hours. Read handlers can fold canceled requests into a result, so a read result at
-// the deadline is replaced unless it carries timeout guidance; a write's may name its verify call.
+// this deadline is replaced unless it carries timeout guidance; a write's may name its verify call.
 func withCallDeadline[In, Out any](timeout time.Duration, readOnly bool, handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
-	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
-		ctx, cancel := context.WithTimeout(ctx, timeout)
+	return func(caller context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+		parent, stop := stopWithRequest(caller)
+		defer stop()
+		ctx, cancel := context.WithTimeout(parent, timeout)
 		defer cancel()
 		result, out, err := handler(ctx, req, in)
 		var unknown *utils.WriteOutcomeUnknownError
 		if !readOnly && errors.As(err, &unknown) {
 			return last9mcp.SystemErrorResult(fmt.Sprintf("The request may or may not have been applied (%s). Do not retry or resend this request.", unknown.Cause)), out, nil
 		}
-		if !errors.Is(ctx.Err(), context.DeadlineExceeded) || (err == nil && (!readOnly || utils.HasTimeoutGuidance(result))) {
+		if parent.Err() != nil || !errors.Is(ctx.Err(), context.DeadlineExceeded) || (err == nil && (!readOnly || utils.HasTimeoutGuidance(result))) {
 			return result, out, err
 		}
 		msg := fmt.Sprintf("Stopped at the %s tool-call deadline", timeout)
@@ -194,8 +196,13 @@ func registerTool[In, Out any](server *last9mcp.Last9MCPServer, tool *mcp.Tool, 
 		return fmt.Errorf("register %q: %w", tool.Name, regErr)
 	}
 	// Middleware added later runs first, so integer coercion precedes the check.
-	if check, ok := argumentChecks[tool.Name]; ok {
-		server.Server.AddReceivingMiddleware(argumentCheckMiddleware(tool.Name, check))
+	check := argumentChecks[tool.Name]
+	if tool.Name == "get_log_patterns" {
+		properties := tool.InputSchema.(map[string]any)["properties"].(map[string]any)
+		check = logPatternArgumentCheck(properties)
+	}
+	if check != nil {
+		server.Server.AddReceivingMiddleware(argumentCheckMiddleware(tool.Name, check, served))
 	}
 	if coerceErr := addIntegerArgsCoercion[In](server.Server, tool); coerceErr != nil {
 		return fmt.Errorf("register %q: %w", tool.Name, coerceErr)
@@ -371,6 +378,12 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Annotations: readOnlyTool("Get Metric Liveness and Cadence"),
 		Description: prompts.GetMetricStatusDescription,
 	}, apm.NewGetMetricStatusHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "describe_metric",
+		Annotations: readOnlyTool("Describe APM Metric Query Recipe"),
+		Description: prompts.DescribeMetricDescription,
+	}, apm.NewDescribeMetricHandler(client, cfg)))
 
 	// Register PromQL range query tool (enhanced with metrics instructions)
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
@@ -617,6 +630,7 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Name:        "get_alerts",
 		Annotations: readOnlyTool("Get Alerts"),
 		Description: prompts.GetAlertsDescription,
+		InputSchema: alerting.GetAlertsInputSchema(),
 	}, alerting.NewGetAlertsHandler(client, cfg)))
 
 	// Register get alert rule state tool
@@ -649,6 +663,12 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Annotations: readOnlyTool("Get Log Attributes"),
 		Description: prompts.GetLogAttributesDescription,
 	}, logs.NewGetLogAttributesHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "get_log_services",
+		Annotations: readOnlyTool("Get Log Services"),
+		Description: prompts.GetLogServicesDescription,
+	}, apm.NewGetLogServicesHandler(client, cfg)))
 
 	// Register pipeline-scoped log attributes tool (discovers fields actually
 	// present for a given pipeline via the series endpoint)
@@ -786,6 +806,7 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Name:        "get_dashboard",
 		Annotations: readOnlyTool("Get Dashboard"),
 		Description: prompts.GetDashboardDescription,
+		InputSchema: dashboards.GetDashboardInputSchema(),
 	}, dashboards.NewGetDashboardHandler(client, cfg)))
 
 	reg(registerIfAllowed(server, gate, &mcp.Tool{

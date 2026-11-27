@@ -1,6 +1,7 @@
 package deeplink
 
 import (
+	"encoding/json"
 	"net/url"
 	"strings"
 	"testing"
@@ -233,5 +234,65 @@ func TestBuildGrafanaLink(t *testing.T) {
 	}
 	if got, want := b.BuildGrafanaLink("/dashboards"), "/v2/organizations/acme/grafana?url=%2Fapi%2Fgp%2Fdashboards"; got != want {
 		t.Errorf("got %q want %q", got, want)
+	}
+}
+
+func TestBuildExceptionsLink_Filters(t *testing.T) {
+	b := NewBuilder("acme", "c1")
+	tests := []struct {
+		name        string
+		service     string
+		env         string
+		wantFilters []string
+		wantNoLink  bool
+	}{
+		{name: "service and env", service: "last9-api", env: "alpha", wantFilters: []string{`service_name="last9-api"`, `deployment_environment="alpha"`}},
+		{name: "dotted service stays literal", service: "checkout.v2", wantFilters: []string{`service_name="checkout.v2"`}},
+		{name: "service only", service: "api", wantFilters: []string{`service_name="api"`}},
+		{name: "env only", env: "prod", wantFilters: []string{`deployment_environment="prod"`}},
+		{name: "regex character stays literal", service: "api|web", wantFilters: []string{`service_name="api|web"`}},
+		{name: "regex characters in env stay literal", env: "prod.*", wantFilters: []string{`deployment_environment="prod.*"`}},
+		{name: "quoted service suppresses link", service: `api"web`, env: "prod", wantNoLink: true},
+		{name: "control character suppresses link", service: "api\nweb", wantNoLink: true},
+		{name: "quoted env suppresses link", service: "api", env: `prod"`, wantNoLink: true},
+		{name: "no filters", wantFilters: nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			link := b.BuildExceptionsLink(ExceptionsLinkOptions{
+				FromMs:      1_000,
+				ToMs:        2_000,
+				ServiceName: tt.service,
+				Env:         tt.env,
+			})
+			if tt.wantNoLink {
+				if link != "" {
+					t.Fatalf("want no link, got %q", link)
+				}
+				return
+			}
+			u, err := url.Parse(link)
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			q := u.Query()
+			if u.Path != "/v2/organizations/acme/exceptions" || q.Get("from") != "1" || q.Get("to") != "2" || q.Get("cluster") != "c1" {
+				t.Fatalf("unexpected base link: %s", u.String())
+			}
+			raw := q.Get("filter")
+			if tt.wantFilters == nil {
+				if raw != "" {
+					t.Fatalf("want no filter, got %s", raw)
+				}
+				return
+			}
+			var got []string
+			if err := json.Unmarshal([]byte(raw), &got); err != nil {
+				t.Fatalf("filter %q is not a JSON array: %v", raw, err)
+			}
+			if strings.Join(got, ",") != strings.Join(tt.wantFilters, ",") {
+				t.Fatalf("got %v want %v", got, tt.wantFilters)
+			}
+		})
 	}
 }
