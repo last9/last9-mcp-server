@@ -190,8 +190,8 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 			"exceptions":    exceptions,
 			"count":         len(exceptions),
 			"matched_count": matchedCount,
-			"start_time":    startTime.Format("2006-01-02T15:04:05Z"),
-			"end_time":      endTime.Format("2006-01-02T15:04:05Z"),
+			"start_time":    startTime.Format(time.RFC3339Nano),
+			"end_time":      endTime.Format(time.RFC3339Nano),
 		}
 		if len(exceptions) == 0 {
 			responseData["hint"] = exceptionEmptyAdvice(args, startTime, endTime)

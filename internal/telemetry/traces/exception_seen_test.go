@@ -111,7 +111,7 @@ func TestGetExceptionsHandler_PreservesOccurrenceTimestampPrecision(t *testing.T
 			}
 			first := window.start.Add(time.Minute)
 			last := window.start.Add(2 * time.Minute)
-			rows := runGetExceptions(t, getExceptionsTestRequest{
+			response := runGetExceptionsResponse(t, getExceptionsTestRequest{
 				InstantBody: twoEnvRows,
 				Window:      window,
 				RangeHandler: func(w http.ResponseWriter, _ *http.Request) {
@@ -120,8 +120,12 @@ func TestGetExceptionsHandler_PreservesOccurrenceTimestampPrecision(t *testing.T
 				},
 			})
 
-			if rows[0]["first_seen"] != first.Format(time.RFC3339Nano) || rows[0]["last_seen"] != last.Format(time.RFC3339Nano) {
-				t.Fatalf("first/last seen = %v / %v, want %s / %s", rows[0]["first_seen"], rows[0]["last_seen"], first.Format(time.RFC3339Nano), last.Format(time.RFC3339Nano))
+			if response.StartTime != window.start.Format(time.RFC3339Nano) || response.EndTime != window.end.Format(time.RFC3339Nano) {
+				t.Fatalf("reported window = %s / %s, want %s / %s", response.StartTime, response.EndTime, window.start.Format(time.RFC3339Nano), window.end.Format(time.RFC3339Nano))
+			}
+			row := response.Exceptions[0]
+			if row["first_seen"] != first.Format(time.RFC3339Nano) || row["last_seen"] != last.Format(time.RFC3339Nano) {
+				t.Fatalf("first/last seen = %v / %v, want %s / %s", row["first_seen"], row["last_seen"], first.Format(time.RFC3339Nano), last.Format(time.RFC3339Nano))
 			}
 		})
 	}
