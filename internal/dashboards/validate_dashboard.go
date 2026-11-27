@@ -198,13 +198,14 @@ func unwrapDashboardEnvelope(definition map[string]any) (map[string]any, bool, s
 	return dashboard, true, ""
 }
 
-func jsonToolResult(v any) (*mcp.CallToolResult, any, error) {
-	body, err := json.Marshal(v)
+func jsonToolResult(report map[string]any) (*mcp.CallToolResult, any, error) {
+	body, err := json.Marshal(report)
 	if err != nil {
 		return nil, nil, fmt.Errorf("marshal report: %w", err)
 	}
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: string(body)}},
+		IsError: report["error"] == "dashboard_fetch_failed",
 	}, nil, nil
 }
 

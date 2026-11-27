@@ -455,7 +455,7 @@ func TestValidateDashboard_InvalidExecutionMode(t *testing.T) {
 			t.Fatal(err)
 		}
 		var report map[string]any
-		if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &report); err != nil || report["success"] != true {
+		if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &report); err != nil || result.IsError || report["success"] != true {
 			t.Fatalf("invalid report: %v, %v", report, err)
 		}
 		target := report["panels"].([]any)[0].(map[string]any)["targets"].([]any)[0].(map[string]any)
@@ -466,6 +466,32 @@ func TestValidateDashboard_InvalidExecutionMode(t *testing.T) {
 		if finding["rule"] != "invalid_query_mode" || !strings.Contains(finding["message"].(string), "range, instant") {
 			t.Fatalf("unexpected lint: %v", finding)
 		}
+	}
+}
+
+func TestValidateDashboard_SavedDashboardMissing(t *testing.T) {
+	id := "missing-example"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/dashboards/"+id) {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	handler := NewValidateDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ValidateDashboardArgs{
+		DashboardID: &id, StartTimeISO: "2026-09-10T08:00:00Z", EndTimeISO: "2026-09-10T09:00:00Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report map[string]any
+	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &report); err != nil {
+		t.Fatal(err)
+	}
+	detail, _ := report["detail"].(string)
+	if !result.IsError || report["success"] != false || report["error"] != "dashboard_fetch_failed" || !strings.Contains(detail, "404") {
+		t.Fatalf("isError=%t, report=%v", result.IsError, report)
 	}
 }
 
