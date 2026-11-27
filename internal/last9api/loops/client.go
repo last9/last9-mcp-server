@@ -1,26 +1,19 @@
 package loops
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 
-	"last9-mcp/internal/constants"
-	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/utils"
 )
 
 const (
-	opListLoops       = "list loops"
-	opGetLoop         = "get loop"
-	opListTemplates   = "list loop templates"
-	opProbeLoops      = "get loops status"
 	loopsNotEnabled   = "LOOPS_NOT_ENABLED"
 	notEnabledMessage = "Loops is not enabled for this organization. Ask a Last9 admin to enable the Loops app, then retry."
+	maxResponseBytes  = 1 << 20
 )
 
 // NotEnabledError is a soft, actionable disablement for Loops tools.
@@ -48,60 +41,6 @@ func StatusResponse(enabled bool, err error) Status {
 	return Status{Enabled: false, Reason: reason, Message: msg}
 }
 
-// List calls GET /loops and returns summaries. query is an optional name substring
-// filter applied client-side when the API returns a full list.
-func List(ctx context.Context, c *last9api.Client, query string) ([]Summary, error) {
-	var raw json.RawMessage
-	if err := c.Do(ctx, opListLoops, last9api.Request{Method: http.MethodGet, Path: constants.EndpointLoops}, &raw, last9api.WithRequiredBody()); err != nil {
-		return nil, mapError(err)
-	}
-	items, err := decodeSummaries(raw)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", opListLoops, err)
-	}
-	return filterSummaries(items, query), nil
-}
-
-// Get calls GET /loops/{id}.
-func Get(ctx context.Context, c *last9api.Client, id string) (*Detail, error) {
-	path := fmt.Sprintf(constants.EndpointLoopByID, url.PathEscape(id))
-	var raw json.RawMessage
-	if err := c.Do(ctx, opGetLoop, last9api.Request{Method: http.MethodGet, Path: path}, &raw, last9api.WithRequiredBody()); err != nil {
-		return nil, mapError(err)
-	}
-	detail, err := decodeDetail(raw)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", opGetLoop, err)
-	}
-	return detail, nil
-}
-
-// ListTemplates calls GET /loops/templates.
-func ListTemplates(ctx context.Context, c *last9api.Client, capability string) ([]Template, error) {
-	var raw json.RawMessage
-	if err := c.Do(ctx, opListTemplates, last9api.Request{Method: http.MethodGet, Path: constants.EndpointLoopTemplates}, &raw, last9api.WithRequiredBody()); err != nil {
-		return nil, mapError(err)
-	}
-	items, err := decodeTemplates(raw)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", opListTemplates, err)
-	}
-	return filterTemplates(items, capability), nil
-}
-
-// ProbeEnabled GETs /loops and maps LOOPS_NOT_ENABLED to a soft disablement.
-func ProbeEnabled(ctx context.Context, c *last9api.Client) (bool, error) {
-	var raw json.RawMessage
-	err := c.Do(ctx, opProbeLoops, last9api.Request{Method: http.MethodGet, Path: constants.EndpointLoops}, &raw)
-	if err == nil {
-		return true, nil
-	}
-	if IsNotEnabled(mapError(err)) {
-		return false, &NotEnabledError{}
-	}
-	return false, mapError(err)
-}
-
 func mapError(err error) error {
 	if err == nil {
 		return nil
@@ -115,12 +54,12 @@ func mapError(err error) error {
 func loopsDisabled(err error) bool {
 	var upstream *utils.UpstreamHTTPError
 	if !errors.As(err, &upstream) {
-		return strings.Contains(strings.ToUpper(err.Error()), loopsNotEnabled)
+		return false
 	}
-	if code := loopsErrorCode(upstream.Body); code == loopsNotEnabled {
-		return true
+	if upstream.StatusCode != http.StatusNotFound && upstream.StatusCode != http.StatusUnprocessableEntity {
+		return false
 	}
-	return strings.Contains(strings.ToUpper(upstream.Body), loopsNotEnabled)
+	return loopsErrorCode(upstream.Body) == loopsNotEnabled
 }
 
 func loopsErrorCode(body string) string {
@@ -142,7 +81,7 @@ func loopsErrorCode(body string) string {
 	}
 	switch v := envelope.Error.(type) {
 	case string:
-		if strings.Contains(strings.ToUpper(v), loopsNotEnabled) {
+		if strings.EqualFold(strings.TrimSpace(v), loopsNotEnabled) {
 			return loopsNotEnabled
 		}
 	case map[string]any:

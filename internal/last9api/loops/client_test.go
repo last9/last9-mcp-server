@@ -3,6 +3,7 @@ package loops
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 )
 
 func testClient(t *testing.T, handler http.HandlerFunc) *last9api.Client {
@@ -43,6 +45,44 @@ func TestProbeEnabled_NotEnabled(t *testing.T) {
 	st := StatusResponse(false, err)
 	if st.Enabled || st.Reason != "LOOPS_NOT_ENABLED" || st.Message == "" {
 		t.Fatalf("status = %+v", st)
+	}
+}
+
+func TestMapError_RequiresExpectedHTTPStatusAndCode(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "untyped prose", err: errors.New("LOOPS_NOT_ENABLED")},
+		{name: "unauthorized", err: &utils.UpstreamHTTPError{StatusCode: http.StatusUnauthorized, Body: `{"code":"LOOPS_NOT_ENABLED"}`}},
+		{name: "different code", err: &utils.UpstreamHTTPError{StatusCode: http.StatusUnprocessableEntity, Body: `{"code":"OTHER"}`}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if IsNotEnabled(mapError(tt.err)) {
+				t.Fatalf("mapped %v as disabled", tt.err)
+			}
+		})
+	}
+}
+
+func TestProbeEnabled_RequiresResponseBody(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	enabled, err := ProbeEnabled(context.Background(), c)
+	if enabled || err == nil {
+		t.Fatalf("enabled=%v err=%v", enabled, err)
+	}
+}
+
+func TestList_RejectsOversizedResponse(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `[{"id":"`+strings.Repeat("x", 1<<20)+`"}]`)
+	})
+	items, err := List(context.Background(), c, "")
+	if items != nil || err == nil {
+		t.Fatalf("item count=%d err=%v", len(items), err)
 	}
 }
 
