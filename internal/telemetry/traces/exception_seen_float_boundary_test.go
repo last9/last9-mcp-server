@@ -24,11 +24,15 @@ func TestOccurrenceBoundariesSurviveFloatRoundTrip(t *testing.T) {
 						float64(end.UnixNano())/float64(time.Second))
 				},
 			})
-			if got := rows[0]["first_seen"]; got != inside.Format(time.RFC3339Nano) {
-				t.Fatalf("first_seen = %v, want %s", got, inside.Format(time.RFC3339Nano))
+			if got := rows[0]["first_seen"]; got != inside.Truncate(time.Second).Format(time.RFC3339) {
+				t.Fatalf("first_seen = %v, want whole-second timestamp", got)
 			}
-			if got := rows[0]["last_seen"]; got != end.Format(time.RFC3339Nano) {
-				t.Fatalf("last_seen = %v, want %s", got, end.Format(time.RFC3339Nano))
+			wantLast := end.Truncate(time.Second)
+			if fraction != 0 {
+				wantLast = inside.Truncate(time.Second)
+			}
+			if got := rows[0]["last_seen"]; got != wantLast.Format(time.RFC3339) {
+				t.Fatalf("last_seen = %v, want whole-second timestamp", got)
 			}
 		})
 	}

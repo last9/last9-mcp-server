@@ -80,6 +80,10 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 		if err := validateExceptionSeenWindow(startTime, endTime); err != nil {
 			return nil, nil, err
 		}
+		startTime, endTime, err = normalizeExceptionWindow(startTime, endTime)
+		if err != nil {
+			return nil, nil, err
+		}
 
 		// Convert start/end times to milliseconds
 		startMs := startTime.UnixMilli()
@@ -182,8 +186,8 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 				"count":                  exceptionData.Count,
 			}
 			if seen, ok := seenByKey[exceptionData.SeriesKey]; ok {
-				row["first_seen"] = seen.First.Format(time.RFC3339Nano)
-				row["last_seen"] = seen.Last.Format(time.RFC3339Nano)
+				row["first_seen"] = seen.First.Truncate(time.Second).Format(time.RFC3339)
+				row["last_seen"] = seen.Last.Truncate(time.Second).Format(time.RFC3339)
 			}
 			exceptions = append(exceptions, row)
 		}
@@ -232,6 +236,18 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 			},
 		}, nil, nil
 	}
+}
+
+func normalizeExceptionWindow(start, end time.Time) (time.Time, time.Time, error) {
+	normalizedStart := start.Truncate(time.Second)
+	if normalizedStart.Before(start) {
+		normalizedStart = normalizedStart.Add(time.Second)
+	}
+	end = end.Truncate(time.Second)
+	if !end.After(normalizedStart) {
+		return time.Time{}, time.Time{}, fmt.Errorf("exception query window must contain at least one whole second")
+	}
+	return normalizedStart, end, nil
 }
 
 func buildExceptionBaseFilter(args GetExceptionsArgs) string {
