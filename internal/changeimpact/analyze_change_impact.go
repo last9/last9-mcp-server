@@ -18,7 +18,7 @@ import (
 )
 
 type AnalyzeChangeImpactArgs struct {
-	ChangeEvent     *change_events.TimeSeries `json:"change_event,omitempty" jsonschema:"One element of change_events[] from get_change_events, passed unchanged. Its metric.service, metric.deployment_environment and earliest values[].timestamp are used. Do not combine with service or timestamp."`
+	ChangeEvent     *change_events.TimeSeries `json:"change_event,omitempty" jsonschema:"One element of change_events[] from get_change_events, passed unchanged. Uses metric.service_name (legacy: service), metric.deployment_environment and the earliest timestamp. Do not combine with service or timestamp."`
 	Service         string                    `json:"service,omitempty" jsonschema:"Service that changed. Required with timestamp when change_event is omitted."`
 	Timestamp       string                    `json:"timestamp,omitempty" jsonschema:"Change time: RFC3339 (2026-10-16T12:00:00Z) or unix seconds as a string. Required with service when change_event is omitted."`
 	Env             string                    `json:"env,omitempty" jsonschema:"Exact environment. Defaults to the change_event's deployment_environment, else all environments."`
@@ -58,9 +58,12 @@ func requestFromArgs(args AnalyzeChangeImpactArgs) (Request, error) {
 			return Request{}, fmt.Errorf("pass change_event or service and timestamp, not both")
 		}
 		event := args.ChangeEvent
-		req.Service = strings.TrimSpace(event.Metric["service"])
+		req.Service = strings.TrimSpace(event.Metric["service_name"])
 		if req.Service == "" {
-			return Request{}, fmt.Errorf("change_event has no metric.service; pass service and timestamp instead")
+			req.Service = strings.TrimSpace(event.Metric["service"])
+		}
+		if req.Service == "" {
+			return Request{}, fmt.Errorf("change_event has no metric.service_name or metric.service; pass service and timestamp instead")
 		}
 		if len(event.Values) == 0 {
 			return Request{}, fmt.Errorf("change_event has no values, so its time is unknown; pass service and timestamp instead")

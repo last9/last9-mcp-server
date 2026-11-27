@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"last9-mcp/internal/deeplink"
+	"last9-mcp/internal/last9api"
+	"last9-mcp/internal/last9api/prom"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -20,7 +22,7 @@ import (
 
 // TimeSeriesPoint represents a single data point in a time series
 type TimeSeriesPoint struct {
-	Timestamp uint64  `json:"timestamp"`
+	Timestamp float64 `json:"timestamp"`
 	Value     float64 `json:"value"`
 }
 
@@ -65,43 +67,46 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 		startTimeParam := startTime.Unix()
 		endTimeParam := endTime.Unix()
 
-		// First, fetch all available event_name values using the series API
-		availableEventNames, err := fetchAvailableEventNames(ctx, client, startTimeParam, endTimeParam, cfg)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to fetch available event names: %w", err)
+		api := last9api.NewClient(client, cfg)
+		datasource := prom.Datasource{ReadURL: cfg.PrometheusReadURL, Username: cfg.PrometheusUsername, Password: cfg.PrometheusPassword}
+		// The instant transport uses whole seconds. Cover both endpoints, then
+		// discard any fringe samples outside the caller's precise bounds.
+		evaluation := endTimeParam
+		if endTime.Nanosecond() != 0 {
+			evaluation++
+		}
+		queryEvents := func(selector string) ([]TimeSeries, error) {
+			raw, err := prom.QueryInstantRaw(ctx, api, prom.QueryInstantInput{
+				Datasource: datasource, Query: fmt.Sprintf("%s[%ds]", selector, evaluation-startTimeParam+1), Timestamp: evaluation,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to query change events: %w", err)
+			}
+			series, err := parseChangeEventsTimeSeries(raw, startTime, endTime)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse change events: %w", err)
+			}
+			return series, nil
 		}
 
-		promql := buildChangeEventsPromQL(args.ServiceName, args.Env, args.EventName)
-
-		// Make range query to get change events over time
-		resp, err := utils.MakePromRangeAPIQuery(ctx, client, promql, startTimeParam, endTimeParam, cfg, utils.PromResolution{})
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to query change events: %w", err)
+		selectors := changeEventSelectors(args)
+		changeEvents := []TimeSeries{}
+		for _, selector := range selectors {
+			series, err := queryEvents(selector)
+			if err != nil {
+				return nil, nil, err
+			}
+			changeEvents = append(changeEvents, series...)
 		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			return nil, nil, utils.NewUpstreamHTTPError(resp, "change events API")
-		}
-
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
-		}
-
-		// Parse Prometheus response into timeseries format
-		changeEvents, err := parseChangeEventsTimeSeries(body)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to parse change events: %w", err)
-		}
+		availableEventNames := eventNames(changeEvents)
 
 		result := map[string]any{
 			"available_event_names": availableEventNames,
 			"change_events":         changeEvents,
 			"count":                 len(changeEvents),
 			"time_range": map[string]any{
-				"start": startTime.Format(time.RFC3339),
-				"end":   endTime.Format(time.RFC3339),
+				"start": startTime.Format(time.RFC3339Nano),
+				"end":   endTime.Format(time.RFC3339Nano),
 			},
 		}
 
@@ -114,7 +119,7 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 		// The dashboard has no page that lists change events for a time range
 		// (changeboards need a board id), so link the exact query in the
 		// Metrics explorer: it lists each event series with its labels.
-		dashboardURL := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildMetricsLink(startTimeParam*1000, endTimeParam*1000, promql)
+		dashboardURL := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildMetricsLink(startTimeParam*1000, endTimeParam*1000, strings.Join(selectors, " or "))
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
@@ -126,20 +131,37 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 	}
 }
 
+func eventNames(events []TimeSeries) []string {
+	names := make(map[string]struct{})
+	for _, event := range events {
+		if name := event.Metric["event_name"]; name != "" {
+			names[name] = struct{}{}
+		}
+	}
+	result := make([]string, 0, len(names))
+	for name := range names {
+		result = append(result, name)
+	}
+	sort.Strings(result)
+	return result
+}
+
 const (
 	changeEventsMetric           = "last9_change_events"
 	excludeBackupEvents          = `event_name!~"cold_storage_logs_backup|cold_storage_logs_backup_endtime|cold_storage_logs_backup_time_taken_in_sec|manual_rehydration_event"`
 	excludeScheduledSearchEvents = `l9_event_name!~"last9_scheduled_search"`
 )
 
-// Change events store service / deployment_environment / event_name; the MCP
-// param names are just a different spelling of the first two.
-func buildChangeEventsPromQL(serviceName, env, eventName string) string {
+func changeEventSelectors(args GetChangeEventsArgs) []string {
 	matchers := []string{excludeBackupEvents, excludeScheduledSearchEvents}
-	matchers = addFilter(matchers, "service", serviceName)
-	matchers = addFilter(matchers, "deployment_environment", env)
-	matchers = addFilter(matchers, "event_name", eventName)
-	return changeEventsMetric + "{" + strings.Join(matchers, ",") + "}"
+	matchers = addFilter(matchers, "deployment_environment", args.Env)
+	matchers = addFilter(matchers, "event_name", args.EventName)
+	base := changeEventsMetric + "{" + strings.Join(matchers, ",")
+	if args.ServiceName == "" {
+		return []string{base + "}"}
+	}
+	quoted := `"` + utils.EscapePromQLLabel(args.ServiceName) + `"`
+	return []string{base + ",service_name=" + quoted + "}", base + `,service_name="",service=` + quoted + "}"}
 }
 
 func addFilter(matchers []string, label, value string) []string {
@@ -149,52 +171,8 @@ func addFilter(matchers []string, label, value string) []string {
 	return append(matchers, fmt.Sprintf(`%s="%s"`, label, utils.EscapePromQLLabel(value)))
 }
 
-// Same exclusions as the query: a name this list offers must be one a filter
-// can actually match. event_name only — no other label carries an event
-// identity a filter can match.
-func fetchAvailableEventNames(ctx context.Context, client *http.Client, startTime, endTime int64, cfg models.Config) ([]string, error) {
-	selector := changeEventsMetric + "{" + excludeBackupEvents + "," + excludeScheduledSearchEvents + "}"
-	names, err := fetchEventNamesForLabel(ctx, client, "event_name", selector, startTime, endTime, cfg)
-	if err != nil {
-		return nil, err
-	}
-	eventNames := make([]string, 0, len(names))
-	for _, name := range names {
-		if name == "" {
-			continue
-		}
-		eventNames = append(eventNames, name)
-	}
-	sort.Strings(eventNames)
-	return eventNames, nil
-}
-
-func fetchEventNamesForLabel(ctx context.Context, client *http.Client, label, selector string, startTime, endTime int64, cfg models.Config) ([]string, error) {
-	resp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, label, selector, startTime, endTime, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query event names: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to get event names: %s", resp.Status)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	var eventNamesResp []string
-	if err := json.Unmarshal(body, &eventNamesResp); err != nil {
-		return nil, fmt.Errorf("failed to parse event names response: %w", err)
-	}
-
-	return eventNamesResp, nil
-}
-
 // parseChangeEventsTimeSeries converts Prometheus response to TimeSeries format
-func parseChangeEventsTimeSeries(respBody []byte) ([]TimeSeries, error) {
+func parseChangeEventsTimeSeries(respBody []byte, start, end time.Time) ([]TimeSeries, error) {
 	var promResp apiPromRangeResp
 	var resp []TimeSeries
 
@@ -202,19 +180,28 @@ func parseChangeEventsTimeSeries(respBody []byte) ([]TimeSeries, error) {
 		return nil, fmt.Errorf("failed to unmarshal Prometheus response: %w", err)
 	}
 
-	// Convert Prometheus response to TimeSeries format
+	if promResp == nil {
+		return nil, fmt.Errorf("missing sample matrix")
+	}
 	for _, r := range promResp {
 		series := TimeSeries{
 			Metric: r.Metric,
 			Values: make([]TimeSeriesPoint, 0, len(r.Values)),
 		}
 
+		if r.Values == nil {
+			return nil, fmt.Errorf("expected a matrix with sample values")
+		}
 		for _, v := range r.Values {
 			if len(v) != 2 {
 				return nil, fmt.Errorf("invalid value format in Prometheus response: %v", v)
 			}
 
 			if ts, ok := v[0].(float64); ok {
+				sampleTime := time.UnixMilli(int64(math.Round(ts * 1000)))
+				if sampleTime.Before(start) || sampleTime.After(end) {
+					continue
+				}
 				if valStr, ok := v[1].(string); ok {
 					val, err := strconv.ParseFloat(valStr, 64)
 					if err != nil {
@@ -222,7 +209,7 @@ func parseChangeEventsTimeSeries(respBody []byte) ([]TimeSeries, error) {
 					}
 
 					point := TimeSeriesPoint{
-						Timestamp: uint64(ts),
+						Timestamp: ts,
 						Value:     val,
 					}
 					series.Values = append(series.Values, point)
@@ -233,7 +220,9 @@ func parseChangeEventsTimeSeries(respBody []byte) ([]TimeSeries, error) {
 				return nil, fmt.Errorf("invalid timestamp type in Prometheus response: %T", v[0])
 			}
 		}
-		resp = append(resp, series)
+		if len(series.Values) > 0 {
+			resp = append(resp, series)
+		}
 	}
 
 	return resp, nil
