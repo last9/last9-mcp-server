@@ -16,6 +16,8 @@ var namedCapturePattern = regexp.MustCompile(`\(\?P<([^>]+)>`)
 // validNamedCaptureName is the Go regexp named-group alphabet (no `$`, hyphens, etc.).
 var validNamedCaptureName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
+var quotedJSONParseKey = regexp.MustCompile("^`[A-Za-z0-9_@][A-Za-z0-9_.@/-]*`$")
+
 // Validation error categories for fail-closed log pipeline checks.
 // Stable strings — safe for metrics labels; never include customer payloads.
 const (
@@ -414,6 +416,15 @@ func validateParseStage(stage map[string]interface{}, stagePath string) error {
 
 	if labels, ok := stage["labels"].(map[string]interface{}); ok {
 		for labelKey := range labels {
+			if parser == "json" {
+				if quotedJSONParseKey.MatchString(labelKey) {
+					continue
+				}
+				if strings.HasPrefix(labelKey, "@") && quotedJSONParseKey.MatchString("`"+labelKey+"`") {
+					return newLogValidationError(LogValidationInvalidField, stagePath+".labels."+labelKey,
+						fmt.Sprintf("JSON parse source key %q at %s starts with @; enclose the source key in backticks as %q", labelKey, stagePath+".labels", "`"+labelKey+"`"))
+				}
+			}
 			if !safeBodyKeyPattern.MatchString(labelKey) {
 				return newLogValidationError(
 					LogValidationInvalidField,
