@@ -133,13 +133,6 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		if err != nil {
 			return nil, nil, err
 		}
-		if args.ResponseMode == logResponseModeRaw && statusField == "" {
-			if discovered, outcomeParsers, discoverErr := resolveHTTPStatusField(ctx, client, cfg, args, startTime, endTime, normalizedIndex); discoverErr == nil {
-				statusField = discovered
-				parseStages = append(parseStages, outcomeParsers...)
-			}
-		}
-
 		logjsonQuery := buildServiceLogsQuery(args.ServiceName, args.SeverityFilters, args.BodyFilters)
 		if args.Env != "" {
 			logjsonQuery = addServiceLogsEnvFilter(logjsonQuery, args.Env)
