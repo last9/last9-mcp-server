@@ -177,6 +177,9 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 		// when the span arithmetic overflows.
 		for i := int64(0); i < points; i++ {
 			g.Go(func() error {
+				if err := gctx.Err(); err != nil {
+					return err
+				}
 				sample := query
 				sample.Timestamp = startTime + i*args.Step
 				rules, err := fetchRuleStates(gctx, api, sample, args.RuleID)
