@@ -65,6 +65,12 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 		{name: "pattern redundant body alias", tool: "get_log_patterns", arguments: map[string]any{"service_name": "example", "body": "timeout", "body_filters": []string{"timeout"}}, wantText: `Unknown argument "body". body_filters is already set; remove body.`},
 		{name: "all pattern corrections", tool: "get_log_patterns", arguments: map[string]any{"service": "example", "body": "timeout", "other": 1}, wantText: `Use body_filters with an array of message substrings, for example ["timeout"]. Unknown argument "other". Unknown argument "service". Use service_name`},
 		{
+			name:      "service summary single-service route",
+			tool:      "get_service_summary",
+			arguments: map[string]any{"service_name": "example-service", "lookback_minutes": 5},
+			wantText:  "call get_service_performance_details with service_name",
+		},
+		{
 			name:      "service trace span name correction",
 			tool:      "get_service_traces",
 			arguments: map[string]any{"service_name": "example", "span_name": "example-operation"},

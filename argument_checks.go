@@ -28,6 +28,7 @@ var argumentChecks = map[string]argumentCheck{
 	"get_dashboard":            withoutToolContext(dashboards.PrepareGetDashboardArguments),
 	"create_dashboard":         withoutToolContext(dashboards.PrepareDashboardArguments),
 	"update_dashboard":         withoutToolContext(dashboards.PrepareDashboardArguments),
+	"get_service_summary":      withoutToolContext(checkServiceSummaryArguments),
 	"get_entity_kpis":          checkEntityNameArguments("get_entity_kpis"),
 	"get_entity_alert_rules":   checkEntityNameArguments("get_entity_alert_rules"),
 	"describe_alert_chart":     checkDescribeAlertChartArguments,
@@ -51,6 +52,14 @@ func checkServiceTraceArguments(raw json.RawMessage) (json.RawMessage, error) {
 		return nil, errors.New(`unexpected additional properties ["span_name"]. Call get_traces with tracejson_query=[{"type":"filter","query":{"$and":[{"$eq":["ServiceName","<service_name>"]},{"$eq":["SpanName","<span_name>"]}]}}]. ` +
 			`For trace_id, replace the ServiceName condition with {"$eq":["TraceId","<trace_id>"]}. If env was set, add {"$eq":["resources['deployment.environment']","<env>"]} to $and. ` +
 			`Preserve the time window and limit. For omitted values, set lookback_minutes to 60 for service_name or 4320 for trace_id, and limit to 10.`)
+	}
+	return raw, nil
+}
+
+func checkServiceSummaryArguments(raw json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil && fields["service_name"] != nil {
+		return nil, errors.New(`unexpected additional properties ["service_name"]. get_service_summary ranks services across the fleet. For one service's performance, call get_service_performance_details with service_name.`)
 	}
 	return raw, nil
 }
