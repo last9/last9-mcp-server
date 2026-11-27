@@ -3,6 +3,8 @@ package traces
 import (
 	"fmt"
 	"net/http"
+	"net/url"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -31,6 +33,21 @@ func TestOccurrenceTimesStayInsideReportedWindow(t *testing.T) {
 			row := response.Exceptions[0]
 			if row["first_seen"] != first.Format(time.RFC3339Nano) || row["last_seen"] != last.Format(time.RFC3339Nano) {
 				t.Fatalf("first/last seen = %v / %v, want %s / %s", row["first_seen"], row["last_seen"], first.Format(time.RFC3339Nano), last.Format(time.RFC3339Nano))
+			}
+			rowURL, err := url.Parse(row["url"].(string))
+			if err != nil {
+				t.Fatalf("parse row URL: %v", err)
+			}
+			from, err := strconv.ParseInt(rowURL.Query().Get("from"), 10, 64)
+			if err != nil {
+				t.Fatalf("parse row URL from: %v", err)
+			}
+			to, err := strconv.ParseInt(rowURL.Query().Get("to"), 10, 64)
+			if err != nil {
+				t.Fatalf("parse row URL to: %v", err)
+			}
+			if first.Before(time.Unix(from, 0)) || last.After(time.Unix(to, 0)) {
+				t.Fatalf("row URL window %s / %s does not contain occurrences %s / %s", time.Unix(from, 0), time.Unix(to, 0), first, last)
 			}
 		})
 	}
