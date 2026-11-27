@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"testing"
@@ -190,6 +191,19 @@ func TestExceptionSeenStep_BoundsPointsPerSeries(t *testing.T) {
 		}
 		if points := (tc.window + step - 1) / step; points > exceptionSeenMaxPoints {
 			t.Errorf("window %v at step %v gives %d points, over %d", tc.window, step, points, exceptionSeenMaxPoints)
+		}
+	}
+}
+
+func TestExceptionSeenStepBoundsMaximumDuration(t *testing.T) {
+	for _, window := range []time.Duration{time.Hour, time.Duration(math.MaxInt64)} {
+		step := exceptionSeenStep(window)
+		points := window / step
+		if window%step != 0 {
+			points++
+		}
+		if points > exceptionSeenMaxPoints {
+			t.Fatalf("window %s uses step %s and requests %d points; want at most %d", window, step, points, exceptionSeenMaxPoints)
 		}
 	}
 }
