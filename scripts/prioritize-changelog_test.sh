@@ -6,57 +6,24 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 fixture=$(mktemp)
 trap 'rm -f "$fixture"' EXIT
 
-cat >"$fixture" <<'EOF'
-## [Unreleased]
+check_fixed_merge() {
+  local incoming=$1
+  local before=$2
+  local expected=$3
 
-### Added
-- incoming added one (#20).
-- incoming added two (#19).
-- branch added (#12).
+  printf '## [Unreleased]\n\n### Fixed\n%s- branch fix (#12).\n\n## [1.0.0] - 2026-01-01\n\n### Fixed\n- released fix (#12).\n' "$before" >"$fixture"
 
-### Fixed
-- incoming fixed (#21).
-- branch fixed (#12).
+  "$repo_root/scripts/prioritize-changelog.sh" 12 "$fixture"
+  "$repo_root/scripts/prioritize-changelog.sh" 12 "$fixture"
 
-### Changed
-- incoming changed one (#23).
-- incoming changed two (#22).
-- branch changed (#12).
+  actual=$(awk '/^### Fixed$/ { found++ } found == 1 { print } found == 1 && /^$/ { exit }' "$fixture")
+  if [[ $actual != "$expected" ]]; then
+    echo "$incoming incoming Fixed entries:" >&2
+    diff -u <(printf '%s\n' "$expected") <(printf '%s\n' "$actual")
+    exit 1
+  fi
+}
 
-## [1.0.0] - 2026-01-01
-
-### Added
-- released entry (#12).
-EOF
-
-"$repo_root/scripts/prioritize-changelog.sh" 12 "$fixture"
-"$repo_root/scripts/prioritize-changelog.sh" 12 "$fixture"
-
-expected=$(cat <<'EOF'
-## [Unreleased]
-
-### Added
-- branch added (#12).
-- incoming added one (#20).
-- incoming added two (#19).
-
-### Fixed
-- branch fixed (#12).
-- incoming fixed (#21).
-
-### Changed
-- branch changed (#12).
-- incoming changed one (#23).
-- incoming changed two (#22).
-
-## [1.0.0] - 2026-01-01
-
-### Added
-- released entry (#12).
-EOF
-)
-
-if [[ $(cat "$fixture") != "$expected" ]]; then
-  diff -u <(printf '%s\n' "$expected") "$fixture"
-  exit 1
-fi
+check_fixed_merge 0 '' $'### Fixed\n- branch fix (#12).'
+check_fixed_merge 1 $'- incoming fix (#20).\n' $'### Fixed\n- branch fix (#12).\n- incoming fix (#20).'
+check_fixed_merge 2 $'- incoming fix (#21).\n- incoming fix (#20).\n' $'### Fixed\n- branch fix (#12).\n- incoming fix (#21).\n- incoming fix (#20).'
