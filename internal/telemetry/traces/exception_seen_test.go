@@ -6,9 +6,12 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type promRangeRequest struct {
@@ -205,5 +208,58 @@ func TestExceptionSeenStepBoundsMaximumDuration(t *testing.T) {
 		if points > exceptionSeenMaxPoints {
 			t.Fatalf("window %s uses step %s and requests %d points; want at most %d", window, step, points, exceptionSeenMaxPoints)
 		}
+	}
+}
+
+func TestExceptionSeenPlanRejectsUnrepresentableWindow(t *testing.T) {
+	var requests int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		_, _ = io.WriteString(w, `[]`)
+	}))
+	defer srv.Close()
+
+	start := time.Date(2026, 1, 20, 10, 0, 0, 0, time.UTC)
+	_, err := fetchExceptionSeen(t.Context(), srv.Client(), exceptionTestConfig(srv.URL), exceptionSeenQuery{
+		Start: start,
+		End:   start.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("one-hour window: %v", err)
+	}
+	if requests != 1 {
+		t.Fatalf("one-hour window requests = %d, want 1", requests)
+	}
+
+	_, err = fetchExceptionSeen(t.Context(), srv.Client(), exceptionTestConfig(srv.URL), exceptionSeenQuery{
+		Start: time.Date(1000, 1, 1, 0, 0, 0, 0, time.UTC),
+		End:   time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC),
+	})
+	if err == nil || !strings.Contains(err.Error(), "range exceeds") {
+		t.Fatalf("unrepresentable window error = %v, want range exceeds error", err)
+	}
+	if requests != 1 {
+		t.Fatalf("requests after unrepresentable window = %d, want 1", requests)
+	}
+}
+
+func TestGetExceptionsHandlerRejectsUnrepresentableOccurrenceWindow(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		requests++
+	}))
+	defer srv.Close()
+
+	start := "1000-01-01T00:00:00Z"
+	_, _, err := NewGetExceptionsHandler(srv.Client(), exceptionTestConfig(srv.URL))(
+		t.Context(),
+		&mcp.CallToolRequest{},
+		GetExceptionsArgs{StartTimeISO: &start, EndTimeISO: "9999-01-01T00:00:00Z"},
+	)
+	if err == nil || !strings.Contains(err.Error(), "range exceeds") {
+		t.Fatalf("handler error = %v, want range exceeds error", err)
+	}
+	if requests != 0 {
+		t.Fatalf("upstream requests = %d, want 0", requests)
 	}
 }
