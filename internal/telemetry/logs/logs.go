@@ -62,7 +62,7 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 		}
 
 		// Handle logjson_query directly
-		result, err := handleLogJSONQuery(ctx, client, cfg, sanitizedQuery, args)
+		result, err := handleLogJSONQuery(ctx, req, client, cfg, sanitizedQuery, args)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -110,7 +110,7 @@ func conditionHasFieldOperator(value any, field string, operators map[string]str
 	return false
 }
 
-func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, args GetLogsArgs) (*mcp.CallToolResult, error) {
+func handleLogJSONQuery(ctx context.Context, req *mcp.CallToolRequest, client *http.Client, cfg models.Config, logjsonQuery interface{}, args GetLogsArgs) (*mcp.CallToolResult, error) {
 	// Determine time range from parameters
 	startTime, endTime, err := parseTimeRangeFromArgs(args)
 	if err != nil {
@@ -160,6 +160,7 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		appendParseCheck(ctx, scope, stages, result)
 		endParseCheck(nil)
 	}
+	addLocalTimestamps(req, result)
 	endProcess := utils.StartToolPhase(ctx, "get_logs", "post_process")
 	defaultWindow := args.StartTimeISO == "" && args.EndTimeISO == "" && args.LookbackMinutes == 0
 	if defaultWindow {

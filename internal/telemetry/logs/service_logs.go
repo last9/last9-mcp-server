@@ -42,6 +42,7 @@ type ServiceLogsResponse struct {
 // LogEntry represents a single log entry
 type LogEntry struct {
 	Timestamp   string `json:"timestamp"`
+	TSLocal     string `json:"ts_local,omitempty"`
 	Message     string `json:"message"`
 	Severity    string `json:"severity"`
 	ServiceName string `json:"service_name"`
@@ -148,6 +149,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
 		}
 		logs.HTTPStatusField = statusField
+		addServiceLogLocalTimestamps(req, logs)
 		if args.StartTimeISO == "" && args.EndTimeISO == "" && args.LookbackMinutes == 0 {
 			logs.WindowSource = "default"
 			logs.WindowMinutes = defaultServiceLogsLookback
