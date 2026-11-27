@@ -160,6 +160,11 @@ func handleLogJSONQuery(ctx context.Context, req *mcp.CallToolRequest, client *h
 		appendParseCheck(ctx, scope, stages, result)
 		endParseCheck(nil)
 	}
+	if args.ResponseMode == logResponseModeRaw {
+		if stages, ok := logjsonQuery.([]map[string]interface{}); ok {
+			appendOutcomeSummary(ctx, client, cfg, stages, "", args.Index, startTime, endTime, result)
+		}
+	}
 	addLocalTimestamps(req, result)
 	endProcess := utils.StartToolPhase(ctx, "get_logs", "post_process")
 	defaultWindow := args.StartTimeISO == "" && args.EndTimeISO == "" && args.LookbackMinutes == 0

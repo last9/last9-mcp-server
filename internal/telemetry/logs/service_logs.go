@@ -33,6 +33,7 @@ type ServiceLogsResponse struct {
 	LogsTruncated      *bool          `json:"logs_truncated,omitempty"`
 	SearchStats        map[string]any `json:"search_stats,omitempty"`
 	RawLimit           map[string]any `json:"l9_raw_limit,omitempty"`
+	OutcomeSummary     map[string]any `json:"l9_outcome_summary,omitempty"`
 	Hint               string         `json:"hint,omitempty"`
 	WindowSource       string         `json:"window_source,omitempty"`
 	WindowMinutes      int            `json:"window_minutes,omitempty"`
@@ -132,6 +133,12 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		if err != nil {
 			return nil, nil, err
 		}
+		if args.ResponseMode == logResponseModeRaw && statusField == "" {
+			if discovered, outcomeParsers, discoverErr := resolveHTTPStatusField(ctx, client, cfg, args, startTime, endTime, normalizedIndex); discoverErr == nil {
+				statusField = discovered
+				parseStages = append(parseStages, outcomeParsers...)
+			}
+		}
 
 		logjsonQuery := buildServiceLogsQuery(args.ServiceName, args.SeverityFilters, args.BodyFilters)
 		if args.Env != "" {
@@ -150,6 +157,13 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		}
 		logs.HTTPStatusField = statusField
 		addServiceLogLocalTimestamps(req, logs)
+		if args.ResponseMode == logResponseModeRaw && statusField != "" {
+			outcome := map[string]interface{}{}
+			appendOutcomeSummary(ctx, client, cfg, logjsonQuery, statusField, normalizedIndex, startTime.UnixMilli(), endTime.UnixMilli(), outcome)
+			if summary, ok := outcome["l9_outcome_summary"].(map[string]interface{}); ok {
+				logs.OutcomeSummary = summary
+			}
+		}
 		if args.StartTimeISO == "" && args.EndTimeISO == "" && args.LookbackMinutes == 0 {
 			logs.WindowSource = "default"
 			logs.WindowMinutes = defaultServiceLogsLookback

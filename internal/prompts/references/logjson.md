@@ -289,6 +289,7 @@ Discover and use a normalized route field before aggregation. If only raw URI ex
 - **ServiceName**: Service name. Always prefer this over similar looking attributes in `attributes` or `resources` given below
 - **SeverityText**: Log level (DEBUG, INFO, WARN, ERROR, FATAL)
 - **Timestamp**: Log timestamp
+- Raw rows keep `Timestamp` unchanged and add `ts_local` when the caller supplies `_meta.last9/client-timezone`; use that field rather than a clock embedded in `Body`. When `l9_outcome_summary` is present, its counts cover the full requested window rather than only the returned sample.
 - **attributes['field_name']**: Log/span attributes (OpenTelemetry semantic conventions)
 - **resources['field_name']**: Resource attributes (prefixed with `resource_`)
 
