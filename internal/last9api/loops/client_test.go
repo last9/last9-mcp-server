@@ -112,7 +112,11 @@ func TestGet_RedactsSecretsAndReportsGaps(t *testing.T) {
 			"graph":{"nodes":[
 				{"type":"slack","channel":"","api_token":"sekrit"},
 				{"type":"webhook","config":{"url":"https://hooks.example.test/fixture-token"}},
-				{"type":"http","headers":[{"key":"Authorization","value":"Bearer fixture-token"}]}
+				{"type":"http","headers":[
+					{"key":"Authorization","value":"Bearer fixture-token"},
+					{"key":"Cookie","value":"session=fixture-secret"},
+					{"key":"Accept","value":"application/json"}
+				]}
 			]}
 		}`)
 	})
@@ -136,6 +140,16 @@ func TestGet_RedactsSecretsAndReportsGaps(t *testing.T) {
 		if strings.Contains(string(encoded), secret) {
 			t.Errorf("node %d contains secret %q: %s", i, secret, encoded)
 		}
+	}
+	httpNode, err := json.Marshal(nodes[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(httpNode), "session=fixture-secret") {
+		t.Errorf("HTTP node contains cookie credential: %s", httpNode)
+	}
+	if !strings.Contains(string(httpNode), "application/json") {
+		t.Errorf("HTTP node redacted benign header: %s", httpNode)
 	}
 	if !strings.Contains(strings.Join(detail.SetupGaps, " "), "slack channel") {
 		t.Fatalf("setup gaps = %v", detail.SetupGaps)
