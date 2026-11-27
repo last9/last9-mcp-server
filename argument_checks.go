@@ -23,6 +23,7 @@ var argumentChecks = map[string]argumentCheck{
 	"get_service_environments": withoutToolContext(checkServiceEnvironmentArguments),
 	"get_traces":               withoutToolContext(checkGetTracesArguments),
 	"get_service_traces":       withoutToolContext(checkServiceTraceArguments),
+	"get_alerts":               checkAlertsRangeArguments,
 	"get_alert_config":         withoutToolContext(alerting.PrepareAlertConfigArguments),
 	"did_you_mean":             withoutToolContext(suggest.PrepareArguments),
 	"get_dashboard":            withoutToolContext(dashboards.PrepareGetDashboardArguments),
@@ -51,6 +52,18 @@ func checkServiceTraceArguments(raw json.RawMessage) (json.RawMessage, error) {
 		return nil, errors.New(`unexpected additional properties ["span_name"]. Call get_traces with tracejson_query=[{"type":"filter","query":{"$and":[{"$eq":["ServiceName","<service_name>"]},{"$eq":["SpanName","<span_name>"]}]}}]. ` +
 			`For trace_id, replace the ServiceName condition with {"$eq":["TraceId","<trace_id>"]}. If env was set, add {"$eq":["resources['deployment.environment']","<env>"]} to $and. ` +
 			`Preserve the time window and limit. For omitted values, set lookback_minutes to 60 for service_name or 4320 for trace_id, and limit to 10.`)
+	}
+	return raw, nil
+}
+
+func checkAlertsRangeArguments(raw json.RawMessage, served func(string) bool) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil && (fields["start_time"] != nil || fields["end_time"] != nil) {
+		hint := "get_alerts takes a snapshot. For alert instances, set time_iso to end_time in RFC3339 and window to the interval length in seconds (1-3600). Explain the one-hour limit for longer intervals instead of shortening them."
+		if served("get_alert_rule_state") {
+			hint += " For sampled firing history, call get_alert_rule_state with the original start_time, end_time and any rule_name, plus a step in seconds."
+		}
+		return nil, errors.New(hint)
 	}
 	return raw, nil
 }
