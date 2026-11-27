@@ -37,7 +37,8 @@ func TestAggregateCountMatchesReportedWindow(t *testing.T) {
 						return
 					}
 					if count := strings.Count(body.Query, tc.wantSelector); count != 3 {
-						t.Errorf("aggregate query contains %q %d times, want 3: %s", tc.wantSelector, count, body.Query)
+						fixtureHTTPError(t, w, "aggregate query contains %q %d times, want 3: %s", tc.wantSelector, count, body.Query)
+						return
 					}
 					fmt.Fprint(w, `[]`)
 				},

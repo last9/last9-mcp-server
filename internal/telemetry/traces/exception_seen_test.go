@@ -21,13 +21,14 @@ type promRangeRequest struct {
 	Step      int64   `json:"step"`
 }
 
-func decodeRangeRequest(t *testing.T, r *http.Request) promRangeRequest {
+func decodeRangeRequest(t *testing.T, w http.ResponseWriter, r *http.Request) (promRangeRequest, bool) {
 	t.Helper()
 	var body promRangeRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		t.Errorf("decode range request: %v", err)
+		fixtureHTTPError(t, w, "decode range request: %v", err)
+		return promRangeRequest{}, false
 	}
-	return body
+	return body, true
 }
 
 const twoEnvRows = `[
@@ -42,7 +43,11 @@ func TestGetExceptionsHandler_FirstAndLastSeenComeFromRangeData(t *testing.T) {
 	var request promRangeRequest
 
 	rows := runGetExceptions(t, getExceptionsTestRequest{InstantBody: twoEnvRows, RangeHandler: func(w http.ResponseWriter, r *http.Request) {
-		request = decodeRangeRequest(t, r)
+		var ok bool
+		request, ok = decodeRangeRequest(t, w, r)
+		if !ok {
+			return
+		}
 		io.WriteString(w, fmt.Sprintf(`[
 			{"metric":{"exception_type":"TypeError","service_name":"web","span_name":"View","span_kind":"SPAN_KIND_SERVER","env":"prod"},
 			 "values":[[%d,"5"],[%d,"0"],[%d,"2"],[%d,"1"],[%d,"0"]]},
@@ -142,7 +147,11 @@ func TestGetExceptionsHandler_NormalizesPublicTimestampsToWholeSeconds(t *testin
 func TestGetExceptionsHandler_FirstAndLastSeenRangeFiltersMatchInstantQuery(t *testing.T) {
 	var query string
 	runGetExceptions(t, getExceptionsTestRequest{Args: GetExceptionsArgs{ServiceName: "last9-api", SpanName: new("GET /a"), Env: "prod"}, InstantBody: `[]`, RangeHandler: func(w http.ResponseWriter, r *http.Request) {
-		query = decodeRangeRequest(t, r).Query
+		request, ok := decodeRangeRequest(t, w, r)
+		if !ok {
+			return
+		}
+		query = request.Query
 		io.WriteString(w, `[]`)
 	}})
 	if !strings.Contains(query, `trace_internal_count{service_name=~'last9\\-api', span_name=~'GET \\/a', env=~'prod', exception_type!=''}[1m]`) {

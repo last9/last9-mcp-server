@@ -55,18 +55,23 @@ func TestExceptionSeenKeepsBucketsInsideRequestedWindow(t *testing.T) {
 			requests := 0
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				requests++
-				request := decodeRangeRequest(t, r)
+				request, ok := decodeRangeRequest(t, w, r)
+				if !ok {
+					return
+				}
 				step := time.Duration(request.Step) * time.Second
 				requestStart := timeFromUnixSeconds(request.Timestamp - request.Window)
 				if requestStart.Before(start) {
-					t.Errorf("request starts at %s, before requested start %s", requestStart, start)
+					fixtureHTTPError(t, w, "request starts at %s, before requested start %s", requestStart, start)
+					return
 				}
 				values := make([][2]any, 0)
 				requestEnd := timeFromUnixSeconds(request.Timestamp)
 				if request.Window == 0 {
 					wantSelector := "[" + prometheusDuration(tail) + "]"
 					if !strings.Contains(request.Query, wantSelector) {
-						t.Errorf("tail query = %q, want selector %q", request.Query, wantSelector)
+						fixtureHTTPError(t, w, "tail query = %q, want selector %q", request.Query, wantSelector)
+						return
 					}
 					if tc.occurrence.After(requestEnd.Add(-tail)) && !tc.occurrence.After(requestEnd) {
 						values = append(values, [2]any{unixSeconds(requestEnd), tc.value})

@@ -3,6 +3,7 @@ package traces
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -131,6 +132,12 @@ type getExceptionsTestResponse struct {
 	EndTime    string           `json:"end_time"`
 }
 
+func fixtureHTTPError(t *testing.T, w http.ResponseWriter, format string, args ...any) {
+	t.Helper()
+	t.Errorf(format, args...)
+	http.Error(w, fmt.Sprintf(format, args...), http.StatusInternalServerError)
+}
+
 func runGetExceptionsResponse(t *testing.T, request getExceptionsTestRequest) getExceptionsTestResponse {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -148,7 +155,7 @@ func runGetExceptionsResponse(t *testing.T, request getExceptionsTestRequest) ge
 			}
 			request.RangeHandler(w, r)
 		default:
-			t.Errorf("unexpected path: %s", r.URL.Path)
+			fixtureHTTPError(t, w, "unexpected path: %s", r.URL.Path)
 		}
 	}))
 	defer server.Close()

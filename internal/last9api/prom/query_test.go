@@ -3,20 +3,27 @@ package prom
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
 )
 
+func fixtureHTTPError(t *testing.T, w http.ResponseWriter, format string, args ...any) {
+	t.Helper()
+	t.Errorf(format, args...)
+	http.Error(w, fmt.Sprintf(format, args...), http.StatusInternalServerError)
+}
+
 func TestQuerySeriesSendsBodyAndDecodesResponse(t *testing.T) {
 	var body map[string]any
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/prom_query" {
-			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+			fixtureHTTPError(t, w, "request = %s %s", r.Method, r.URL.Path)
+			return
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Errorf("decode request: %v", err)
-			w.WriteHeader(http.StatusBadRequest)
+			fixtureHTTPError(t, w, "decode request: %v", err)
 			return
 		}
 		_, _ = w.Write([]byte(`[{"metric":{"service_name":"api"},"values":[[100,"2"]]}]`))
