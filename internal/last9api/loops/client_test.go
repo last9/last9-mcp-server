@@ -33,7 +33,9 @@ func testClient(t *testing.T, handler http.HandlerFunc) *last9api.Client {
 func TestProbeEnabled_NotEnabled(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/loops" {
-			t.Fatalf("path = %q", r.URL.Path)
+			t.Errorf("path = %q", r.URL.Path)
+			http.Error(w, "unexpected path", http.StatusBadRequest)
+			return
 		}
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		_, _ = io.WriteString(w, `{"error_details":{"code":"LOOPS_NOT_ENABLED"}}`)
@@ -105,7 +107,9 @@ func TestList_FiltersAndDecodes(t *testing.T) {
 func TestGet_RedactsSecretsAndReportsGaps(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/loops/aut1" {
-			t.Fatalf("path = %q", r.URL.Path)
+			t.Errorf("path = %q", r.URL.Path)
+			http.Error(w, "unexpected path", http.StatusBadRequest)
+			return
 		}
 		_, _ = io.WriteString(w, `{
 			"id":"aut1","name":"RCA","status":"draft","enabled":false,"action_mode":"simulated",
@@ -159,7 +163,9 @@ func TestGet_RedactsSecretsAndReportsGaps(t *testing.T) {
 func TestListTemplates_CapabilityFilter(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/loops/templates" {
-			t.Fatalf("path = %q", r.URL.Path)
+			t.Errorf("path = %q", r.URL.Path)
+			http.Error(w, "unexpected path", http.StatusBadRequest)
+			return
 		}
 		_, _ = io.WriteString(w, `{"templates":[
 			{"slug":"investigate-last9-alert","name":"Investigate","requiredParams":["slack_channel"],"capability":"investigation"},
