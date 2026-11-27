@@ -278,7 +278,6 @@ func graphSummary(raw json.RawMessage) json.RawMessage {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil
 	}
-	// Drop secret-looking leaf strings before returning a bounded summary.
 	var v any
 	if json.Unmarshal(raw, &v) != nil {
 		return nil
@@ -294,9 +293,10 @@ func graphSummary(raw json.RawMessage) json.RawMessage {
 func redactValue(v any) any {
 	switch t := v.(type) {
 	case map[string]any:
+		redactGenericValue := hasSecretNameValue(t)
 		out := make(map[string]any, len(t))
 		for k, child := range t {
-			if secretKey(k) {
+			if shouldRedact(k, redactGenericValue) {
 				out[k] = "[redacted]"
 				continue
 			}
@@ -314,9 +314,25 @@ func redactValue(v any) any {
 	}
 }
 
+func shouldRedact(key string, genericValue bool) bool {
+	return secretKey(key) ||
+		strings.EqualFold(key, "url") ||
+		genericValue && strings.EqualFold(key, "value")
+}
+
+func hasSecretNameValue(v map[string]any) bool {
+	for key, raw := range v {
+		value, ok := raw.(string)
+		if ok && (strings.EqualFold(key, "key") || strings.EqualFold(key, "name") || strings.EqualFold(key, "header")) && secretKey(value) {
+			return true
+		}
+	}
+	return false
+}
+
 func secretKey(k string) bool {
 	lower := strings.ToLower(k)
-	for _, needle := range []string{"token", "secret", "password", "authorization", "webhook", "api_key", "apikey"} {
+	for _, needle := range []string{"token", "secret", "password", "authorization", "webhook", "api_key", "api-key", "apikey"} {
 		if strings.Contains(lower, needle) {
 			return true
 		}
