@@ -11,6 +11,35 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+func TestGetLogsRawAggregateSkipsOutcomeSummary(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		rows := streamsResult([]summaryTestLine{{severity: "INFO", message: "served"}})
+		items := rows["data"].(map[string]interface{})["result"].([]interface{})
+		items[0].(map[string]interface{})["stream"].(map[string]interface{})["status_code"] = "200"
+		_ = json.NewEncoder(w).Encode(map[string]any{"query_result": rows})
+	}))
+	t.Cleanup(srv.Close)
+
+	result, _, err := NewGetLogsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+		LogjsonQuery: []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "api"}}},
+			{"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{"function": map[string]interface{}{"$count": []interface{}{}}, "as": "count"}}, "groupby": map[string]interface{}{"attributes['status_code']": "status_code"}},
+		},
+		ResponseMode: logResponseModeRaw, StartTimeISO: "2023-11-14T22:13:20Z", EndTimeISO: "2023-11-14T22:23:20Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("upstream requests = %d, want 1", got)
+	}
+	if _, ok := parseToolJSONResult(t, result)["l9_outcome_summary"]; ok {
+		t.Fatal("aggregate response has l9_outcome_summary")
+	}
+}
+
 func TestGetServiceLogsRawWithoutStatusFilterSkipsDiscovery(t *testing.T) {
 	var requests atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

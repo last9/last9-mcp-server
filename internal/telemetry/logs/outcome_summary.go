@@ -11,9 +11,7 @@ import (
 	"last9-mcp/internal/models"
 )
 
-var outcomeFieldNames = map[string]struct{}{
-	"status": {}, "status_code": {}, "elb_status_code": {}, "backend_status_code": {},
-}
+var outcomeFieldNames = []string{"status", "status_code", "elb_status_code", "backend_status_code"}
 
 func recognizedOutcomeField(result map[string]interface{}) string {
 	kind, items, err := extractResultItems(result)
@@ -23,13 +21,15 @@ func recognizedOutcomeField(result map[string]interface{}) string {
 	for _, item := range items {
 		stream, _ := item.(map[string]interface{})
 		labels, _ := stream["stream"].(map[string]interface{})
-		for field := range labels {
-			name := field
-			if i := strings.LastIndexAny(name, ".'"); i >= 0 {
-				name = strings.Trim(name[i+1:], "']")
-			}
-			if _, ok := outcomeFieldNames[name]; ok {
-				return field
+		for _, wanted := range outcomeFieldNames {
+			for field := range labels {
+				name := field
+				if i := strings.LastIndexAny(name, ".'"); i >= 0 {
+					name = strings.Trim(name[i+1:], "']")
+				}
+				if name == wanted {
+					return field
+				}
 			}
 		}
 	}
@@ -65,14 +65,21 @@ func outcomeCounts(result map[string]interface{}) map[string]int64 {
 	return counts
 }
 
-func appendOutcomeSummary(ctx context.Context, client *http.Client, cfg models.Config, query []map[string]interface{}, field, index string, startMs, endMs int64, result map[string]interface{}) {
-	if field == "" {
-		field = recognizedOutcomeField(result)
+type outcomeSummaryRequest struct {
+	query          []map[string]interface{}
+	field, index   string
+	startMs, endMs int64
+	result         map[string]interface{}
+}
+
+func appendOutcomeSummary(ctx context.Context, client *http.Client, cfg models.Config, request outcomeSummaryRequest) {
+	if request.field == "" {
+		request.field = recognizedOutcomeField(request.result)
 	}
-	if field == "" {
+	if request.field == "" {
 		return
 	}
-	aggregate, err := executeLogJSONQuery(ctx, client, cfg, outcomeAggregatePipeline(query, field), startMs, endMs, 100, index)
+	aggregate, err := executeLogJSONQuery(ctx, client, cfg, outcomeAggregatePipeline(request.query, request.field), request.startMs, request.endMs, 100, request.index)
 	if err != nil {
 		return
 	}
@@ -80,8 +87,8 @@ func appendOutcomeSummary(ctx context.Context, client *http.Client, cfg models.C
 	if len(counts) == 0 {
 		return
 	}
-	result["l9_outcome_summary"] = map[string]interface{}{
-		"field": field, "counts": counts,
-		"window": []string{time.UnixMilli(startMs).UTC().Format(time.RFC3339Nano), time.UnixMilli(endMs).UTC().Format(time.RFC3339Nano)},
+	request.result["l9_outcome_summary"] = map[string]interface{}{
+		"field": request.field, "counts": counts,
+		"window": []string{time.UnixMilli(request.startMs).UTC().Format(time.RFC3339Nano), time.UnixMilli(request.endMs).UTC().Format(time.RFC3339Nano)},
 	}
 }

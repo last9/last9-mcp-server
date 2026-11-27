@@ -16,6 +16,17 @@ func TestRecognizedOutcomeFieldFromRawRows(t *testing.T) {
 	}
 }
 
+func TestRecognizedOutcomeFieldUsesStablePriority(t *testing.T) {
+	result := map[string]interface{}{"data": map[string]interface{}{"resultType": "streams", "result": []interface{}{
+		map[string]interface{}{"stream": map[string]interface{}{"status_code": "403", "status": "denied"}, "values": []interface{}{}},
+	}}}
+	for range 100 {
+		if got := recognizedOutcomeField(result); got != "status" {
+			t.Fatalf("field = %q, want status", got)
+		}
+	}
+}
+
 func TestOutcomeCountsFromAggregateRows(t *testing.T) {
 	result := map[string]interface{}{"data": map[string]interface{}{"resultType": "streams", "result": []interface{}{
 		map[string]interface{}{"stream": map[string]interface{}{"outcome": "403", "count": "8"}},

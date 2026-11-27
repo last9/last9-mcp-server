@@ -162,7 +162,9 @@ func handleLogJSONQuery(ctx context.Context, req *mcp.CallToolRequest, client *h
 	}
 	if args.ResponseMode == logResponseModeRaw {
 		if stages, ok := logjsonQuery.([]map[string]interface{}); ok {
-			appendOutcomeSummary(ctx, client, cfg, stages, "", args.Index, startTime, endTime, result)
+			if !utils.PipelineHasAggregateStage(stages) {
+				appendOutcomeSummary(ctx, client, cfg, outcomeSummaryRequest{query: stages, index: args.Index, startMs: startTime, endMs: endTime, result: result})
+			}
 		}
 	}
 	addLocalTimestamps(req, result)

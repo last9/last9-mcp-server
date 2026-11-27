@@ -152,7 +152,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		addServiceLogLocalTimestamps(req, logs)
 		if args.ResponseMode == logResponseModeRaw && statusField != "" {
 			outcome := map[string]interface{}{}
-			appendOutcomeSummary(ctx, client, cfg, logjsonQuery, statusField, normalizedIndex, startTime.UnixMilli(), endTime.UnixMilli(), outcome)
+			appendOutcomeSummary(ctx, client, cfg, outcomeSummaryRequest{query: logjsonQuery, field: statusField, index: normalizedIndex, startMs: startTime.UnixMilli(), endMs: endTime.UnixMilli(), result: outcome})
 			if summary, ok := outcome["l9_outcome_summary"].(map[string]interface{}); ok {
 				logs.OutcomeSummary = summary
 			}
