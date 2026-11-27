@@ -504,6 +504,60 @@ func TestDumpToolsHonorsToolsetsFilter(t *testing.T) {
 	}
 }
 
+func TestDumpToolsLoopsToolset(t *testing.T) {
+	want := map[string]string{
+		"get_loop":            prompts.GetLoopDescription,
+		"get_loops_status":    prompts.GetLoopsStatusDescription,
+		"list_loop_templates": prompts.ListLoopTemplatesDescription,
+		"list_loops":          prompts.ListLoopsDescription,
+	}
+	for _, spec := range []string{"loops", "logs"} {
+		t.Run(spec, func(t *testing.T) {
+			allowed, err := toolsets.Parse(spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var buf bytes.Buffer
+			if err := dumpTools(&buf, toolsets.Filter{Tools: allowed}); err != nil {
+				t.Fatalf("dumpTools failed: %v", err)
+			}
+			var out struct {
+				Tools []struct {
+					Name        string `json:"name"`
+					Description string `json:"description"`
+					Annotations struct {
+						ReadOnlyHint bool `json:"readOnlyHint"`
+					} `json:"annotations"`
+				} `json:"tools"`
+			}
+			if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+				t.Fatal(err)
+			}
+			found := make(map[string]bool, len(want))
+			for _, tool := range out.Tools {
+				description, isLoopTool := want[tool.Name]
+				if !isLoopTool {
+					continue
+				}
+				if spec == "logs" {
+					t.Errorf("logs dump includes %s", tool.Name)
+					continue
+				}
+				found[tool.Name] = true
+				if tool.Description != description {
+					t.Errorf("%s description differs from its embedded description", tool.Name)
+				}
+				if !tool.Annotations.ReadOnlyHint {
+					t.Errorf("%s must be served read-only", tool.Name)
+				}
+			}
+			if spec == "loops" && len(found) != len(want) {
+				t.Errorf("loops dump served %v, want all %v", found, want)
+			}
+		})
+	}
+}
+
 func TestDumpToolsIncludesServedInstructions(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
