@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Loops read tools (`loops` toolset): `get_loops_status`, `list_loop_templates`, `list_loops`, and `get_loop`. They call org Loops routes, map `LOOPS_NOT_ENABLED` to an actionable response, and redact secret-bearing graph fields and values on `get_loop`. Create and lifecycle tools are follow-ups (#638).
+- Loops read tools (`loops` toolset): `get_loops_status`, `list_loop_templates`, `list_loops`, and `get_loop`. They call org Loops routes, map `LOOPS_NOT_ENABLED` to an actionable response, and redact secret-bearing graph fields and values, including Cookie headers, on `get_loop`. Create and lifecycle tools are follow-ups (#638).
 - `get_alerts` accepts a positive `limit` across alert instances after state filtering, preserving rule and instance order and reporting how many matches were shown (#641).
 - `get_alerts` accepts an optional `state` of `firing` or `normal` to return only matching instances within the requested window, grouped by rule (#635).
 - Alert rule tools now expose the per-rule `on_no_data` setting: create and chart-create can enable it, full updates preserve it when omitted or clear it explicitly, and both alert read tools show when it is enabled. `patch_alert` points callers to `update_alert` until the partial-update API supports the field (#577).

@@ -332,7 +332,7 @@ func hasSecretNameValue(v map[string]any) bool {
 
 func secretKey(k string) bool {
 	lower := strings.ToLower(k)
-	for _, needle := range []string{"token", "secret", "password", "authorization", "webhook", "api_key", "api-key", "apikey"} {
+	for _, needle := range []string{"token", "secret", "password", "authorization", "cookie", "webhook", "api_key", "api-key", "apikey"} {
 		if strings.Contains(lower, needle) {
 			return true
 		}
