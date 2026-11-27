@@ -62,8 +62,8 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 			if !strings.Contains(query, "sum by (exception_type, service_name, span_name, span_kind, env)") {
 				t.Fatalf("instant query is missing expected grouping labels: %s", query)
 			}
-			if !strings.Contains(query, "[30m]") {
-				t.Fatalf("expected 30m range selector in instant query: %s", query)
+			if !strings.Contains(query, "[1800s]") {
+				t.Fatalf("expected 1800s range selector in instant query: %s", query)
 			}
 
 			if got := int64(reqBody["timestamp"].(float64)); got != endTime.Unix() {
@@ -227,13 +227,13 @@ func TestGetExceptionsHandler_UsesDashboardShapeForEnvOnlyFilters(t *testing.T) 
 			if !strings.Contains(query, "sum by (exception_type, service_name, span_name, span_kind, env)") {
 				t.Fatalf("expected frontend grouping labels, got: %s", query)
 			}
-			if !strings.Contains(query, "trace_endpoint_count{env=~'alpha', exception_type!=''}[60m]") {
+			if !strings.Contains(query, "trace_endpoint_count{env=~'alpha', exception_type!=''}[3600s]") {
 				t.Fatalf("expected env-only selector for endpoint count, got: %s", query)
 			}
-			if !strings.Contains(query, "trace_client_count{env=~'alpha', exception_type!=''}[60m]") {
+			if !strings.Contains(query, "trace_client_count{env=~'alpha', exception_type!=''}[3600s]") {
 				t.Fatalf("expected env-only selector for client count, got: %s", query)
 			}
-			if !strings.Contains(query, "trace_internal_count{env=~'alpha', exception_type!=''}[60m]") {
+			if !strings.Contains(query, "trace_internal_count{env=~'alpha', exception_type!=''}[3600s]") {
 				t.Fatalf("expected env-only selector for internal count, got: %s", query)
 			}
 
@@ -363,8 +363,8 @@ func TestGetExceptionsHandler_BuildsUnfilteredSelector(t *testing.T) {
 			if strings.Contains(query, ", exception_type!=''}") {
 				t.Fatalf("query includes malformed selector prefix: %s", query)
 			}
-			if !strings.Contains(query, "trace_endpoint_count{exception_type!=''}[4m]") {
-				t.Fatalf("expected unfiltered selector with 4m window, got: %s", query)
+			if !strings.Contains(query, "trace_endpoint_count{exception_type!=''}[240s]") {
+				t.Fatalf("expected unfiltered selector with 240s window, got: %s", query)
 			}
 
 			w.WriteHeader(http.StatusOK)

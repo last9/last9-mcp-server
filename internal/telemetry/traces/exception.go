@@ -89,16 +89,9 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 		startMs := startTime.UnixMilli()
 		endMs := endTime.UnixMilli()
 
-		durationMinutes := int(endTime.Sub(startTime).Minutes())
-		if endTime.Sub(startTime)%time.Minute != 0 {
-			durationMinutes++
-		}
-		if durationMinutes <= 0 {
-			durationMinutes = 1
-		}
-
 		baseFilter := buildExceptionBaseFilter(args)
-		exceptionsQuery := buildExceptionsPromQL(baseFilter, fmt.Sprintf("%dm", durationMinutes))
+		durationSeconds := int64(endTime.Sub(startTime) / time.Second)
+		exceptionsQuery := buildExceptionsPromQL(baseFilter, fmt.Sprintf("%ds", durationSeconds))
 
 		seenCtx, cancelSeen := context.WithCancel(ctx)
 		defer cancelSeen()
