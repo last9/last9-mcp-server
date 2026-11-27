@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func TestReviewOccurrenceTimesStayInsideReportedWindow(t *testing.T) {
+func TestOccurrenceTimesStayInsideReportedWindow(t *testing.T) {
 	for _, fraction := range []time.Duration{0, 900 * time.Millisecond} {
 		t.Run(fraction.String(), func(t *testing.T) {
 			window := exceptionWindow{
