@@ -344,6 +344,43 @@ func TestGetAlertsHandler_TimeISOPrecedence(t *testing.T) {
 	}
 }
 
+func TestGetAlertsHandler_FutureSnapshot(t *testing.T) {
+	now := time.Date(2026, 1, 7, 12, 0, 0, 0, time.UTC)
+	pinAlertRuleStateClock(t, now)
+	future := now.Add(time.Second)
+	for _, tc := range []struct {
+		name   string
+		args   GetAlertsArgs
+		reject bool
+	}{
+		{"future ISO", GetAlertsArgs{TimeISO: future.Format(time.RFC3339), Timestamp: float64(now.Unix())}, true},
+		{"future Unix", GetAlertsArgs{Timestamp: float64(future.Unix())}, true},
+		{"current second ISO wins", GetAlertsArgs{TimeISO: now.Add(900 * time.Millisecond).Format(time.RFC3339Nano), Timestamp: float64(future.Unix())}, false},
+		{"current second Unix", GetAlertsArgs{Timestamp: float64(now.Unix())}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				if r.URL.Query().Get("timestamp") != strconv.FormatInt(now.Unix(), 10) {
+					t.Errorf("unexpected upstream timestamp %s", r.URL.Query().Get("timestamp"))
+				}
+				_, _ = io.WriteString(w, `{"alert_rules":[]}`)
+			}))
+			defer server.Close()
+			handler := NewGetAlertsHandler(server.Client(), testAlertMutationConfig(server.URL))
+			_, _, err := handler(context.Background(), nil, tc.args)
+			if tc.reject {
+				if err == nil || !strings.Contains(err.Error(), "in the future") || calls.Load() != 0 {
+					t.Fatalf("expected future-time error before upstream call, got %v and %d calls", err, calls.Load())
+				}
+			} else if err != nil || calls.Load() != 1 {
+				t.Fatalf("expected current-second snapshot, got %v and %d calls", err, calls.Load())
+			}
+		})
+	}
+}
+
 func TestGetAlertsHandler_InvalidTimeISO(t *testing.T) {
 	cfg := models.Config{
 		APIBaseURL: "http://example.com",

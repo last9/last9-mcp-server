@@ -94,7 +94,8 @@ func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Co
 			defaultLookbackMinutes = 1
 		}
 
-		_, endTime, err := utils.GetTimeRange(timeParams, defaultLookbackMinutes)
+		now := utils.Now()
+		_, endTime, err := utils.GetTimeRangeAt(timeParams, defaultLookbackMinutes, now)
 		if err != nil {
 			if args.TimeISO != "" {
 				return nil, nil, fmt.Errorf("invalid time_iso format: %w", err)
@@ -102,6 +103,9 @@ func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Co
 			return nil, nil, err
 		}
 		timestamp := endTime.Unix()
+		if timestamp > now.Unix() {
+			return nil, nil, fmt.Errorf("alert snapshot time is in the future. Omit time_iso and timestamp for a snapshot as of now, or supply a past time for a historical snapshot.")
+		}
 
 		alertsResp, err := FetchAlertsMonitor(ctx, client, cfg, AlertsMonitorQuery{Timestamp: timestamp, Window: window, State: args.State})
 		if err != nil {
