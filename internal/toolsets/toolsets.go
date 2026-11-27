@@ -105,6 +105,12 @@ var named = map[string][]string{
 		"get_dashboard_snapshot",
 		"delete_dashboard_snapshot",
 	},
+	"loops": {
+		"get_loops_status",
+		"list_loop_templates",
+		"list_loops",
+		"get_loop",
+	},
 	"profiles": {
 		"get_profile_services",
 		"get_flamegraph",

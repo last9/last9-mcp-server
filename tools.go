@@ -19,6 +19,7 @@ import (
 	"last9-mcp/internal/docs"
 	"last9-mcp/internal/feedback"
 	"last9-mcp/internal/grafana"
+	"last9-mcp/internal/loops"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/remapping"
@@ -876,6 +877,30 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Description: prompts.DeleteDashboardSnapshotDescription,
 	}, "get_dashboard_snapshot for id; it reports not found if the delete landed",
 		dashboards.NewDeleteDashboardSnapshotHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "get_loops_status",
+		Annotations: readOnlyTool("Get Loops Status"),
+		Description: prompts.GetLoopsStatusDescription,
+	}, loops.NewGetLoopsStatusHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "list_loop_templates",
+		Annotations: readOnlyTool("List Loop Templates"),
+		Description: prompts.ListLoopTemplatesDescription,
+	}, loops.NewListLoopTemplatesHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "list_loops",
+		Annotations: readOnlyTool("List Loops"),
+		Description: prompts.ListLoopsDescription,
+	}, loops.NewListLoopsHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "get_loop",
+		Annotations: readOnlyTool("Get Loop"),
+		Description: prompts.GetLoopDescription,
+	}, loops.NewGetLoopHandler(client, cfg)))
 
 	// Register Grafana read tools
 	reg(registerIfAllowed(server, gate, &mcp.Tool{

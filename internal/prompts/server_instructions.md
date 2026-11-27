@@ -8,6 +8,7 @@
 {{- $alertRules := tools "get_alert_groups" "get_alert_config" "get_entity_alert_rules" "get_entity_kpis" "get_notification_channels" -}}
 {{- $dashboards := tools "list_dashboards" "list_dashboard_snapshots" "grafana_search_dashboards" "grafana_list_folders" "grafana_list_folder_dashboards" -}}
 {{- $dashboardReads := tools "get_dashboard" "get_dashboard_snapshot" "grafana_get_dashboard" -}}
+{{- $loops := tools "get_loops_status" "list_loop_templates" "list_loops" "get_loop" -}}
 {{- $serviceProfile := tools "get_service_profile" -}}
 {{- $health := tools "get_service_summary" "get_service_performance_details" "get_service_operations_summary" "get_service_dependency_graph" -}}
 {{- $alerts := tools "get_alerts" "get_alert_rule_state" -}}
@@ -42,7 +43,7 @@ When a request names no service or tool, call {{.}} first: it returns environmen
 For today's date or a relative window ("since 9am IST"), call {{.}}.
 {{- end}}
 {{- end}}
-{{- if or $docs $services $attributes $metricNames $metricLookups $logInventory $alertRules $dashboards $dashboardReads}}
+{{- if or $docs $services $attributes $metricNames $metricLookups $logInventory $alertRules $dashboards $dashboardReads $loops}}
 
 ## Discover before you query
 Never guess service, environment, attribute, metric or label names, or dashboard ids; look them up and reuse the exact values.
@@ -69,6 +70,9 @@ Never guess service, environment, attribute, metric or label names, or dashboard
 {{- else}}{{with $dashboardReads}}
 - Open a dashboard by id with {{.}}.
 {{- end}}{{end}}
+{{- with $loops}}
+- Loops enablement, templates and existing loops: {{.}}. Prefer a template over a blank graph; create stays draft/simulated/disabled until a later lifecycle tool.
+{{- end}}
 {{- end}}
 {{- if or $serviceProfile $health $alerts $coverage $changes $deviations $scoped $databases $profiles}}
 

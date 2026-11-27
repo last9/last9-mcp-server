@@ -221,6 +221,18 @@ var GetServiceProfileDescription string
 //go:embed descriptions/list_dashboards.md
 var ListDashboardsDescription string
 
+//go:embed descriptions/get_loops_status.md
+var GetLoopsStatusDescription string
+
+//go:embed descriptions/list_loop_templates.md
+var ListLoopTemplatesDescription string
+
+//go:embed descriptions/list_loops.md
+var ListLoopsDescription string
+
+//go:embed descriptions/get_loop.md
+var GetLoopDescription string
+
 //go:embed descriptions/get_dashboard.md
 var GetDashboardDescription string
 

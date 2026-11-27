@@ -229,7 +229,7 @@ one.
 ### Toolsets
 
 - CLI/env: `--toolsets` / `LAST9_TOOLSETS` (alias `LAST9_MCP_TOOLSETS`). Comma-separated:
-  `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`.
+  `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `loops`, `profiles`, `grafana`, `investigate`, `all`.
 - Empty / unset / `all` → full surface. Unknown names fail fast with the valid list.
 - `core` tools in `toolsets.go` (`get_current_time`, `get_workspace_overview`) join every parsed
   set; add a tool there only when other tools' arguments depend on it or the server

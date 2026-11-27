@@ -16,6 +16,16 @@ func TestBuildDashboardLink(t *testing.T) {
 	}
 }
 
+func TestBuildLoopsLinks(t *testing.T) {
+	b := NewBuilder("acme", "")
+	if got := b.BuildLoopsLink(); got != "/v2/organizations/acme/loops" {
+		t.Fatalf("loops index = %q", got)
+	}
+	if got := b.BuildLoopLink("aut/1"); got != "/v2/organizations/acme/loops/aut%2F1" {
+		t.Fatalf("loop detail = %q", got)
+	}
+}
+
 func TestBuildDashboardsIndexLink(t *testing.T) {
 	b := NewBuilder("acme", "cluster-1")
 	got := b.BuildDashboardsIndexLink()
