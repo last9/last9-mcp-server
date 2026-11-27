@@ -124,8 +124,13 @@ type getExceptionsTestRequest struct {
 	Window       exceptionWindow
 }
 
-// runGetExceptions serves the configured instant and range responses and returns exception rows.
-func runGetExceptions(t *testing.T, request getExceptionsTestRequest) []map[string]any {
+type getExceptionsTestResponse struct {
+	Exceptions []map[string]any `json:"exceptions"`
+	StartTime  string           `json:"start_time"`
+	EndTime    string           `json:"end_time"`
+}
+
+func runGetExceptionsResponse(t *testing.T, request getExceptionsTestRequest) getExceptionsTestResponse {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -157,13 +162,17 @@ func runGetExceptions(t *testing.T, request getExceptionsTestRequest) []map[stri
 		t.Fatalf("tool error: %s", utils.GetTextContent(t, result))
 	}
 
-	var payload struct {
-		Exceptions []map[string]any `json:"exceptions"`
-	}
+	var payload getExceptionsTestResponse
 	if err := json.Unmarshal([]byte(utils.GetTextContent(t, result)), &payload); err != nil {
 		t.Fatalf("decode tool response: %v", err)
 	}
-	return payload.Exceptions
+	return payload
+}
+
+// runGetExceptions serves the configured instant and range responses and returns exception rows.
+func runGetExceptions(t *testing.T, request getExceptionsTestRequest) []map[string]any {
+	t.Helper()
+	return runGetExceptionsResponse(t, request).Exceptions
 }
 
 func exceptionLinkParams(t *testing.T, row map[string]any) url.Values {
