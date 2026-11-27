@@ -23,11 +23,11 @@ func decodeLogAttributes(t *testing.T, res *mcp.CallToolResult) []LogAttribute {
 	if !ok {
 		t.Fatalf("expected TextContent, got %T", res.Content[0])
 	}
-	var attrs []LogAttribute
-	if err := json.Unmarshal([]byte(text.Text), &attrs); err != nil {
+	var discovery logAttributeDiscovery
+	if err := json.Unmarshal([]byte(text.Text), &discovery); err != nil {
 		t.Fatalf("failed to unmarshal result: %v\nraw: %s", err, text.Text)
 	}
-	return attrs
+	return discovery.Attributes
 }
 
 // TestLogFieldFilterField locks the raw-name -> filter_field convention. In

@@ -100,16 +100,18 @@ func getBodyAttributes(t *testing.T, samples []string) *mcp.CallToolResult {
 // optional keys are served.
 func rawAttribute(t *testing.T, res *mcp.CallToolResult, name string) map[string]interface{} {
 	t.Helper()
-	var entries []map[string]interface{}
-	if err := json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &entries); err != nil {
+	var discovery struct {
+		Attributes []map[string]interface{} `json:"attributes"`
+	}
+	if err := json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &discovery); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	for _, e := range entries {
+	for _, e := range discovery.Attributes {
 		if e["name"] == name {
 			return e
 		}
 	}
-	t.Fatalf("expected attribute %q, got: %v", name, entries)
+	t.Fatalf("expected attribute %q, got: %v", name, discovery.Attributes)
 	return nil
 }
 

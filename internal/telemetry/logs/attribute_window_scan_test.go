@@ -2,7 +2,6 @@ package logs
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -83,6 +82,9 @@ func TestGetLogAttributesForPipelineReportsNoMatchingRowsWithinScanBound(t *test
 	if !strings.Contains(text, "No rows matched the pipeline") || !strings.Contains(text, "at most 60 minutes per slice") {
 		t.Fatalf("missing explicit empty result: %s", text)
 	}
+	if !strings.Contains(text, "2026-01-02T00:00:00Z") || strings.Contains(text, "No rows matched the pipeline in 2026-01-01T00:00:00Z") {
+		t.Fatalf("empty result must report only the bounded 24-hour scan: %s", text)
+	}
 	if got := calls.Load(); got != 48 {
 		t.Fatalf("backend calls = %d, want 48 (two calls for each of 24 slices)", got)
 	}
@@ -154,16 +156,9 @@ func attributeScanServer(t *testing.T, response func(start, end int64, series bo
 			_, _ = io.WriteString(w, response(start, end, true))
 			return
 		}
-		var body struct {
-			Start int64 `json:"start"`
-			End   int64 `json:"end"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Errorf("decode request: %v", err)
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		_, _ = io.WriteString(w, response(body.Start/1000, body.End/1000, false))
+		start, _ := strconv.ParseInt(r.URL.Query().Get("start"), 10, 64)
+		end, _ := strconv.ParseInt(r.URL.Query().Get("end"), 10, 64)
+		_, _ = io.WriteString(w, response(start, end, false))
 	}))
 }
 

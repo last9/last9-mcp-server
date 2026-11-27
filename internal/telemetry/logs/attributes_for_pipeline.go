@@ -367,17 +367,17 @@ func hasIndexedSeverityFamily(indexedNames []string) bool {
 // a JSON object. Any failure degrades to nil — Body discovery is best-effort
 // and never blocks the indexed-attribute response (the call is also bounded by
 // PerChunkHTTPTimeout so a slow raw-log scan cannot stall discovery).
-func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg models.Config, pipeline []map[string]interface{}, startSec, endSec int64, index string) []LogAttribute {
+func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg models.Config, pipeline []map[string]interface{}, startSec, endSec int64, index string) ([]LogAttribute, bool) {
 	ctx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
 	defer cancel()
 
 	result, err := executeLogJSONQuery(ctx, client, cfg, pipeline, startSec*1000, endSec*1000, bodySampleLimit, index)
 	if err != nil {
-		return nil
+		return nil, false
 	}
 	lines := extractSampleBodyLines(result)
 	if len(lines) == 0 {
-		return nil
+		return nil, false
 	}
 
 	freq := map[string]int{}       // JSON body-derived key frequency
@@ -434,12 +434,12 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 	}
 
 	if len(freq) > 0 {
-		return rankedBodyAttributes(freq, "json", formats)
+		return rankedBodyAttributes(freq, "json", formats), true
 	}
 	// logfmt fallback: no line was JSON, but at least one line matched
 	// logfmt key=value pairs.
 	if len(logfmtFreq) > 0 {
-		return rankedBodyAttributes(logfmtFreq, "logfmt", formats)
+		return rankedBodyAttributes(logfmtFreq, "logfmt", formats), true
 	}
 
 	// plaintext-inline fallback: neither JSON nor logfmt, but a severity
@@ -464,7 +464,7 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 			attr.SampleBodies = []string{sampleBody}
 			attr.SampleNotes = sampleNotes
 		}
-		return []LogAttribute{attr}
+		return []LogAttribute{attr}, true
 	}
 
 	// Plaintext fallback: no recognized structure at all — the Body is
@@ -486,10 +486,10 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 			SampleBodies: samples,
 			SampleNotes:  notes,
 			Hint:         plaintextBodyHint(),
-		}}
+		}}, true
 	}
 
-	return nil
+	return nil, true
 }
 
 func rankedBodyAttributes(freq map[string]int, parser string, formats map[string]int) []LogAttribute {
@@ -667,15 +667,24 @@ func fetchLogSeriesFieldNames(ctx context.Context, client *http.Client, cfg mode
 
 // discoverLogAttributes returns indexed plus body-derived attributes for a
 // pipeline, using the same merge rules as get_log_attributes_for_pipeline.
-func discoverLogAttributes(ctx context.Context, client *http.Client, cfg models.Config, pipeline []map[string]interface{}, startSec, endSec int64, index string, queryParams url.Values) ([]LogAttribute, error) {
-	bodyCh := make(chan []LogAttribute, 1)
+func discoverLogAttributes(ctx context.Context, client *http.Client, cfg models.Config, pipeline []map[string]interface{}, startSec, endSec int64, index string, queryParams url.Values) ([]LogAttribute, bool, error) {
+	type bodySample struct {
+		attributes []LogAttribute
+		matched    bool
+	}
+	bodyCh := make(chan bodySample, 1)
 	go func() {
-		bodyCh <- sampleBodyDerivedAttributes(ctx, client, cfg, pipeline, startSec, endSec, index)
+		attributes, matched := sampleBodyDerivedAttributes(ctx, client, cfg, pipeline, startSec, endSec, index)
+		bodyCh <- bodySample{attributes: attributes, matched: matched}
 	}()
 
 	names, err := fetchLogSeriesFieldNames(ctx, client, cfg, pipeline, queryParams)
 	if err != nil {
-		return nil, err
+		return nil, false, err
+	}
+	body := <-bodyCh
+	if !body.matched && onlyDefaultLogFields(names) {
+		return nil, false, nil
 	}
 
 	out := make([]LogAttribute, 0, len(names))
@@ -713,7 +722,7 @@ func discoverLogAttributes(ctx context.Context, client *http.Client, cfg models.
 	// field literally named "level" would get its bare $eq hint hijacked
 	// into a two-stage parse+filter hint pointing at Body, even though the
 	// indexed field is directly filterable.
-	for _, attr := range <-bodyCh {
+	for _, attr := range body.attributes {
 		if _, dup := indexedFilterFields[attr.FilterField]; dup {
 			if attr.FilterField == "Body" && len(attr.SampleBodies) > 0 {
 				for i := range out {
@@ -737,7 +746,18 @@ func discoverLogAttributes(ctx context.Context, client *http.Client, cfg models.
 		out = append(out, attr)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out, nil
+	return out, true, nil
+}
+
+func onlyDefaultLogFields(names []string) bool {
+	for _, name := range names {
+		switch name {
+		case "service", "severity", "body":
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // NewGetLogAttributesForPipelineHandler creates a handler that returns the log
@@ -778,12 +798,12 @@ func NewGetLogAttributesForPipelineHandler(client *http.Client, cfg models.Confi
 
 		samplingCfg := cfg
 		samplingCfg.Region = region
-		out, err := discoverLogAttributes(ctx, client, samplingCfg, validatedPipeline, startTime, endTime, normalizedIndex, queryParams)
+		discovery, err := scanLogAttributes(ctx, client, samplingCfg, validatedPipeline, startTime, endTime, normalizedIndex, queryParams)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		payload, err := json.MarshalIndent(out, "", "  ")
+		payload, err := json.MarshalIndent(discovery, "", "  ")
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal attributes: %w", err)
 		}
