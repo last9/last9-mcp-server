@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `get_alert_rule_state` skips queued HTTP requests after cancellation, a sampling timeout, or an upstream error by checking the shared context when a sampling slot opens (#655).
+- `validate_dashboard` flags a failed saved-dashboard fetch as an MCP tool error and preserves the structured failure details (#682).
 - `get_traces` now intercepts the unsupported `response_mode` argument before strict schema validation and explains both neutral recovery paths: preserve the existing query stages and time bounds while omitting it for matching span rows, or append an aggregate stage for a count or percentile (#675).
 - `get_exceptions` deep links preserve exact `service_name` and `env` filters, including names with regex metacharacters, so opening a result no longer broadens the Exceptions page; links are omitted when a requested value is unsafe for its quoted filter syntax (#676).
 - Dashboard preview and validation now execute log queries against the physical or rehydration index selected by `index_type` and `index_name`. Dashboard tools reject a misplaced query-level `index` before it can silently select the default (#671).
