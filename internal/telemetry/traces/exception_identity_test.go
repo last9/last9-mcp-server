@@ -118,10 +118,11 @@ func exceptionTestConfig(apiURL string) models.Config {
 }
 
 type getExceptionsTestRequest struct {
-	Args         GetExceptionsArgs
-	InstantBody  string
-	RangeHandler http.HandlerFunc
-	Window       exceptionWindow
+	Args           GetExceptionsArgs
+	InstantBody    string
+	InstantHandler http.HandlerFunc
+	RangeHandler   http.HandlerFunc
+	Window         exceptionWindow
 }
 
 type getExceptionsTestResponse struct {
@@ -135,6 +136,10 @@ func runGetExceptionsResponse(t *testing.T, request getExceptionsTestRequest) ge
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case constants.EndpointPromQueryInstant:
+			if request.InstantHandler != nil {
+				request.InstantHandler(w, r)
+				return
+			}
 			io.WriteString(w, request.InstantBody)
 		case constants.EndpointPromQuery:
 			if request.RangeHandler == nil {

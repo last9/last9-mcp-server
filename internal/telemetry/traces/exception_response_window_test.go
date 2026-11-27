@@ -1,13 +1,48 @@
 package traces
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestAggregateCountMatchesReportedWindow(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		fraction     time.Duration
+		wantSelector string
+	}{
+		{name: "whole seconds", wantSelector: "[3600s]"},
+		{name: "fractional bounds", fraction: 900 * time.Millisecond, wantSelector: "[3599s]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			window := exceptionWindow{
+				start: exceptionTestWindow.start.Add(tc.fraction),
+				end:   exceptionTestWindow.end.Add(tc.fraction),
+			}
+			runGetExceptionsResponse(t, getExceptionsTestRequest{
+				Window: window,
+				InstantHandler: func(w http.ResponseWriter, r *http.Request) {
+					var body struct {
+						Query string `json:"query"`
+					}
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						t.Fatalf("decode instant request: %v", err)
+					}
+					if count := strings.Count(body.Query, tc.wantSelector); count != 3 {
+						t.Errorf("aggregate query contains %q %d times, want 3: %s", tc.wantSelector, count, body.Query)
+					}
+					fmt.Fprint(w, `[]`)
+				},
+			})
+		})
+	}
+}
 
 func TestOccurrenceTimesStayInsideReportedWindow(t *testing.T) {
 	for _, fraction := range []time.Duration{0, 900 * time.Millisecond} {
