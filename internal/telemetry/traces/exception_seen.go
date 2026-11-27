@@ -17,6 +17,8 @@ const exceptionSeenMaxPoints = 60
 
 const exceptionSeenPrecision = time.Millisecond
 
+const exceptionSeenMaxWindow = time.Duration(math.MaxInt64)
+
 type exceptionSeen struct {
 	First time.Time
 	Last  time.Time
@@ -64,6 +66,9 @@ func fetchExceptionSeen(ctx context.Context, client *http.Client, cfg models.Con
 	if !q.End.After(q.Start) {
 		return map[string]exceptionSeen{}, nil
 	}
+	if err := validateExceptionSeenWindow(q.Start, q.End); err != nil {
+		return nil, err
+	}
 	step := exceptionSeenStep(q.End.Sub(q.Start))
 	window := q.End.Sub(q.Start)
 	fullWindow := window / step * step
@@ -96,6 +101,13 @@ func fetchExceptionSeen(ctx context.Context, client *http.Client, cfg models.Con
 		reduceExceptionSeen(seenByKey, series, q)
 	}
 	return seenByKey, nil
+}
+
+func validateExceptionSeenWindow(start, end time.Time) error {
+	if end.After(start.Add(exceptionSeenMaxWindow)) {
+		return fmt.Errorf("exception occurrence range exceeds maximum supported duration %s", exceptionSeenMaxWindow)
+	}
+	return nil
 }
 
 func normalizeExceptionSeenQuery(q exceptionSeenQuery) exceptionSeenQuery {

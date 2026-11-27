@@ -9,7 +9,7 @@ Each row also carries:
 
 For a known `service_name`, call `get_service_profile` first to decide whether span exceptions are likely the answer or a symptom. Use `did_you_mean` if service or environment spelling is uncertain.
 
-`limit` defaults to 20. `lookback_minutes` defaults to 60 and is preferred for relative windows. For an absolute window set RFC3339 `start_time_iso` and `end_time_iso`; legacy `YYYY-MM-DD HH:MM:SS` is compatibility-only. Optional filters: `service_name`, `span_name`, and `env`.
+`limit` defaults to 20. `lookback_minutes` defaults to 60 and is preferred for relative windows. For an absolute window set RFC3339 `start_time_iso` and `end_time_iso`; its maximum span is 2562047h47m16.854775807s (about 292 years). Legacy `YYYY-MM-DD HH:MM:SS` is compatibility-only. Optional filters: `service_name`, `span_name`, and `env`.
 
 ## When to use
 Find the hottest service, span, and exception type in a window.

@@ -77,6 +77,9 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 		if err != nil {
 			return nil, nil, err
 		}
+		if err := validateExceptionSeenWindow(startTime, endTime); err != nil {
+			return nil, nil, err
+		}
 
 		// Convert start/end times to milliseconds
 		startMs := startTime.UnixMilli()
