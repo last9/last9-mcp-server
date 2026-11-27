@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `get_alerts` explains how to preserve a requested interval for an alert snapshot or sampled firing history when callers supply range bounds, and reports the one-hour snapshot limit instead of suggesting a shorter interval (#666).
+- JSON parse stages accept backtick-quoted source keys that begin with `@`, such as `` `@timestamp` ``, while preserving the requested output alias; an unquoted leading-`@` key is rejected with the quoted correction before any upstream call (#684).
 - `validate_dashboard` flags a failed saved-dashboard fetch as an MCP tool error and preserves the structured failure details (#682).
 - `get_traces` now intercepts the unsupported `response_mode` argument before strict schema validation and explains both neutral recovery paths: preserve the existing query stages and time bounds while omitting it for matching span rows, or append an aggregate stage for a count or percentile (#675).
 - `get_exceptions` deep links preserve exact `service_name` and `env` filters, including names with regex metacharacters, so opening a result no longer broadens the Exceptions page; links are omitted when a requested value is unsafe for its quoted filter syntax (#676).
