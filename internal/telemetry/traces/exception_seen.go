@@ -46,7 +46,10 @@ func exceptionSeriesKey(metric map[string]string) string {
 // exceptionSeenStep is the smallest whole-minute step that keeps a window within
 // exceptionSeenMaxPoints points per series.
 func exceptionSeenStep(window time.Duration) time.Duration {
-	perPoint := (window + exceptionSeenMaxPoints - 1) / exceptionSeenMaxPoints
+	perPoint := window / exceptionSeenMaxPoints
+	if window%exceptionSeenMaxPoints != 0 {
+		perPoint++
+	}
 	step := perPoint.Truncate(time.Minute)
 	if step < perPoint {
 		step += time.Minute
