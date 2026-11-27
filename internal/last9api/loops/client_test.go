@@ -109,7 +109,11 @@ func TestGet_RedactsSecretsAndReportsGaps(t *testing.T) {
 		}
 		_, _ = io.WriteString(w, `{
 			"id":"aut1","name":"RCA","status":"draft","enabled":false,"action_mode":"simulated",
-			"graph":{"nodes":[{"type":"slack","channel":"","token":"sekrit"}]}
+			"graph":{"nodes":[
+				{"type":"slack","channel":"","api_token":"sekrit"},
+				{"type":"webhook","config":{"url":"https://hooks.example.test/fixture-token"}},
+				{"type":"http","headers":[{"key":"Authorization","value":"Bearer fixture-token"}]}
+			]}
 		}`)
 	})
 	detail, err := Get(context.Background(), c, "aut1")
@@ -124,9 +128,14 @@ func TestGet_RedactsSecretsAndReportsGaps(t *testing.T) {
 		t.Fatal(err)
 	}
 	nodes := graph["nodes"].([]any)
-	node := nodes[0].(map[string]any)
-	if node["token"] != "[redacted]" {
-		t.Fatalf("token not redacted: %#v", node)
+	for i, secret := range []string{"sekrit", "fixture-token", "Bearer fixture-token"} {
+		encoded, err := json.Marshal(nodes[i])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(encoded), secret) {
+			t.Errorf("node %d contains secret %q: %s", i, secret, encoded)
+		}
 	}
 	if !strings.Contains(strings.Join(detail.SetupGaps, " "), "slack channel") {
 		t.Fatalf("setup gaps = %v", detail.SetupGaps)
