@@ -12,8 +12,8 @@ import (
 
 const pathLoopByID = "/loops/%s"
 
-// Get calls GET /loops/{id}.
-func Get(ctx context.Context, c *last9api.Client, id string) (*Detail, error) {
+// GetLoop calls GET /loops/{id}.
+func GetLoop(ctx context.Context, c *last9api.Client, id string) (*Detail, error) {
 	const op = "get loop"
 	path := fmt.Sprintf(pathLoopByID, url.PathEscape(id))
 	var raw json.RawMessage

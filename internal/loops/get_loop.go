@@ -23,7 +23,7 @@ func NewGetLoopHandler(client *http.Client, cfg models.Config) func(context.Cont
 		if id == "" {
 			return utils.ToolErrorResult("loop_id is required"), nil, nil
 		}
-		detail, err := apiloops.Get(ctx, last9api.NewClient(client, cfg), id)
+		detail, err := apiloops.GetLoop(ctx, last9api.NewClient(client, cfg), id)
 		if err != nil {
 			if apiloops.IsNotEnabled(err) {
 				return utils.ToolErrorResult(err.Error()), nil, nil

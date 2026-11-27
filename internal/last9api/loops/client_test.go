@@ -80,7 +80,7 @@ func TestList_RejectsOversizedResponse(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `[{"id":"`+strings.Repeat("x", 1<<20)+`"}]`)
 	})
-	items, err := List(context.Background(), c, "")
+	items, err := ListLoops(context.Background(), c, "")
 	if items != nil || err == nil {
 		t.Fatalf("item count=%d err=%v", len(items), err)
 	}
@@ -93,7 +93,7 @@ func TestList_FiltersAndDecodes(t *testing.T) {
 			{"id":"aut2","name":"Other","status":"published","enabled":true,"action_mode":"live"}
 		]}`)
 	})
-	items, err := List(context.Background(), c, "rca")
+	items, err := ListLoops(context.Background(), c, "rca")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestGet_RedactsSecretsAndReportsGaps(t *testing.T) {
 			]}
 		}`)
 	})
-	detail, err := Get(context.Background(), c, "aut1")
+	detail, err := GetLoop(context.Background(), c, "aut1")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,8 +11,8 @@ import (
 
 const pathLoops = "/loops"
 
-// List calls GET /loops.
-func List(ctx context.Context, c *last9api.Client, query string) ([]Summary, error) {
+// ListLoops calls GET /loops.
+func ListLoops(ctx context.Context, c *last9api.Client, query string) ([]Summary, error) {
 	const op = "list loops"
 	var raw json.RawMessage
 	if err := c.Do(ctx, op, last9api.Request{Method: http.MethodGet, Path: pathLoops}, &raw, last9api.WithRequiredBody(), last9api.WithMaxResponseBytes(maxResponseBytes)); err != nil {
