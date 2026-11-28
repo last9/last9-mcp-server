@@ -108,7 +108,7 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(con
 		}
 
 		var data []string
-		var startTime, endTime int64
+		startTime, endTime := requestedEnd, requestedEnd
 		for i, sliceEnd := 0, requestedEnd; i < maxLogAttributeScanSlices && sliceEnd > requestedStart; i++ {
 			sliceStart := max(requestedStart, sliceEnd-int64(utils.MaxLogAttributeLookbackMinutes*60))
 			queryParams.Set("start", fmt.Sprintf("%d", sliceStart))
