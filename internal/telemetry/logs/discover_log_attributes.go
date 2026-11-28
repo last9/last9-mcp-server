@@ -50,7 +50,14 @@ func DiscoverLogAttributes(ctx context.Context, client *http.Client, cfg models.
 		"type":  "filter",
 		"query": map[string]interface{}{"$and": []interface{}{map[string]interface{}{"$eq": []interface{}{"ServiceName", scope.Service}}}},
 	}}
-	discovery, err := scanLogAttributes(ctx, client, cfg, pipeline, startTime, endTime, "", queryParams)
+	discovery, err := scanLogAttributes(ctx, logAttributeScanInput{
+		Client:         client,
+		Config:         cfg,
+		Pipeline:       pipeline,
+		RequestedStart: startTime,
+		RequestedEnd:   endTime,
+		BaseQuery:      queryParams,
+	})
 	return discovery.Attributes, err
 }
 
@@ -88,6 +95,16 @@ type logAttributeDiscovery struct {
 	Note string `json:"note,omitempty"`
 }
 
+type logAttributeScanInput struct {
+	Client         *http.Client
+	Config         models.Config
+	Pipeline       []map[string]interface{}
+	RequestedStart int64
+	RequestedEnd   int64
+	Index          string
+	BaseQuery      url.Values
+}
+
 func newLogAttributeDiscovery(attributes []LogAttribute, start, end int64, note string) logAttributeDiscovery {
 	out := logAttributeDiscovery{Attributes: attributes, ScannedStart: start, ScannedEnd: end, Note: note}
 	out.ScannedWindow.Start = time.Unix(start, 0).UTC().Format(time.RFC3339)
@@ -95,14 +112,14 @@ func newLogAttributeDiscovery(attributes []LogAttribute, start, end int64, note 
 	return out
 }
 
-func scanLogAttributes(ctx context.Context, client *http.Client, cfg models.Config, pipeline []map[string]interface{}, requestedStart, requestedEnd int64, index string, baseQuery url.Values) (logAttributeDiscovery, error) {
+func scanLogAttributes(ctx context.Context, in logAttributeScanInput) (logAttributeDiscovery, error) {
 	var lastStart int64
-	for i, sliceEnd := 0, requestedEnd; i < maxLogAttributeScanSlices && sliceEnd > requestedStart; i++ {
-		sliceStart := max(requestedStart, sliceEnd-int64(utils.MaxLogAttributeLookbackMinutes*60))
-		query := cloneURLValues(baseQuery)
+	for i, sliceEnd := 0, in.RequestedEnd; i < maxLogAttributeScanSlices && sliceEnd > in.RequestedStart; i++ {
+		sliceStart := max(in.RequestedStart, sliceEnd-int64(utils.MaxLogAttributeLookbackMinutes*60))
+		query := cloneURLValues(in.BaseQuery)
 		query.Set("start", fmt.Sprintf("%d", sliceStart))
 		query.Set("end", fmt.Sprintf("%d", sliceEnd))
-		attributes, matched, err := discoverLogAttributes(ctx, client, cfg, pipeline, sliceStart, sliceEnd, index, query)
+		attributes, matched, err := discoverLogAttributes(ctx, in.Client, in.Config, in.Pipeline, sliceStart, sliceEnd, in.Index, query)
 		if err != nil {
 			return logAttributeDiscovery{}, err
 		}
@@ -113,9 +130,9 @@ func scanLogAttributes(ctx context.Context, client *http.Client, cfg models.Conf
 		sliceEnd = sliceStart
 	}
 	note := fmt.Sprintf("No rows matched the pipeline in %s to %s. Discovery scans at most %d minutes per slice and %d slices.",
-		time.Unix(lastStart, 0).UTC().Format(time.RFC3339), time.Unix(requestedEnd, 0).UTC().Format(time.RFC3339),
+		time.Unix(lastStart, 0).UTC().Format(time.RFC3339), time.Unix(in.RequestedEnd, 0).UTC().Format(time.RFC3339),
 		utils.MaxLogAttributeLookbackMinutes, maxLogAttributeScanSlices)
-	return newLogAttributeDiscovery([]LogAttribute{}, lastStart, requestedEnd, note), nil
+	return newLogAttributeDiscovery([]LogAttribute{}, lastStart, in.RequestedEnd, note), nil
 }
 
 func cloneURLValues(in url.Values) url.Values {

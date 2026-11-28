@@ -131,7 +131,15 @@ func resolveHTTPStatusField(ctx context.Context, client *http.Client, cfg models
 		queryParams.Set("index", index)
 	}
 
-	discovery, err := scanLogAttributes(ctx, client, cfg, validatedPipeline, startSec, endSec, index, queryParams)
+	discovery, err := scanLogAttributes(ctx, logAttributeScanInput{
+		Client:         client,
+		Config:         cfg,
+		Pipeline:       validatedPipeline,
+		RequestedStart: startSec,
+		RequestedEnd:   endSec,
+		Index:          index,
+		BaseQuery:      queryParams,
+	})
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to discover HTTP status field: %w", err)
 	}

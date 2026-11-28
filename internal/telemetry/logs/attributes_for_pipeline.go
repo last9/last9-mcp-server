@@ -798,7 +798,15 @@ func NewGetLogAttributesForPipelineHandler(client *http.Client, cfg models.Confi
 
 		samplingCfg := cfg
 		samplingCfg.Region = region
-		discovery, err := scanLogAttributes(ctx, client, samplingCfg, validatedPipeline, startTime, endTime, normalizedIndex, queryParams)
+		discovery, err := scanLogAttributes(ctx, logAttributeScanInput{
+			Client:         client,
+			Config:         samplingCfg,
+			Pipeline:       validatedPipeline,
+			RequestedStart: startTime,
+			RequestedEnd:   endTime,
+			Index:          normalizedIndex,
+			BaseQuery:      queryParams,
+		})
 		if err != nil {
 			return nil, nil, err
 		}
