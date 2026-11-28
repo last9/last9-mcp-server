@@ -766,6 +766,9 @@ func parseToolJSONResult(t *testing.T, result *mcp.CallToolResult) map[string]an
 
 func countEntriesInPayload(t *testing.T, payload map[string]any) int {
 	t.Helper()
+	if rows, ok := payload["rows"].([]any); ok {
+		return len(rows)
+	}
 
 	data, ok := payload["data"].(map[string]any)
 	if !ok {

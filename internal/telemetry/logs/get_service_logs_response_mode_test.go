@@ -75,8 +75,8 @@ func TestGetServiceLogs_ReturnsRawLines(t *testing.T) {
 			if _, ok := out["summary"]; ok {
 				t.Error("response summarized, want raw lines")
 			}
-			if logs, _ := out["logs"].([]any); len(logs) != tc.lines {
-				t.Errorf("got %d log entries, want %d", len(logs), tc.lines)
+			if rows, _ := out["rows"].([]any); len(rows) != tc.lines {
+				t.Errorf("got %d log entries, want %d", len(rows), tc.lines)
 			}
 		})
 	}
@@ -102,8 +102,8 @@ func TestGetServiceLogs_DefaultLimitDependsOnResponseMode(t *testing.T) {
 	}
 	t.Run("mode=raw", func(t *testing.T) {
 		out := callGetServiceLogs(t, lines, GetServiceLogsArgs{ResponseMode: "raw"})
-		if logs, _ := out["logs"].([]any); len(logs) != defaultServiceLogsRawLimit {
-			t.Errorf("got %d log entries, want %d", len(logs), defaultServiceLogsRawLimit)
+		if rows, _ := out["rows"].([]any); len(rows) != defaultServiceLogsRawLimit {
+			t.Errorf("got %d log entries, want %d", len(rows), defaultServiceLogsRawLimit)
 		}
 	})
 }

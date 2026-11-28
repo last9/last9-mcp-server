@@ -31,8 +31,8 @@ type logSummary struct {
 	Truncated       bool                     `json:"truncated,omitempty"`
 	SeverityCounts  map[string]int           `json:"severity_counts"`
 	OtherSeverities *logSummarySeverityOther `json:"other_severities,omitempty"`
-	FirstTimestamp  string                   `json:"first_timestamp,omitempty"`
-	LastTimestamp   string                   `json:"last_timestamp,omitempty"`
+	FirstTimestamp  string                   `json:"first_time,omitempty"`
+	LastTimestamp   string                   `json:"last_time,omitempty"`
 	Histogram       logSummaryHistogram      `json:"histogram"`
 	Patterns        []logSummaryPattern      `json:"patterns"`
 	Other           *logSummaryOther         `json:"other,omitempty"`
@@ -52,9 +52,14 @@ type logSummaryHistogram struct {
 }
 
 type logSummaryPattern struct {
-	Template string   `json:"template"`
-	Count    int      `json:"count"`
-	Samples  []string `json:"samples"`
+	Template string             `json:"template"`
+	Count    int                `json:"count"`
+	Samples  []logSummarySample `json:"samples"`
+}
+
+type logSummarySample struct {
+	Time string `json:"time"`
+	Text string `json:"text"`
 }
 
 type logSummaryOther struct {
@@ -111,7 +116,7 @@ func summarizeLogEntries(retained map[string]interface{}, entries []LogEntry, sc
 	summarized := retained
 	base := newLogSummary(entries, scope)
 	for topN, samples := maxSummaryPatterns, maxSummaryPatternSamples; ; {
-		summary := base.withPatterns(patterns, topN, samples)
+		summary := base.withPatterns(patterns, entries, topN, samples)
 		summarized["summary"] = summary
 		if len(formatJSON(summarized)) <= maxSummaryChars {
 			return summarized, true
@@ -223,7 +228,7 @@ func (h *logSummaryHistogram) record(ts time.Time, startMs int64) {
 	h.Counts[min(max(bucket, 0), int64(len(h.Counts)-1))]++
 }
 
-func (s logSummary) withPatterns(patterns []*logPattern, topN, samples int) logSummary {
+func (s logSummary) withPatterns(patterns []*logPattern, entries []LogEntry, topN, samples int) logSummary {
 	ranked := slices.Clone(patterns)
 	top, rest := rankLogPatterns(ranked, topN, (*logPattern).template, func(a, b *logPattern) int {
 		return cmp.Compare(b.windows[0].count, a.windows[0].count)
@@ -233,7 +238,7 @@ func (s logSummary) withPatterns(patterns []*logPattern, topN, samples int) logS
 		s.Patterns = append(s.Patterns, logSummaryPattern{
 			Template: truncateRunes(p.template(), maxSummaryTextRunes),
 			Count:    p.windows[0].count,
-			Samples:  summarySamples(p.samples, samples),
+			Samples:  summarySamples(p.samples, entries, samples),
 		})
 	}
 	if len(rest) > 0 {
@@ -245,10 +250,17 @@ func (s logSummary) withPatterns(patterns []*logPattern, topN, samples int) logS
 	return s
 }
 
-func summarySamples(samples []string, n int) []string {
-	out := make([]string, 0, n)
+func summarySamples(samples []string, entries []LogEntry, n int) []logSummarySample {
+	out := make([]logSummarySample, 0, n)
 	for _, sample := range samples[:min(n, len(samples))] {
-		out = append(out, truncateRunes(sample, maxSummaryTextRunes))
+		timestamp := ""
+		for _, entry := range entries {
+			if entry.Message == sample {
+				timestamp = entry.Timestamp
+				break
+			}
+		}
+		out = append(out, logSummarySample{Time: timestamp, Text: truncateRunes(sample, maxSummaryTextRunes)})
 	}
 	return out
 }

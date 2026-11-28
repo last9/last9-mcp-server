@@ -82,10 +82,9 @@ func TestGetLogs_RawModeReturnsLines(t *testing.T) {
 	if _, ok := out["summary"]; ok {
 		t.Error("raw mode summarized")
 	}
-	data, _ := out["data"].(map[string]any)
-	items, _ := data["result"].([]any)
-	if len(items) != 1 || countLogEntriesInResultItems(items) != 30 {
-		t.Errorf("raw data = %v, want the 30 lines", data)
+	rows, _ := out["rows"].([]any)
+	if len(rows) != 30 {
+		t.Errorf("raw rows = %d, want 30", len(rows))
 	}
 }
 

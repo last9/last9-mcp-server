@@ -118,16 +118,14 @@ func timezoneRequest() *mcp.CallToolRequest {
 func assertRawOutcomeWiring(t *testing.T, response map[string]any, streams bool) {
 	t.Helper()
 	if streams {
-		data := response["data"].(map[string]any)
-		item := data["result"].([]any)[0].(map[string]any)
-		row := item["values"].([]any)[0].([]any)
-		if row[2].(map[string]any)["ts_local"] == "" {
-			t.Fatal("raw row has no ts_local")
+		row := response["rows"].([]any)[0].(map[string]any)
+		if row["time"] == "" {
+			t.Fatal("raw row has no local time")
 		}
 	} else {
-		entry := response["logs"].([]any)[0].(map[string]any)
-		if entry["ts_local"] == "" {
-			t.Fatal("service log has no ts_local")
+		entry := response["rows"].([]any)[0].(map[string]any)
+		if entry["time"] == "" {
+			t.Fatal("service log has no local time")
 		}
 	}
 	summary, _ := response["l9_outcome_summary"].(map[string]any)
