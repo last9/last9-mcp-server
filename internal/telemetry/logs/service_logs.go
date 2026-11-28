@@ -41,10 +41,11 @@ type ServiceLogsResponse struct {
 
 // LogEntry represents a single log entry
 type LogEntry struct {
-	Timestamp   string `json:"timestamp"`
-	Message     string `json:"message"`
-	Severity    string `json:"severity"`
-	ServiceName string `json:"service_name"`
+	Timestamp    string   `json:"timestamp"`
+	Message      string   `json:"message"`
+	Severity     string   `json:"severity"`
+	ServiceName  string   `json:"service_name"`
+	MatchedTerms []string `json:"matched_terms,omitempty"`
 }
 
 // A summary stays within maxSummaryChars whatever its line count, so summary
@@ -148,6 +149,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
 		}
 		logs.HTTPStatusField = statusField
+		matchedTermCounts := annotateBodyFilterMatches(logs.Logs, args.BodyFilters)
 		if args.StartTimeISO == "" && args.EndTimeISO == "" && args.LookbackMinutes == 0 {
 			logs.WindowSource = "default"
 			logs.WindowMinutes = defaultServiceLogsLookback
@@ -157,7 +159,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		bounds := serviceLogsScope{startTime, endTime, normalizedIndex}
 		var response any = logs
 		if args.ResponseMode != logResponseModeRaw {
-			if summarized, ok := summarizeServiceLogs(logs, bounds, limit); ok {
+			if summarized, ok := summarizeServiceLogs(logs, bounds, limit, matchedTermCounts); ok {
 				response = summarized
 			}
 		}
@@ -216,7 +218,7 @@ type serviceLogsScope struct {
 	index      string
 }
 
-func summarizeServiceLogs(logs *ServiceLogsResponse, bounds serviceLogsScope, limit int) (map[string]any, bool) {
+func summarizeServiceLogs(logs *ServiceLogsResponse, bounds serviceLogsScope, limit int, matchedTermCounts map[string]int) (map[string]any, bool) {
 	encoded, err := json.Marshal(logs)
 	if err != nil {
 		return nil, false
@@ -228,8 +230,33 @@ func summarizeServiceLogs(logs *ServiceLogsResponse, bounds serviceLogsScope, li
 	// The top-level hint counts returned lines; summary.hint says what a summary covers.
 	delete(retained, "logs")
 	delete(retained, "hint")
-	scope := logSummaryScope{bounds.start.UnixMilli(), bounds.end.UnixMilli(), logs.mayMissLines(limit)}
+	scope := logSummaryScope{
+		startMs:           bounds.start.UnixMilli(),
+		endMs:             bounds.end.UnixMilli(),
+		truncated:         logs.mayMissLines(limit),
+		matchedTermCounts: matchedTermCounts,
+	}
 	return summarizeLogEntries(retained, logs.Logs, scope)
+}
+
+func annotateBodyFilterMatches(entries []LogEntry, terms []string) map[string]int {
+	if len(terms) < 2 {
+		return nil
+	}
+	counts := make(map[string]int, len(terms))
+	for _, term := range terms {
+		counts[term] = 0
+	}
+	for i := range entries {
+		body := strings.ToLower(entries[i].Message)
+		for _, term := range terms {
+			if strings.Contains(body, strings.ToLower(term)) {
+				entries[i].MatchedTerms = append(entries[i].MatchedTerms, term)
+				counts[term]++
+			}
+		}
+	}
+	return counts
 }
 
 type serviceLogsSearch struct {

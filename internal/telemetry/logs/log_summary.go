@@ -27,17 +27,18 @@ const (
 )
 
 type logSummary struct {
-	LinesSummarized int                      `json:"lines_summarized"`
-	Truncated       bool                     `json:"truncated,omitempty"`
-	SeverityCounts  map[string]int           `json:"severity_counts"`
-	OtherSeverities *logSummarySeverityOther `json:"other_severities,omitempty"`
-	FirstTimestamp  string                   `json:"first_timestamp,omitempty"`
-	LastTimestamp   string                   `json:"last_timestamp,omitempty"`
-	Histogram       logSummaryHistogram      `json:"histogram"`
-	Patterns        []logSummaryPattern      `json:"patterns"`
-	Other           *logSummaryOther         `json:"other,omitempty"`
-	DroppedFields   []string                 `json:"dropped_fields,omitempty"`
-	Hint            string                   `json:"hint"`
+	LinesSummarized   int                      `json:"lines_summarized"`
+	Truncated         bool                     `json:"truncated,omitempty"`
+	SeverityCounts    map[string]int           `json:"severity_counts"`
+	OtherSeverities   *logSummarySeverityOther `json:"other_severities,omitempty"`
+	FirstTimestamp    string                   `json:"first_timestamp,omitempty"`
+	LastTimestamp     string                   `json:"last_timestamp,omitempty"`
+	Histogram         logSummaryHistogram      `json:"histogram"`
+	Patterns          []logSummaryPattern      `json:"patterns"`
+	Other             *logSummaryOther         `json:"other,omitempty"`
+	DroppedFields     []string                 `json:"dropped_fields,omitempty"`
+	Hint              string                   `json:"hint"`
+	MatchedTermCounts map[string]int           `json:"matched_term_counts,omitempty"`
 }
 
 type logSummarySeverityOther struct {
@@ -88,15 +89,16 @@ func summarizeLogResult(result map[string]interface{}, startMs, endMs int64, tru
 			retained[key] = value
 		}
 	}
-	if summarized, ok := summarizeLogEntries(retained, entries, logSummaryScope{startMs, endMs, truncated}); ok {
+	if summarized, ok := summarizeLogEntries(retained, entries, logSummaryScope{startMs: startMs, endMs: endMs, truncated: truncated}); ok {
 		return summarized
 	}
 	return result
 }
 
 type logSummaryScope struct {
-	startMs, endMs int64
-	truncated      bool
+	startMs, endMs    int64
+	truncated         bool
+	matchedTermCounts map[string]int
 }
 
 func summarizeLogEntries(retained map[string]interface{}, entries []LogEntry, scope logSummaryScope) (map[string]interface{}, bool) {
@@ -148,7 +150,12 @@ func dropLargestMetadata(summarized map[string]interface{}, summary logSummary) 
 // the newest of the window, so window-wide buckets would show a false spike.
 func newLogSummary(entries []LogEntry, scope logSummaryScope) logSummary {
 	startMs, endMs := scope.startMs, scope.endMs
-	summary := logSummary{LinesSummarized: len(entries), Truncated: scope.truncated, Hint: logSummaryHint}
+	summary := logSummary{
+		LinesSummarized:   len(entries),
+		Truncated:         scope.truncated,
+		Hint:              logSummaryHint,
+		MatchedTermCounts: scope.matchedTermCounts,
+	}
 	if scope.truncated {
 		summary.Hint = logSummaryTruncatedHint
 	}
