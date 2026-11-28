@@ -28,6 +28,8 @@ Do not invent org-specific attribute names. Discover fields with `get_log_attrib
 
 `body_filters` is a last resort for plaintext that is not stored as a structured attribute.
 
+Multiple `body_filters` match ANY term, not ALL terms. Raw rows include `matched_terms`, and summaries include `matched_term_counts`, so check which terms the returned lines contain. Counts cover the returned lines only, not every line in the requested window. To require ALL terms in each row, use `get_logs` with an `$and` of `$containsWords` filters on `Body`. `$containsWords` uses word matching; `body_filters` use substring matching, so the results can differ.
+
 ## Parameters
 
 - `service_name` (required): Service name to query.
@@ -39,7 +41,7 @@ Do not invent org-specific attribute names. Discover fields with `get_log_attrib
 - `http_status_code` (optional): Exact 3-digit HTTP status such as `500` or `401`.
 - `http_status_field` (optional): Explicit logjson field when discovery is ambiguous or empty.
 - `attribute_filters` (optional): Array of `{field, value}` equality filters.
-- `body_filters` (optional): Array of substrings that should appear in the log body. Last resort only.
+- `body_filters` (optional): Array of substrings; a row matches when its body contains ANY term, case-insensitively. Last resort only.
 - `env` (optional): Deployment environment string.
 - `index` (optional): Explicit log index in the form `physical_index:<name>` or `rehydration_index:<block_name>`.
 - `response_mode` (optional): `summary` (default) or `raw`. Over 20 lines, `summary` replaces `logs` with a `summary` object: `lines_summarized`, `severity_counts`, `first_timestamp`/`last_timestamp`, a 10-bucket `histogram`, and the top `patterns` (`template`, `count`, up to two `samples`), at most 4000 characters; `truncated: true` when the limit cut the result. `raw` returns entries; 20 lines or fewer also return entries in summary mode. Entry responses are capped at 32000 serialized MCP-result bytes, including metadata. `logs_truncated` and the hint identify omitted entries. If no whole entry fits, the tool returns an error; narrow the query or use summary mode.
