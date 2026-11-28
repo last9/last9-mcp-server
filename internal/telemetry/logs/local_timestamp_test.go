@@ -58,6 +58,21 @@ func TestProjectRawLogsWithoutValidZoneStillUsesReadableUTC(t *testing.T) {
 	}
 }
 
+func TestProjectRawLogsRejectsServerLocalTimezone(t *testing.T) {
+	req := &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Meta: mcp.Meta{clientTimezoneMetaKey: "Local"}}}
+	result := streamsResult([]summaryTestLine{{severity: "INFO", message: "served"}})
+
+	projectLogTimes(req, result)
+
+	row := result["rows"].([]logTimeRow)[0]
+	if row.Time != "" {
+		t.Fatalf("local time = %q", row.Time)
+	}
+	if _, ok := result["l9_time"]; ok {
+		t.Fatal("server-local zone produced l9_time")
+	}
+}
+
 func TestBodyClockRequiresConsistentQuarterHourOffset(t *testing.T) {
 	lines := make([]summaryTestLine, 16)
 	for i := range lines {
