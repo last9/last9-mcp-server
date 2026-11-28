@@ -97,14 +97,17 @@ func outcomeWiringServer(t *testing.T) *httptest.Server {
 			return
 		}
 		if len(body.Query) > 0 && body.Query[len(body.Query)-1]["type"] == "aggregate" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"resultType": "streams", "result": []any{
-				map[string]any{"stream": map[string]any{"outcome": "500", "count": "3"}},
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"resultType": "matrix", "result": []any{
+				map[string]any{"metric": map[string]any{"outcome": "500", "count": "3"}, "values": []any{}},
 			}}})
 			return
 		}
 		rows := streamsResult([]summaryTestLine{{severity: "ERROR", message: "failed"}})
 		items := rows["data"].(map[string]interface{})["result"].([]interface{})
-		items[0].(map[string]interface{})["stream"].(map[string]interface{})["status_code"] = "500"
+		stream := items[0].(map[string]interface{})
+		stream["stream"].(map[string]interface{})["status_code"] = "500"
+		stream["stream"].(map[string]interface{})["ServiceName"] = "api"
+		stream["values"].([]interface{})[0].([]interface{})[0] = "1699999999123456789"
 		_ = json.NewEncoder(w).Encode(map[string]any{"query_result": rows})
 	}))
 	t.Cleanup(srv.Close)
@@ -121,6 +124,9 @@ func assertRawOutcomeWiring(t *testing.T, response map[string]any, streams bool)
 		row := response["rows"].([]any)[0].(map[string]any)
 		if row["time"] == "" {
 			t.Fatal("raw row has no local time")
+		}
+		if row["time_utc"] != "2023-11-14T22:13:19.123456789Z" || row["labels"].(map[string]any)["ServiceName"] != "api" {
+			t.Fatalf("raw row lost timestamp precision or labels: %#v", row)
 		}
 	} else {
 		entry := response["rows"].([]any)[0].(map[string]any)

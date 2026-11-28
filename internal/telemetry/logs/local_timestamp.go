@@ -14,10 +14,11 @@ const clientTimezoneMetaKey = "last9/client-timezone"
 var leadingBodyClock = regexp.MustCompile(`^(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:\s|$)`)
 
 type logTimeRow struct {
-	Time     string `json:"time,omitempty"`
-	TimeUTC  string `json:"time_utc"`
-	Severity string `json:"severity,omitempty"`
-	Message  string `json:"message"`
+	Time     string                 `json:"time,omitempty"`
+	TimeUTC  string                 `json:"time_utc"`
+	Labels   map[string]interface{} `json:"labels,omitempty"`
+	Severity string                 `json:"severity,omitempty"`
+	Message  string                 `json:"message"`
 }
 
 type logTimeMetadata struct {
@@ -51,17 +52,47 @@ func requestLocation(req *mcp.CallToolRequest) (string, *time.Location) {
 }
 
 func projectLogTimes(req *mcp.CallToolRequest, result map[string]interface{}) {
-	kind, _, err := extractResultItems(result)
+	kind, items, err := extractResultItems(result)
 	if err != nil || kind != "streams" {
 		return
 	}
-	entries := parseServiceLogEntries(map[string]any{"data": result["data"]}, "")
-	rows, metadata := projectEntries(req, entries)
+	rows := projectStreamRows(req, items)
+	metadata := projectedTimeMetadata(req, rows)
 	delete(result, "data")
 	result["rows"] = rows
 	if metadata != nil {
 		result["l9_time"] = *metadata
 	}
+}
+
+func projectStreamRows(req *mcp.CallToolRequest, items []interface{}) []logTimeRow {
+	_, loc := requestLocation(req)
+	rows := make([]logTimeRow, 0)
+	for _, item := range items {
+		stream, _ := item.(map[string]interface{})
+		labels, _ := stream["stream"].(map[string]interface{})
+		values, _ := stream["values"].([]interface{})
+		for _, value := range values {
+			pair, ok := value.([]interface{})
+			if !ok || len(pair) < 2 {
+				continue
+			}
+			nanos, err := strconv.ParseInt(fmt.Sprint(pair[0]), 10, 64)
+			if err != nil {
+				continue
+			}
+			ts := time.Unix(0, nanos)
+			row := logTimeRow{TimeUTC: ts.UTC().Format(time.RFC3339Nano), Labels: labels, Message: fmt.Sprint(pair[1])}
+			if severity, ok := labels["severity"]; ok {
+				row.Severity = fmt.Sprint(severity)
+			}
+			if loc != nil {
+				row.Time = ts.In(loc).Format("2006-01-02 15:04:05 MST")
+			}
+			rows = append(rows, row)
+		}
+	}
+	return rows
 }
 
 func projectEntries(req *mcp.CallToolRequest, entries []LogEntry) ([]logTimeRow, *logTimeMetadata) {
@@ -78,13 +109,21 @@ func projectEntries(req *mcp.CallToolRequest, entries []LogEntry) ([]logTimeRow,
 		}
 		rows = append(rows, row)
 	}
-	if loc != nil && len(rows) > 0 {
-		ts, _ := time.Parse(time.RFC3339Nano, rows[0].TimeUTC)
-		abbr, offset := ts.In(loc).Zone()
-		metadata := &logTimeMetadata{Zone: zone, Abbr: abbr, UTCOffset: formatUTCOffset(offset), Use: "time", BodyClock: inferBodyClock(rows, offset, abbr)}
-		return rows, metadata
+	return rows, projectedTimeMetadataForLocation(zone, loc, rows)
+}
+
+func projectedTimeMetadata(req *mcp.CallToolRequest, rows []logTimeRow) *logTimeMetadata {
+	zone, loc := requestLocation(req)
+	return projectedTimeMetadataForLocation(zone, loc, rows)
+}
+
+func projectedTimeMetadataForLocation(zone string, loc *time.Location, rows []logTimeRow) *logTimeMetadata {
+	if loc == nil || len(rows) == 0 {
+		return nil
 	}
-	return rows, nil
+	ts, _ := time.Parse(time.RFC3339Nano, rows[0].TimeUTC)
+	abbr, offset := ts.In(loc).Zone()
+	return &logTimeMetadata{Zone: zone, Abbr: abbr, UTCOffset: formatUTCOffset(offset), Use: "time", BodyClock: inferBodyClock(rows, offset, abbr)}
 }
 
 func projectSummaryTimes(req *mcp.CallToolRequest, result map[string]interface{}) {
@@ -101,7 +140,7 @@ func projectSummaryTimes(req *mcp.CallToolRequest, result map[string]interface{}
 		if loc == nil {
 			return ts.UTC().Format(time.RFC3339Nano)
 		}
-		return ts.In(loc).Format("2006-01-02 15:04:05 MST")
+		return ts.In(loc).Format("2006-01-02 15:04:05 -07:00")
 	}
 	summary.FirstTimestamp = project(summary.FirstTimestamp)
 	summary.LastTimestamp = project(summary.LastTimestamp)

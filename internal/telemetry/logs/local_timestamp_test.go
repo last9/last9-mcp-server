@@ -25,6 +25,22 @@ func TestProjectRawLogsUsesReadableTimes(t *testing.T) {
 	}
 }
 
+func TestProjectRawLogsPreservesLabelsAndNanoseconds(t *testing.T) {
+	result := map[string]interface{}{"data": map[string]interface{}{"resultType": "streams", "result": []interface{}{
+		map[string]interface{}{"stream": map[string]interface{}{"ServiceName": "api", "status_code": "500"}, "values": []interface{}{
+			[]interface{}{"1699999999123456789", "failed"},
+		}},
+	}}}
+	projectLogTimes(timezoneRequest(), result)
+	row := result["rows"].([]logTimeRow)[0]
+	if row.TimeUTC != "2023-11-14T22:13:19.123456789Z" {
+		t.Fatalf("time_utc = %q", row.TimeUTC)
+	}
+	if row.Labels["ServiceName"] != "api" || row.Labels["status_code"] != "500" {
+		t.Fatalf("labels = %#v", row.Labels)
+	}
+}
+
 func TestProjectRawLogsWithoutValidZoneStillUsesReadableUTC(t *testing.T) {
 	for _, req := range []*mcp.CallToolRequest{
 		{},
@@ -97,7 +113,7 @@ func TestProjectSummaryTimesIncludesSamples(t *testing.T) {
 	if summary.FirstTimestamp == "" || summary.LastTimestamp == "" || len(summary.Patterns[0].Samples) == 0 {
 		t.Fatalf("summary times missing: %#v", summary)
 	}
-	if got := summary.Patterns[0].Samples[0].Time; got == "" || got[len(got)-3:] != "IST" {
+	if got := summary.Patterns[0].Samples[0].Time; got == "" || got[len(got)-6:] != "+05:30" {
 		t.Fatalf("sample time = %q", got)
 	}
 }
