@@ -38,6 +38,15 @@ func TestOutcomeCountsFromAggregateRows(t *testing.T) {
 	}
 }
 
+func TestOutcomeCountsReadsMatrixMetrics(t *testing.T) {
+	result := map[string]interface{}{"data": map[string]interface{}{"resultType": "matrix", "result": []interface{}{
+		map[string]interface{}{"metric": map[string]interface{}{"outcome": "500", "count": "3"}, "values": []interface{}{}},
+	}}}
+	if got := outcomeCounts(result)["500"]; got != 3 {
+		t.Fatalf("500 count = %d, want 3", got)
+	}
+}
+
 func TestOutcomeAggregatePipelineKeepsOriginalStages(t *testing.T) {
 	query := []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "api"}}}}
 	got := outcomeAggregatePipeline(query, "attributes['status_code']")

@@ -55,7 +55,10 @@ func outcomeCounts(result map[string]interface{}) map[string]int64 {
 	counts := map[string]int64{}
 	for _, item := range items {
 		row, _ := item.(map[string]interface{})
-		values, _ := row["stream"].(map[string]interface{})
+		values, _ := row["metric"].(map[string]interface{})
+		if values == nil {
+			values, _ = row["stream"].(map[string]interface{})
+		}
 		outcome := fmt.Sprint(values["outcome"])
 		count, err := strconv.ParseInt(fmt.Sprint(values["count"]), 10, 64)
 		if err == nil && outcome != "<nil>" {
