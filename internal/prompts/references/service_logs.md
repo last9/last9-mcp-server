@@ -28,7 +28,7 @@ Do not invent org-specific attribute names. Discover fields with `get_log_attrib
 
 `body_filters` is a last resort for plaintext that is not stored as a structured attribute.
 
-Multiple `body_filters` match ANY term, not ALL terms. Raw rows include `matched_terms`, and summaries include `matched_term_counts`, so check which terms the returned lines contain. To require ALL terms in each row, use `get_logs` with an `$and` of `$containsWords` filters on `Body`.
+Multiple `body_filters` match ANY term, not ALL terms. Raw rows include `matched_terms`, and summaries include `matched_term_counts`, so check which terms the returned lines contain. Counts cover the returned lines only, not every line in the requested window. To require ALL terms in each row, use `get_logs` with an `$and` of `$containsWords` filters on `Body`. `$containsWords` uses word matching; `body_filters` use substring matching, so the results can differ.
 
 ## Parameters
 
