@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"last9-mcp/internal/models"
-	"last9-mcp/internal/utils"
 )
 
 var (
@@ -124,11 +123,6 @@ func resolveHTTPStatusField(ctx context.Context, client *http.Client, cfg models
 
 	startSec := startTime.Unix()
 	endSec := endTime.Unix()
-	maxWindowSeconds := int64(utils.MaxLogAttributeLookbackMinutes * 60)
-	if endSec-startSec > maxWindowSeconds {
-		startSec = endSec - maxWindowSeconds
-	}
-
 	queryParams := url.Values{}
 	queryParams.Set("region", cfg.Region)
 	queryParams.Set("start", fmt.Sprintf("%d", startSec))
@@ -137,13 +131,21 @@ func resolveHTTPStatusField(ctx context.Context, client *http.Client, cfg models
 		queryParams.Set("index", index)
 	}
 
-	attrs, err := discoverLogAttributes(ctx, client, cfg, validatedPipeline, startSec, endSec, index, queryParams)
+	discovery, err := scanLogAttributes(ctx, logAttributeScanInput{
+		Client:         client,
+		Config:         cfg,
+		Pipeline:       validatedPipeline,
+		RequestedStart: startSec,
+		RequestedEnd:   endSec,
+		Index:          index,
+		BaseQuery:      queryParams,
+	})
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to discover HTTP status field: %w", err)
 	}
 
 	matches := make([]LogAttribute, 0)
-	for _, attr := range attrs {
+	for _, attr := range discovery.Attributes {
 		if isHTTPStatusLikeAttribute(attr) {
 			matches = append(matches, attr)
 		}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
@@ -49,11 +50,18 @@ func DiscoverLogAttributes(ctx context.Context, client *http.Client, cfg models.
 		"type":  "filter",
 		"query": map[string]interface{}{"$and": []interface{}{map[string]interface{}{"$eq": []interface{}{"ServiceName", scope.Service}}}},
 	}}
-	return discoverLogAttributes(ctx, client, cfg, pipeline, startTime, endTime, "", queryParams)
+	discovery, err := scanLogAttributes(ctx, logAttributeScanInput{
+		Client:         client,
+		Config:         cfg,
+		Pipeline:       pipeline,
+		RequestedStart: startTime,
+		RequestedEnd:   endTime,
+		BaseQuery:      queryParams,
+	})
+	return discovery.Attributes, err
 }
 
-// logAttributeWindow resolves an attribute-discovery window in Unix seconds,
-// capped at MaxLogAttributeLookbackMinutes: a longer range only adds server cost.
+// logAttributeWindow resolves an attribute-discovery window in Unix seconds.
 func logAttributeWindow(lookbackMinutes int, startTimeISO, endTimeISO string) (int64, int64, error) {
 	params := make(map[string]interface{})
 	if lookbackMinutes > 0 {
@@ -71,7 +79,66 @@ func logAttributeWindow(lookbackMinutes int, startTimeISO, endTimeISO string) (i
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to parse time range: %w", err)
 	}
-	endTime := endTimeParsed.Unix()
-	startTime := max(startTimeParsed.Unix(), endTime-int64(utils.MaxLogAttributeLookbackMinutes*60))
-	return startTime, endTime, nil
+	return startTimeParsed.Unix(), endTimeParsed.Unix(), nil
+}
+
+const maxLogAttributeScanSlices = 24
+
+type logAttributeDiscovery struct {
+	Attributes    []LogAttribute `json:"attributes"`
+	ScannedStart  int64          `json:"-"`
+	ScannedEnd    int64          `json:"-"`
+	ScannedWindow struct {
+		Start string `json:"start"`
+		End   string `json:"end"`
+	} `json:"scanned_window"`
+	Note string `json:"note,omitempty"`
+}
+
+type logAttributeScanInput struct {
+	Client         *http.Client
+	Config         models.Config
+	Pipeline       []map[string]interface{}
+	RequestedStart int64
+	RequestedEnd   int64
+	Index          string
+	BaseQuery      url.Values
+}
+
+func newLogAttributeDiscovery(attributes []LogAttribute, start, end int64, note string) logAttributeDiscovery {
+	out := logAttributeDiscovery{Attributes: attributes, ScannedStart: start, ScannedEnd: end, Note: note}
+	out.ScannedWindow.Start = time.Unix(start, 0).UTC().Format(time.RFC3339)
+	out.ScannedWindow.End = time.Unix(end, 0).UTC().Format(time.RFC3339)
+	return out
+}
+
+func scanLogAttributes(ctx context.Context, in logAttributeScanInput) (logAttributeDiscovery, error) {
+	lastStart := in.RequestedEnd
+	for i, sliceEnd := 0, in.RequestedEnd; i < maxLogAttributeScanSlices && sliceEnd > in.RequestedStart; i++ {
+		sliceStart := max(in.RequestedStart, sliceEnd-int64(utils.MaxLogAttributeLookbackMinutes*60))
+		query := cloneURLValues(in.BaseQuery)
+		query.Set("start", fmt.Sprintf("%d", sliceStart))
+		query.Set("end", fmt.Sprintf("%d", sliceEnd))
+		attributes, matched, err := discoverLogAttributes(ctx, in.Client, in.Config, in.Pipeline, sliceStart, sliceEnd, in.Index, query)
+		if err != nil {
+			return logAttributeDiscovery{}, err
+		}
+		lastStart = sliceStart
+		if matched {
+			return newLogAttributeDiscovery(attributes, sliceStart, sliceEnd, ""), nil
+		}
+		sliceEnd = sliceStart
+	}
+	note := fmt.Sprintf("No rows matched the pipeline in %s to %s. Discovery scans at most %d minutes per slice and %d slices.",
+		time.Unix(lastStart, 0).UTC().Format(time.RFC3339), time.Unix(in.RequestedEnd, 0).UTC().Format(time.RFC3339),
+		utils.MaxLogAttributeLookbackMinutes, maxLogAttributeScanSlices)
+	return newLogAttributeDiscovery([]LogAttribute{}, lastStart, in.RequestedEnd, note), nil
+}
+
+func cloneURLValues(in url.Values) url.Values {
+	out := make(url.Values, len(in))
+	for key, values := range in {
+		out[key] = append([]string(nil), values...)
+	}
+	return out
 }

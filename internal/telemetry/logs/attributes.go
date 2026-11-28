@@ -87,14 +87,8 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(con
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to parse time range: %w", err)
 		}
-		endTime := endTimeParsed.Unix()
-		// Cap the window magnitude. The labels endpoint returns the full label
-		// set regardless of window size, so a longer range only adds server cost.
-		startTime := startTimeParsed.Unix()
-		maxWindowSeconds := int64(utils.MaxLogAttributeLookbackMinutes * 60)
-		if endTime-startTime > maxWindowSeconds {
-			startTime = endTime - maxWindowSeconds
-		}
+		requestedStart := startTimeParsed.Unix()
+		requestedEnd := endTimeParsed.Unix()
 
 		// Get region parameter or use default from config
 		region := cfg.Region
@@ -109,15 +103,28 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(con
 
 		queryParams := url.Values{}
 		queryParams.Set("region", region)
-		queryParams.Set("start", fmt.Sprintf("%d", startTime))
-		queryParams.Set("end", fmt.Sprintf("%d", endTime))
 		if normalizedIndex != "" {
 			queryParams.Set("index", normalizedIndex)
 		}
 
-		data, err := fetchLogLabels(ctx, client, cfg, queryParams)
-		if err != nil {
-			return nil, nil, err
+		var data []string
+		startTime, endTime := requestedEnd, requestedEnd
+		for i, sliceEnd := 0, requestedEnd; i < maxLogAttributeScanSlices && sliceEnd > requestedStart; i++ {
+			sliceStart := max(requestedStart, sliceEnd-int64(utils.MaxLogAttributeLookbackMinutes*60))
+			queryParams.Set("start", fmt.Sprintf("%d", sliceStart))
+			queryParams.Set("end", fmt.Sprintf("%d", sliceEnd))
+			data, err = fetchLogLabels(ctx, client, cfg, queryParams)
+			if err != nil {
+				return nil, nil, err
+			}
+			startTime, endTime = sliceStart, sliceEnd
+			if len(data) > 0 {
+				break
+			}
+			sliceEnd = sliceStart
+		}
+		if len(data) == 0 {
+			endTime = requestedEnd
 		}
 
 		// Format the response for display
@@ -125,6 +132,11 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(con
 			len(data),
 			time.Unix(startTime, 0).Format("2006-01-02 15:04:05"),
 			time.Unix(endTime, 0).Format("2006-01-02 15:04:05"))
+		if len(data) == 0 {
+			summary += fmt.Sprintf("No attributes matched in %s to %s. Discovery scans at most %d minutes per slice and %d slices.\n",
+				time.Unix(startTime, 0).UTC().Format(time.RFC3339), time.Unix(requestedEnd, 0).UTC().Format(time.RFC3339),
+				utils.MaxLogAttributeLookbackMinutes, maxLogAttributeScanSlices)
+		}
 
 		// Group attributes by category
 		logAttributes := []string{}
