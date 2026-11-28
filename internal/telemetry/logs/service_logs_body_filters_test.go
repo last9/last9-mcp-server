@@ -78,14 +78,12 @@ func TestGetServiceLogs_MultipleBodyFiltersAddSummaryCounts(t *testing.T) {
 }
 
 func TestServiceLogsBodyFilterDocsExplainAnyAndAllTerms(t *testing.T) {
-	for name, body := range map[string]string{
-		"description": prompts.GetServiceLogsDescription,
-		"reference":   prompts.ServiceLogsReference,
-	} {
-		for _, want := range []string{"ANY term", "ALL terms", "`get_logs`", "`$and`", "`$containsWords`"} {
-			if !strings.Contains(body, want) {
-				t.Errorf("%s missing %q", name, want)
-			}
+	if !strings.Contains(prompts.GetServiceLogsDescription, "`last9://reference/service_logs`") {
+		t.Error("description missing service logs reference")
+	}
+	for _, want := range []string{"ANY term", "ALL terms", "`get_logs`", "`$and`", "`$containsWords`"} {
+		if !strings.Contains(prompts.ServiceLogsReference, want) {
+			t.Errorf("reference missing %q", want)
 		}
 	}
 }
