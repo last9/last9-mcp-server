@@ -41,7 +41,7 @@ func requestLocation(req *mcp.CallToolRequest) (string, *time.Location) {
 		return "", nil
 	}
 	name, ok := req.Params.Meta[clientTimezoneMetaKey].(string)
-	if !ok || name == "" {
+	if !ok || name == "" || name == "Local" {
 		return "", nil
 	}
 	loc, err := time.LoadLocation(name)
