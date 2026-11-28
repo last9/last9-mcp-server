@@ -113,7 +113,7 @@ func newLogAttributeDiscovery(attributes []LogAttribute, start, end int64, note 
 }
 
 func scanLogAttributes(ctx context.Context, in logAttributeScanInput) (logAttributeDiscovery, error) {
-	var lastStart int64
+	lastStart := in.RequestedEnd
 	for i, sliceEnd := 0, in.RequestedEnd; i < maxLogAttributeScanSlices && sliceEnd > in.RequestedStart; i++ {
 		sliceStart := max(in.RequestedStart, sliceEnd-int64(utils.MaxLogAttributeLookbackMinutes*60))
 		query := cloneURLValues(in.BaseQuery)
