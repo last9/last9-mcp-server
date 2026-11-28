@@ -62,7 +62,7 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 		}
 
 		// Handle logjson_query directly
-		result, err := handleLogJSONQuery(ctx, req, client, cfg, sanitizedQuery, args)
+		result, err := handleLogJSONQuery(ctx, logJSONRequest{req: req, client: client, cfg: cfg, query: sanitizedQuery, args: args})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -110,7 +110,16 @@ func conditionHasFieldOperator(value any, field string, operators map[string]str
 	return false
 }
 
-func handleLogJSONQuery(ctx context.Context, req *mcp.CallToolRequest, client *http.Client, cfg models.Config, logjsonQuery interface{}, args GetLogsArgs) (*mcp.CallToolResult, error) {
+type logJSONRequest struct {
+	req    *mcp.CallToolRequest
+	client *http.Client
+	cfg    models.Config
+	query  interface{}
+	args   GetLogsArgs
+}
+
+func handleLogJSONQuery(ctx context.Context, input logJSONRequest) (*mcp.CallToolResult, error) {
+	req, client, cfg, logjsonQuery, args := input.req, input.client, input.cfg, input.query, input.args
 	// Determine time range from parameters
 	startTime, endTime, err := parseTimeRangeFromArgs(args)
 	if err != nil {
