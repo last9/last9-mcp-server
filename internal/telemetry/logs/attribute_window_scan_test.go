@@ -90,6 +90,35 @@ func TestGetLogAttributesForPipelineReportsNoMatchingRowsWithinScanBound(t *test
 	}
 }
 
+func TestGetLogAttributesForPipelineReportsEqualBounds(t *testing.T) {
+	var calls atomic.Int32
+	server := attributeScanServer(t, func(_, _ int64, _ bool) string {
+		calls.Add(1)
+		return `{"status":"success","data":[]}`
+	})
+	t.Cleanup(server.Close)
+
+	result, _, err := NewGetLogAttributesForPipelineHandler(server.Client(), testAttrConfig(server.URL))(
+		context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+			Pipeline:     []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{}}},
+			StartTimeISO: "2026-01-01T00:00:00Z",
+			EndTimeISO:   "2026-01-01T00:00:00Z",
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	if got := strings.Count(text, "2026-01-01T00:00:00Z"); got != 4 {
+		t.Fatalf("equal-bounds result mentions requested instant %d times, want 4: %s", got, text)
+	}
+	if strings.Contains(text, "1970-01-01T00:00:00Z") {
+		t.Fatalf("equal-bounds result reports an unscanned epoch window: %s", text)
+	}
+	if got := calls.Load(); got != 0 {
+		t.Fatalf("backend calls = %d, want 0 for an empty window", got)
+	}
+}
+
 func TestGetServiceLogsStatusDiscoveryScansEarlierSlices(t *testing.T) {
 	server := attributeScanServer(t, func(start, end int64, series bool) string {
 		if series && start == attributeScanStart && end == attributeScanStart+3600 {
