@@ -34,6 +34,19 @@ func TestGetServiceLogs_MultipleBodyFiltersAnnotateRawRows(t *testing.T) {
 	}
 }
 
+func TestGetServiceLogs_NormalizesBodyFiltersBeforeAnnotatingRows(t *testing.T) {
+	out := callGetServiceLogs(t, []summaryTestLine{{message: "request timeout failed"}}, GetServiceLogsArgs{
+		BodyFilters:  []string{" timeout ", "", "timeout", "failed"},
+		ResponseMode: "raw",
+	})
+
+	row := out["logs"].([]any)[0].(map[string]any)
+	want := []any{"timeout", "failed"}
+	if got := row["matched_terms"]; !reflect.DeepEqual(got, want) {
+		t.Errorf("matched_terms = %v, want %v", got, want)
+	}
+}
+
 func TestGetServiceLogs_OneBodyFilterDoesNotAnnotateRows(t *testing.T) {
 	out := callGetServiceLogs(t, []summaryTestLine{{message: "request timed out"}}, GetServiceLogsArgs{
 		BodyFilters:  []string{"timeout"},

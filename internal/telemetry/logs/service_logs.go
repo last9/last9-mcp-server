@@ -240,6 +240,7 @@ func summarizeServiceLogs(logs *ServiceLogsResponse, bounds serviceLogsScope, li
 }
 
 func annotateBodyFilterMatches(entries []LogEntry, terms []string) map[string]int {
+	terms = normalizeServiceLogsFilters(terms)
 	if len(terms) < 2 {
 		return nil
 	}
@@ -257,6 +258,24 @@ func annotateBodyFilterMatches(entries []LogEntry, terms []string) map[string]in
 		}
 	}
 	return counts
+}
+
+func normalizeServiceLogsFilters(filters []string) []string {
+	normalized := make([]string, 0, len(filters))
+	seen := make(map[string]struct{}, len(filters))
+	for _, filter := range filters {
+		filter = strings.TrimSpace(filter)
+		if filter == "" {
+			continue
+		}
+		key := strings.ToLower(filter)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, filter)
+	}
+	return normalized
 }
 
 type serviceLogsSearch struct {
@@ -369,14 +388,11 @@ func buildServiceLogsQuery(service string, severityFilters []string, bodyFilters
 }
 
 func buildServiceLogsORCondition(field string, filters []string, operator string) map[string]interface{} {
+	filters = normalizeServiceLogsFilters(filters)
 	conditions := make([]interface{}, 0, len(filters))
 	for _, filter := range filters {
-		trimmed := strings.TrimSpace(filter)
-		if trimmed == "" {
-			continue
-		}
 		conditions = append(conditions, map[string]interface{}{
-			operator: []interface{}{field, trimmed},
+			operator: []interface{}{field, filter},
 		})
 	}
 
