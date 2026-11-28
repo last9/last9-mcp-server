@@ -289,6 +289,7 @@ Discover and use a normalized route field before aggregation. If only raw URI ex
 - **ServiceName**: Service name. Always prefer this over similar looking attributes in `attributes` or `resources` given below
 - **SeverityText**: Log level (DEBUG, INFO, WARN, ERROR, FATAL)
 - **Timestamp**: Log timestamp
+- Raw responses expose `rows` with readable `time_utc`; when `_meta.last9/client-timezone` is a valid IANA zone, each row starts with finished local `time` and `l9_time` identifies that zone. Use `time`, not a clock embedded in `message`; `l9_time.body_clock` explains a consistent embedded service clock when one can be inferred. Summary `first_time`, `last_time`, and sample `time` use the same zone. When `l9_outcome_summary` is present, its counts cover the full requested window rather than only the returned sample.
 - **attributes['field_name']**: Log/span attributes (OpenTelemetry semantic conventions)
 - **resources['field_name']**: Resource attributes (prefixed with `resource_`)
 

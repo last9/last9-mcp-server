@@ -60,6 +60,22 @@ func TestGetServiceLogs_SummarizesOverThreshold(t *testing.T) {
 	}
 }
 
+func TestGetServiceLogs_SummaryProjectsCallerTimezone(t *testing.T) {
+	srv, _ := streamSearchServer(t, timeoutLines(30))
+	args := GetServiceLogsArgs{ServiceName: "api", StartTimeISO: "2023-11-14T22:13:20Z", EndTimeISO: "2023-11-14T22:23:20Z"}
+	result, _, err := NewGetServiceLogsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), timezoneRequest(), args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary := parseToolJSONResult(t, result)["summary"].(map[string]any)
+	if summary["first_time"] != "2023-11-15 03:43:20 +05:30" {
+		t.Fatalf("first_time = %q", summary["first_time"])
+	}
+	if got := summary["patterns"].([]any)[0].(map[string]any)["samples"].([]any)[0].(map[string]any)["time"]; got != "2023-11-15 03:43:20 +05:30" {
+		t.Fatalf("sample time = %q", got)
+	}
+}
+
 func TestGetServiceLogs_ReturnsRawLines(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -75,8 +91,8 @@ func TestGetServiceLogs_ReturnsRawLines(t *testing.T) {
 			if _, ok := out["summary"]; ok {
 				t.Error("response summarized, want raw lines")
 			}
-			if logs, _ := out["logs"].([]any); len(logs) != tc.lines {
-				t.Errorf("got %d log entries, want %d", len(logs), tc.lines)
+			if rows, _ := out["rows"].([]any); len(rows) != tc.lines {
+				t.Errorf("got %d log entries, want %d", len(rows), tc.lines)
 			}
 		})
 	}
@@ -102,8 +118,8 @@ func TestGetServiceLogs_DefaultLimitDependsOnResponseMode(t *testing.T) {
 	}
 	t.Run("mode=raw", func(t *testing.T) {
 		out := callGetServiceLogs(t, lines, GetServiceLogsArgs{ResponseMode: "raw"})
-		if logs, _ := out["logs"].([]any); len(logs) != defaultServiceLogsRawLimit {
-			t.Errorf("got %d log entries, want %d", len(logs), defaultServiceLogsRawLimit)
+		if rows, _ := out["rows"].([]any); len(rows) != defaultServiceLogsRawLimit {
+			t.Errorf("got %d log entries, want %d", len(rows), defaultServiceLogsRawLimit)
 		}
 	})
 }

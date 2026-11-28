@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -64,7 +63,7 @@ func TestRawLogResponseByteBudget(t *testing.T) {
 					t.Fatal("missing truncation marker")
 				}
 				if service {
-					entries := out["logs"].([]any)
+					entries := out["rows"].([]any)
 					kept := len(entries)
 					if kept == 0 || kept >= count || out["count"] != float64(kept) {
 						t.Fatalf("incorrect count: %v", out["count"])
@@ -81,16 +80,12 @@ func TestRawLogResponseByteBudget(t *testing.T) {
 						t.Fatalf("truncated coverage must be partial: %v", coverage)
 					}
 				} else {
-					_, items, err := extractResultItems(out)
-					if err != nil {
-						t.Fatal(err)
-					}
-					kept := countLogEntriesInResultItems(items)
+					items := out["rows"].([]any)
+					kept := len(items)
 					if kept == 0 || kept >= count {
 						t.Fatalf("invalid count %d", kept)
 					}
-					values := items[0].(map[string]any)["values"].([]any)
-					if values[0].([]any)[1] != lines[0].message {
+					if items[0].(map[string]any)["message"] != lines[0].message {
 						t.Fatal("message clipped")
 					}
 				}
@@ -187,17 +182,14 @@ func TestRawStreamPrefixPreservesTotals(t *testing.T) {
 	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &out); err != nil {
 		t.Fatal(err)
 	}
-	_, items, err := extractResultItems(out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, source, err := extractResultItems(original)
-	if err != nil {
-		t.Fatal(err)
-	}
-	kept := countLogEntriesInResultItems(items)
-	if len(items) != 2 || !reflect.DeepEqual(items, truncateResultItemsByEntryLimit(source, kept)) {
-		t.Fatal("returned entries differ from the whole-entry stream prefix")
+	rows := out["rows"].([]any)
+	entries := parseServiceLogEntries(original, "")
+	kept := len(rows)
+	for i, rowValue := range rows {
+		row := rowValue.(map[string]any)
+		if row["message"] != entries[i].Message {
+			t.Fatal("returned rows differ from the whole-entry prefix")
+		}
 	}
 	if out["total_matching_lines"] != float64(1000) {
 		t.Fatalf("total matching lines changed: %v", out["total_matching_lines"])

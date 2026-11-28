@@ -33,6 +33,7 @@ type ServiceLogsResponse struct {
 	LogsTruncated      *bool          `json:"logs_truncated,omitempty"`
 	SearchStats        map[string]any `json:"search_stats,omitempty"`
 	RawLimit           map[string]any `json:"l9_raw_limit,omitempty"`
+	OutcomeSummary     map[string]any `json:"l9_outcome_summary,omitempty"`
 	Hint               string         `json:"hint,omitempty"`
 	WindowSource       string         `json:"window_source,omitempty"`
 	WindowMinutes      int            `json:"window_minutes,omitempty"`
@@ -131,7 +132,6 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		if err != nil {
 			return nil, nil, err
 		}
-
 		logjsonQuery := buildServiceLogsQuery(args.ServiceName, args.SeverityFilters, args.BodyFilters)
 		if args.Env != "" {
 			logjsonQuery = addServiceLogsEnvFilter(logjsonQuery, args.Env)
@@ -148,6 +148,13 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
 		}
 		logs.HTTPStatusField = statusField
+		if args.ResponseMode == logResponseModeRaw && statusField != "" {
+			outcome := map[string]interface{}{}
+			appendOutcomeSummary(ctx, client, cfg, outcomeSummaryRequest{query: logjsonQuery, field: statusField, index: normalizedIndex, startMs: startTime.UnixMilli(), endMs: endTime.UnixMilli(), result: outcome})
+			if summary, ok := outcome["l9_outcome_summary"].(map[string]interface{}); ok {
+				logs.OutcomeSummary = summary
+			}
+		}
 		if args.StartTimeISO == "" && args.EndTimeISO == "" && args.LookbackMinutes == 0 {
 			logs.WindowSource = "default"
 			logs.WindowMinutes = defaultServiceLogsLookback
@@ -159,10 +166,27 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		if args.ResponseMode != logResponseModeRaw {
 			if summarized, ok := summarizeServiceLogs(logs, bounds, limit); ok {
 				response = summarized
+				projectSummaryTimes(req, summarized)
 			}
 		}
+		summarized := response != logs
 
 		// Format response as JSON for better readability
+		if response == logs {
+			encoded, marshalErr := json.Marshal(logs)
+			if marshalErr == nil {
+				var projected map[string]any
+				if json.Unmarshal(encoded, &projected) == nil {
+					rows, metadata := projectEntries(req, logs.Logs)
+					delete(projected, "logs")
+					projected["rows"] = rows
+					if metadata != nil {
+						projected["l9_time"] = metadata
+					}
+					response = projected
+				}
+			}
+		}
 		responseJSON, err := json.MarshalIndent(response, "", "  ")
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to format response: %w", err)
@@ -184,7 +208,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 				},
 			},
 		}
-		if response != logs {
+		if summarized {
 			return full, nil, nil
 		}
 		count := len(logs.Logs)
@@ -197,7 +221,21 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			limited.RawLimit = map[string]any{"returned_entries": n, "fetched_entries": count, "max_bytes": maxRawResultBytes}
 			limited.Hint = rawLimitHint(n, count, limit)
 			limited.coverageStatus = "partial"
-			encoded, err := json.MarshalIndent(&limited, "", "  ")
+			encodedMap, err := json.Marshal(&limited)
+			if err != nil {
+				return nil, err
+			}
+			var projected map[string]any
+			if err := json.Unmarshal(encodedMap, &projected); err != nil {
+				return nil, err
+			}
+			rows, metadata := projectEntries(req, limited.Logs)
+			delete(projected, "logs")
+			projected["rows"] = rows
+			if metadata != nil {
+				projected["l9_time"] = metadata
+			}
+			encoded, err := json.MarshalIndent(projected, "", "  ")
 			if err != nil {
 				return nil, err
 			}

@@ -60,6 +60,22 @@ func TestGetLogs_DefaultsToSummary(t *testing.T) {
 	}
 }
 
+func TestGetLogs_SummaryProjectsCallerTimezone(t *testing.T) {
+	srv, _ := streamSearchServer(t, timeoutLines(30))
+	args := GetLogsArgs{LogjsonQuery: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "api"}}}}, StartTimeISO: "2023-11-14T22:13:20Z", EndTimeISO: "2023-11-14T22:23:20Z"}
+	result, _, err := NewGetLogsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), timezoneRequest(), args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary := parseToolJSONResult(t, result)["summary"].(map[string]any)
+	if summary["first_time"] != "2023-11-15 03:43:20 +05:30" {
+		t.Fatalf("first_time = %q", summary["first_time"])
+	}
+	if got := summary["patterns"].([]any)[0].(map[string]any)["samples"].([]any)[0].(map[string]any)["time"]; got != "2023-11-15 03:43:20 +05:30" {
+		t.Fatalf("sample time = %q", got)
+	}
+}
+
 func TestGetLogs_SummaryMarksLimitTruncation(t *testing.T) {
 	for _, tc := range []struct {
 		limit         int
@@ -82,10 +98,9 @@ func TestGetLogs_RawModeReturnsLines(t *testing.T) {
 	if _, ok := out["summary"]; ok {
 		t.Error("raw mode summarized")
 	}
-	data, _ := out["data"].(map[string]any)
-	items, _ := data["result"].([]any)
-	if len(items) != 1 || countLogEntriesInResultItems(items) != 30 {
-		t.Errorf("raw data = %v, want the 30 lines", data)
+	rows, _ := out["rows"].([]any)
+	if len(rows) != 30 {
+		t.Errorf("raw rows = %d, want 30", len(rows))
 	}
 }
 

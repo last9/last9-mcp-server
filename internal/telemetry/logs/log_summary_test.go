@@ -128,7 +128,7 @@ func TestSummarizeLogResult_SummarizesPastThreshold(t *testing.T) {
 	if top.Template != "upstream timeout after <*> ms" || top.Count != 20 {
 		t.Errorf("top pattern = %+v", top)
 	}
-	if len(top.Samples) != maxSummaryPatternSamples || top.Samples[0] != "upstream timeout after 100 ms" {
+	if len(top.Samples) != maxSummaryPatternSamples || top.Samples[0].Text != "upstream timeout after 100 ms" {
 		t.Errorf("samples = %v, want the first %d distinct lines", top.Samples, maxSummaryPatternSamples)
 	}
 	if summary.Other != nil {
@@ -200,7 +200,7 @@ func TestSummarizeLogResult_FitsCharBudgetOnWideData(t *testing.T) {
 	for _, p := range summary.Patterns {
 		total += p.Count
 		for _, sample := range p.Samples {
-			if n := len([]rune(sample)); n > maxSummaryTextRunes {
+			if n := len([]rune(sample.Text)); n > maxSummaryTextRunes {
 				t.Errorf("sample is %d runes, want <= %d", n, maxSummaryTextRunes)
 			}
 		}

@@ -62,7 +62,7 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 		}
 
 		// Handle logjson_query directly
-		result, err := handleLogJSONQuery(ctx, client, cfg, sanitizedQuery, args)
+		result, err := handleLogJSONQuery(ctx, logJSONRequest{req: req, client: client, cfg: cfg, query: sanitizedQuery, args: args})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -110,7 +110,16 @@ func conditionHasFieldOperator(value any, field string, operators map[string]str
 	return false
 }
 
-func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, args GetLogsArgs) (*mcp.CallToolResult, error) {
+type logJSONRequest struct {
+	req    *mcp.CallToolRequest
+	client *http.Client
+	cfg    models.Config
+	query  interface{}
+	args   GetLogsArgs
+}
+
+func handleLogJSONQuery(ctx context.Context, input logJSONRequest) (*mcp.CallToolResult, error) {
+	req, client, cfg, logjsonQuery, args := input.req, input.client, input.cfg, input.query, input.args
 	// Determine time range from parameters
 	startTime, endTime, err := parseTimeRangeFromArgs(args)
 	if err != nil {
@@ -160,6 +169,13 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		appendParseCheck(ctx, scope, stages, result)
 		endParseCheck(nil)
 	}
+	if args.ResponseMode == logResponseModeRaw {
+		if stages, ok := logjsonQuery.([]map[string]interface{}); ok {
+			if !utils.PipelineHasAggregateStage(stages) {
+				appendOutcomeSummary(ctx, client, cfg, outcomeSummaryRequest{query: stages, index: args.Index, startMs: startTime, endMs: endTime, result: result})
+			}
+		}
+	}
 	endProcess := utils.StartToolPhase(ctx, "get_logs", "post_process")
 	defaultWindow := args.StartTimeISO == "" && args.EndTimeISO == "" && args.LookbackMinutes == 0
 	if defaultWindow {
@@ -175,11 +191,21 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 	if defaultWindow {
 		setDefaultWindowEmptyGuidance(result, "logs", defaultGetLogsLookbackMinutes)
 	}
+	serialized := result
 	if args.ResponseMode != logResponseModeRaw {
-		result = summarizeLogResult(result, startTime, endTime, truncated)
+		processed := summarizeLogResult(result, startTime, endTime, truncated)
+		if _, summarized := processed["summary"]; summarized {
+			result, serialized = processed, processed
+			projectSummaryTimes(req, serialized)
+		} else {
+			serialized = mapsClone(result)
+			projectLogTimes(req, serialized)
+		}
+	} else {
+		serialized = mapsClone(result)
+		projectLogTimes(req, serialized)
 	}
-
-	text := formatJSON(result)
+	text := formatJSON(serialized)
 	endProcess(nil)
 
 	// Build deep link URL
@@ -219,6 +245,7 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		limited["logs_truncated"] = true
 		limited["l9_raw_limit"] = map[string]any{"returned_entries": n, "fetched_entries": count, "max_bytes": maxRawResultBytes}
 		limited["l9_guidance"] = map[string]any{"message": rawLimitHint(n, count, effectiveGetLogsResultLimit(cfg, args.Limit))}
+		projectLogTimes(req, limited)
 		return &mcp.CallToolResult{Meta: meta, Content: []mcp.Content{&mcp.TextContent{Text: formatJSON(limited)}}}, nil
 	})
 }
