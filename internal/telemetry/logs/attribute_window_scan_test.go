@@ -175,6 +175,32 @@ func TestGetLogAttributesScansEarlierSlices(t *testing.T) {
 	}
 }
 
+func TestGetLogAttributesReportsEqualBounds(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"status":"success","data":[]}`)
+	}))
+	t.Cleanup(server.Close)
+
+	result, _, err := NewGetLogAttributesHandler(server.Client(), testAttrConfig(server.URL))(
+		context.Background(), &mcp.CallToolRequest{}, GetLogAttributesArgs{
+			StartTimeISO: "2026-01-01T00:00:00Z",
+			EndTimeISO:   "2026-01-01T00:00:00Z",
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	if strings.Contains(text, "1970-01-01") {
+		t.Fatalf("equal-bounds result reports an unscanned epoch window: %s", text)
+	}
+	if got := calls.Load(); got != 0 {
+		t.Fatalf("backend calls = %d, want 0 for an empty window", got)
+	}
+}
+
 func attributeScanServer(t *testing.T, response func(start, end int64, series bool) string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
