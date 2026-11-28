@@ -81,6 +81,9 @@ func TestServiceLogsBodyFilterDocsExplainAnyAndAllTerms(t *testing.T) {
 	if !strings.Contains(prompts.GetServiceLogsDescription, "`last9://reference/service_logs`") {
 		t.Error("description missing service logs reference")
 	}
+	if !strings.Contains(prompts.GetServiceLogsDescription, "`body_filters` match ANY term") {
+		t.Error("description missing body_filters ANY semantics")
+	}
 	for _, want := range []string{
 		"ANY term",
 		"ALL terms",
