@@ -82,6 +82,9 @@ func appendOutcomeSummary(ctx context.Context, client *http.Client, cfg models.C
 	if request.field == "" {
 		return
 	}
+	if !strings.Contains(request.field, "['") {
+		request.field = logFieldFilterField(request.field)
+	}
 	aggregate, err := executeLogJSONQuery(ctx, client, cfg, outcomeAggregatePipeline(request.query, request.field), request.startMs, request.endMs, 100, request.index)
 	if err != nil {
 		return
